@@ -28,7 +28,7 @@ from .essential_eight import apply_e8_mapping, get_e8_summary
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions, calculate_action_roi
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
-from .compliance import auto_map_compliance, map_action_to_frameworks, ComplianceFramework
+from .compliance import auto_map_compliance, map_action_to_frameworks
 from .drift import detect_drift
 from .web_frontend import get_spa_html
 
