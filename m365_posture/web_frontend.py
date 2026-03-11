@@ -160,6 +160,43 @@ tr.selected td { background:#dbeafe; }
 .detail-panel .field-value { font-size:14px; margin-top:2px; }
 .detail-panel pre { background:#1e293b; color:#e2e8f0; padding:12px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:pre-wrap; }
 
+/* Trend chart */
+.trend-chart { width:100%; height:200px; position:relative; }
+.trend-chart svg { width:100%; height:100%; }
+.trend-chart .line { fill:none; stroke:var(--primary); stroke-width:2; }
+.trend-chart .area { fill:var(--primary-light); opacity:.3; }
+.trend-chart .dot { fill:var(--primary); r:4; cursor:pointer; }
+.trend-chart .dot:hover { r:6; fill:var(--primary-dark); }
+.trend-chart .grid-line { stroke:var(--border); stroke-width:1; stroke-dasharray:4; }
+.trend-chart .axis-label { font-size:10px; fill:var(--text-light); }
+
+/* Drift indicators */
+.drift-positive { color:var(--success); font-weight:600; }
+.drift-negative { color:var(--danger); font-weight:600; }
+.drift-neutral { color:var(--text-light); }
+.drift-card { border-left:4px solid var(--border); }
+.drift-card.regression { border-left-color:var(--danger); }
+.drift-card.improvement { border-left-color:var(--success); }
+.drift-banner { padding:12px 16px; border-radius:var(--radius); margin-bottom:16px; display:flex; align-items:center; gap:12px; }
+.drift-banner.positive { background:#d1fae5; border:1px solid #6ee7b7; }
+.drift-banner.negative { background:#fee2e2; border:1px solid #fca5a5; }
+.drift-banner.neutral { background:#f1f5f9; border:1px solid var(--border); }
+.drift-banner .delta { font-size:24px; font-weight:700; }
+
+/* Dependency lines */
+.dep-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:11px; background:#fef3c7; color:#92400e; margin:2px; }
+.dep-tag.blocked { background:#fee2e2; color:#991b1b; }
+
+/* Risk acceptance card */
+.risk-card { border-left:4px solid var(--warning); padding:16px; }
+.risk-card.expired { border-left-color:var(--danger); background:#fff5f5; }
+.risk-card.upcoming { border-left-color:var(--warning); background:#fffbeb; }
+
+/* Compliance family */
+.compliance-family { border:1px solid var(--border); border-radius:var(--radius); margin-bottom:12px; overflow:hidden; }
+.compliance-family-header { padding:12px 16px; background:var(--bg); cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:14px; }
+.compliance-family-body { padding:0 16px 12px; }
+
 .hidden { display:none !important; }
 .text-center { text-align:center; }
 .mb-16 { margin-bottom:16px; }
@@ -208,6 +245,18 @@ tr.selected td { background:#dbeafe; }
     <a href="#e8" data-page="e8">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       Essential Eight
+    </a>
+    <a href="#compliance" data-page="compliance">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+      Compliance
+    </a>
+    <a href="#risks" data-page="risks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Risk Register
+    </a>
+    <a href="#trending" data-page="trending">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+      Trending
     </a>
     <a href="#compare" data-page="compare">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -334,11 +383,11 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',compare:'Compare Tenants',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',compare:'Compare Tenants',export:'Export',history:'Import History'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compare:renderCompare,export:renderExport,history:renderHistory};
+  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
 }
 
@@ -369,7 +418,12 @@ async function renderDashboard() {
   const c = document.getElementById('content');
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
-  const [scores, prioritized] = await Promise.all([api.get(`/api/tenants/${t}/scores`), api.get(`/api/tenants/${t}/prioritized?limit=10`)]);
+  const [scores, prioritized, snapshots, riskSummary] = await Promise.all([
+    api.get(`/api/tenants/${t}/scores`),
+    api.get(`/api/tenants/${t}/prioritized?limit=10`),
+    api.get(`/api/tenants/${t}/snapshots?limit=20`),
+    api.get(`/api/tenants/${t}/risk-summary`),
+  ]);
 
   let toolCards = '';
   for(const [tool, d] of Object.entries(scores.by_tool||{})) {
@@ -388,12 +442,32 @@ async function renderDashboard() {
 
   let topActions = prioritized.slice(0,10).map(a => `<tr><td>${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td></tr>`).join('');
 
-  c.innerHTML = `
+  // Mini trend sparkline
+  let trendHtml = '';
+  if(snapshots.length >= 2) {
+    const pts = snapshots.slice().reverse();
+    const delta = pts[pts.length-1].percentage - pts[pts.length-2].percentage;
+    const cls = delta > 0 ? 'drift-positive' : delta < 0 ? 'drift-negative' : 'drift-neutral';
+    trendHtml = `<div class="card stat-card"><div class="value ${cls}">${delta>=0?'+':''}${delta.toFixed(1)}%</div><div class="label">Last Change</div><div style="margin-top:8px">${miniSparkline(pts.map(p=>p.percentage))}</div></div>`;
+  } else {
+    trendHtml = `<div class="card stat-card"><div class="value drift-neutral">--</div><div class="label">Last Change</div><div style="font-size:12px;color:var(--text-light);margin-top:8px">Import data twice to see trends</div></div>`;
+  }
+
+  // Risk summary alert
+  let riskAlert = '';
+  if(riskSummary.expired?.length > 0) {
+    riskAlert = `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${riskSummary.expired.length} expired risk acceptance(s)</strong> require review. <a href="#risks" style="text-decoration:underline">View Risk Register</a></div></div>`;
+  }
+  if(riskSummary.upcoming_reviews?.length > 0) {
+    riskAlert += `<div class="drift-banner neutral mb-16"><span style="font-size:20px">&#128197;</span><div><strong>${riskSummary.upcoming_reviews.length} risk review(s)</strong> due within 30 days. <a href="#risks" style="text-decoration:underline">View</a></div></div>`;
+  }
+
+  c.innerHTML = `${riskAlert}
     <div class="grid grid-4 mb-16">
       <div class="card stat-card"><div class="value">${scores.percentage?.toFixed(1)||0}%</div><div class="label">Overall Score</div></div>
       <div class="card stat-card"><div class="value">${scores.total_actions||0}</div><div class="label">Total Actions</div></div>
       <div class="card stat-card"><div class="value">${scores.completed_actions||0}</div><div class="label">Completed</div></div>
-      <div class="card stat-card"><div class="value">${scores.total_actions ? Math.round((scores.total_actions-scores.completed_actions)/scores.total_actions*100) : 0}%</div><div class="label">Remaining</div></div>
+      ${trendHtml}
     </div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Score by Source Tool</div><div class="grid grid-2">${toolCards}</div></div>
@@ -545,11 +619,30 @@ function actionDetailHtml(a) {
     return `<div style="font-size:12px;padding:2px 0"><code>${(h.timestamp||'').substring(0,19)}</code> ${desc.join('; ')} ${h.changed_by?'by '+h.changed_by:''}</div>`;
   }).join('');
 
+  // Risk acceptance info
+  let riskHtml = '';
+  if(a.status === 'Risk Accepted') {
+    const isExpired = a.risk_expiry_date && new Date(a.risk_expiry_date) < new Date();
+    riskHtml = `<div class="risk-card ${isExpired?'expired':''} mb-16">
+      <div class="field-label">Risk Acceptance</div>
+      <div class="grid grid-2 mt-16">
+        <div class="field"><div class="field-label">Owner</div><div class="field-value">${a.risk_owner||'Not specified'}</div></div>
+        <div class="field"><div class="field-label">Accepted</div><div class="field-value">${a.risk_accepted_at?.substring(0,10)||'Unknown'}</div></div>
+        <div class="field"><div class="field-label">Review Date</div><div class="field-value">${a.risk_review_date||'Not set'}</div></div>
+        <div class="field"><div class="field-label">Expiry Date</div><div class="field-value">${isExpired?'<span class="badge badge-danger">EXPIRED</span> ':''}${a.risk_expiry_date||'No expiry'}</div></div>
+      </div>
+      <div class="field mt-16"><div class="field-label">Justification</div><div class="field-value">${a.risk_justification||'None provided'}</div></div>
+    </div>`;
+  }
+
   return `<div class="detail-panel">
     <div class="flex gap-8 mb-16">
       <button class="btn btn-sm" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</button>
+      ${a.status!=='Risk Accepted'?`<button class="btn btn-sm" style="background:var(--warning-light);border-color:var(--warning);color:#92400e" onclick="showAcceptRisk('${a.id}');event.stopPropagation()">Accept Risk</button>`:''}
+      <button class="btn btn-sm" onclick="showAddDependency('${a.id}');event.stopPropagation()">+ Dependency</button>
       <button class="btn btn-sm btn-danger" onclick="deleteAction('${a.id}');event.stopPropagation()">Delete</button>
     </div>
+    ${riskHtml}
     <div class="grid grid-3 mb-16">
       <div class="field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
       <div class="field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
@@ -561,6 +654,7 @@ function actionDetailHtml(a) {
       <div class="field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date||'Not set'}</div></div>
       <div class="field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
     </div>
+    <div id="deps-${a.id}" class="mb-8"></div>
     ${a.description?`<div class="field mb-8"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:''}
     ${a.current_value?`<div class="field mb-8"><div class="field-label">Current Value</div><pre>${a.current_value}</pre></div>`:''}
     ${a.recommended_value?`<div class="field mb-8"><div class="field-label">Recommended Value</div><pre>${a.recommended_value}</pre></div>`:''}
@@ -575,6 +669,7 @@ function toggleActionDetail(id) {
   if(expandedAction && expandedAction!==id) document.getElementById('detail-'+expandedAction)?.classList.add('hidden');
   el.classList.toggle('hidden');
   expandedAction = el.classList.contains('hidden') ? null : id;
+  if(!el.classList.contains('hidden')) loadActionDeps(id);
 }
 
 function showAddAction() {
@@ -665,7 +760,37 @@ async function doImport() {
   document.getElementById('imp-btn').disabled=false;
   if(r.error) { toast(r.error,'error'); return; }
   toast('Import successful!','success');
-  document.getElementById('imp-result').innerHTML = `
+
+  // Drift detection display
+  let driftHtml = '';
+  const drift = r.drift;
+  if(drift && drift.has_drift) {
+    const cls = drift.score_delta > 0 ? 'positive' : drift.score_delta < 0 ? 'negative' : 'neutral';
+    const deltaCls = drift.score_delta > 0 ? 'drift-positive' : drift.score_delta < 0 ? 'drift-negative' : 'drift-neutral';
+    driftHtml = `
+      <div class="card mb-16">
+        <div class="card-header">Drift Detection</div>
+        <div class="drift-banner ${cls}">
+          <div class="delta ${deltaCls}">${drift.score_delta>=0?'+':''}${drift.score_delta.toFixed(1)}%</div>
+          <div>
+            <strong>${drift.summary}</strong><br>
+            <span style="font-size:12px;color:var(--text-light)">Compared: ${drift.previous_timestamp?.substring(0,16)} vs ${drift.current_timestamp?.substring(0,16)}</span>
+          </div>
+        </div>
+        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${r.scope}</strong>: ${r.old_value.toFixed(1)}% → ${r.new_value.toFixed(1)}% <span class="drift-negative">(${r.delta.toFixed(1)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${i.scope}</strong>: ${i.old_value.toFixed(1)}% → ${i.new_value.toFixed(1)}% <span class="drift-positive">(+${i.delta.toFixed(1)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.scope}: <strong>${f.count}</strong> new action(s) from ${f.file||'import'}</div>`).join('')}</div>`:''}
+        ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.title} (was: ${f.old_status})</div>`).join('')}</div>`:''}
+      </div>`;
+  }
+
+  // Expired risk acceptances
+  let expiredHtml = '';
+  if(r.expired_risk_acceptances > 0) {
+    expiredHtml = `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${r.expired_risk_acceptances} risk acceptance(s) expired</strong> and reverted to ToDo. <a href="#risks" style="text-decoration:underline">Review</a></div></div>`;
+  }
+
+  document.getElementById('imp-result').innerHTML = `${expiredHtml}${driftHtml}
     <div class="card"><div class="card-header">Import Result</div>
       <div class="grid grid-4">
         <div class="stat-card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
@@ -673,6 +798,7 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--warning)">${r.updated_actions}</div><div class="label">Updated</div></div>
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
+      ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
     </div>`;
   selectedFile=null;
 }
@@ -950,6 +1076,364 @@ function showHistTab(el, tabId) {
   el.classList.add('active');
   document.getElementById('imp-tab').classList.toggle('hidden', tabId!=='imp-tab');
   document.getElementById('cl-tab').classList.toggle('hidden', tabId!=='cl-tab');
+}
+
+// ── SVG Sparkline ──
+function miniSparkline(values, w=200, h=40) {
+  if(!values.length) return '';
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v,i) => {
+    const x = (i/(values.length-1||1))*w;
+    const y = h - ((v-min)/range)*h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const area = `${pts.join(' ')} ${w},${h} 0,${h}`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+    <polygon points="${area}" fill="var(--primary-light)" opacity=".4"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+  </svg>`;
+}
+
+// ── Full Trend Chart ──
+function trendChart(snapshots, w=800, h=250) {
+  if(snapshots.length < 2) return '<div class="text-center" style="padding:40px;color:var(--text-light)">Need at least 2 snapshots to show trend</div>';
+  const pts = snapshots.slice().reverse();
+  const pcts = pts.map(p=>p.percentage);
+  const min = Math.max(0, Math.min(...pcts) - 5);
+  const max = Math.min(100, Math.max(...pcts) + 5);
+  const range = max - min || 1;
+  const pad = {t:20, r:20, b:40, l:50};
+  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+
+  let gridLines = '';
+  for(let i=0; i<=4; i++) {
+    const y = pad.t + (i/4)*ch;
+    const val = max - (i/4)*range;
+    gridLines += `<line x1="${pad.l}" y1="${y}" x2="${w-pad.r}" y2="${y}" class="grid-line"/>`;
+    gridLines += `<text x="${pad.l-8}" y="${y+4}" text-anchor="end" class="axis-label">${val.toFixed(0)}%</text>`;
+  }
+
+  const coords = pts.map((p,i) => {
+    const x = pad.l + (i/(pts.length-1||1))*cw;
+    const y = pad.t + ((max-p.percentage)/range)*ch;
+    return {x, y, p};
+  });
+
+  const line = coords.map(c=>`${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const area = line + ` ${coords[coords.length-1].x.toFixed(1)},${pad.t+ch} ${coords[0].x.toFixed(1)},${pad.t+ch}`;
+  const dots = coords.map(c=>`<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" class="dot"><title>${c.p.timestamp?.substring(0,16)}: ${c.p.percentage.toFixed(1)}% (${c.p.trigger||''})</title></circle>`).join('');
+
+  // X-axis labels (show max 8)
+  let xLabels = '';
+  const step = Math.max(1, Math.floor(pts.length/8));
+  for(let i=0; i<pts.length; i+=step) {
+    const x = pad.l + (i/(pts.length-1||1))*cw;
+    const label = pts[i].timestamp?.substring(5,10)||'';
+    xLabels += `<text x="${x}" y="${h-8}" text-anchor="middle" class="axis-label">${label}</text>`;
+  }
+
+  return `<div class="trend-chart"><svg viewBox="0 0 ${w} ${h}">
+    ${gridLines}${xLabels}
+    <polygon points="${area}" class="area"/>
+    <polyline points="${line}" class="line"/>
+    ${dots}
+  </svg></div>`;
+}
+
+// ── Score Trending Page ──
+async function renderTrending() {
+  if(!requireTenant()) return;
+  const t = state.activeTenant.name;
+  document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="takeSnapshot()">Take Snapshot</button>';
+
+  const [snapshots, driftReports] = await Promise.all([
+    api.get(`/api/tenants/${t}/snapshots?limit=50`),
+    api.get(`/api/tenants/${t}/drift?limit=10`),
+  ]);
+
+  let chart = trendChart(snapshots);
+
+  // Snapshot table
+  let snapRows = snapshots.map(s => {
+    const tools = Object.entries(s.by_tool||{}).map(([tool,d])=>`${tool}: ${d.percentage?.toFixed(1)||0}%`).join(', ');
+    return `<tr>
+      <td><code>${s.timestamp?.substring(0,16)}</code></td>
+      <td>${s.trigger||''}</td>
+      <td><strong>${s.percentage?.toFixed(1)}%</strong></td>
+      <td>${s.total_actions}</td>
+      <td>${s.completed_actions}</td>
+      <td style="font-size:12px">${tools||'-'}</td>
+    </tr>`;
+  }).join('');
+
+  // Drift history
+  let driftRows = driftReports.map(d => {
+    const cls = d.score_delta > 0 ? 'drift-positive' : d.score_delta < 0 ? 'drift-negative' : 'drift-neutral';
+    return `<tr>
+      <td><code>${d.timestamp?.substring(0,16)}</code></td>
+      <td>${d.source_tool}</td>
+      <td class="${cls}">${d.score_delta>=0?'+':''}${d.score_delta?.toFixed(1)}%</td>
+      <td>${d.score_before?.toFixed(1)}% → ${d.score_after?.toFixed(1)}%</td>
+      <td>${d.regressions?.length||0}</td>
+      <td>${d.improvements?.length||0}</td>
+      <td style="font-size:12px;max-width:200px">${d.summary}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="card-header">Score Trend Over Time</div>
+      ${chart}
+    </div>
+    <div class="tabs">
+      <div class="tab active" onclick="showTrendTab(this,'snap-tab')">Snapshots (${snapshots.length})</div>
+      <div class="tab" onclick="showTrendTab(this,'drift-tab')">Drift Reports (${driftReports.length})</div>
+    </div>
+    <div id="snap-tab" class="card">
+      <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Trigger</th><th>Score</th><th>Actions</th><th>Completed</th><th>By Tool</th></tr></thead>
+      <tbody>${snapRows||'<tr><td colspan="6" class="text-center">No snapshots yet. Import data to create snapshots automatically.</td></tr>'}</tbody></table></div>
+    </div>
+    <div id="drift-tab" class="card hidden">
+      <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Source</th><th>Delta</th><th>Score</th><th>Regressions</th><th>Improvements</th><th>Summary</th></tr></thead>
+      <tbody>${driftRows||'<tr><td colspan="7" class="text-center">No drift detected yet</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+function showTrendTab(el, tabId) {
+  el.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('snap-tab').classList.toggle('hidden', tabId!=='snap-tab');
+  document.getElementById('drift-tab').classList.toggle('hidden', tabId!=='drift-tab');
+}
+
+async function takeSnapshot() {
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/snapshots`, {trigger:'manual'});
+  toast(`Snapshot taken: ${r.percentage?.toFixed(1)}%`, 'success');
+  renderTrending();
+}
+
+// ── Compliance Page ──
+async function renderCompliance() {
+  if(!requireTenant()) return;
+  const t = state.activeTenant.name;
+  document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="mapCompliance()">Re-map All</button>';
+
+  const compliance = await api.get(`/api/tenants/${t}/compliance`);
+  const frameworks = Object.keys(compliance);
+
+  if(!frameworks.length) {
+    document.getElementById('content').innerHTML = `<div class="card text-center" style="padding:60px">
+      <h3>No compliance mappings yet</h3>
+      <p style="color:var(--text-light);margin:12px 0">Import assessment data first, then compliance mappings are created automatically.</p>
+      <button class="btn btn-primary" onclick="mapCompliance()">Map Compliance Now</button>
+    </div>`;
+    return;
+  }
+
+  // Framework tabs
+  let tabs = frameworks.map((fw,i) => `<div class="tab ${i===0?'active':''}" onclick="showFrameworkTab(this,'fw-${i}')">${fw}</div>`).join('');
+
+  let frameworkPanels = frameworks.map((fw, i) => {
+    const data = compliance[fw];
+    let familiesHtml = '';
+    for(const [fam, famData] of Object.entries(data.families||{})) {
+      let controlRows = Object.entries(famData.controls||{}).map(([ctrlId, ctrl]) => {
+        const statusCls = ctrl.status==='Completed'?'success':ctrl.status==='In Progress'?'info':'danger';
+        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)}</div>`).join('');
+        return `<tr>
+          <td><code>${ctrlId}</code></td>
+          <td>${ctrl.control_name}</td>
+          <td><span class="badge badge-${statusCls}">${ctrl.status}</span></td>
+          <td>${ctrl.actions.length}</td>
+          <td>${actions}</td>
+        </tr>`;
+      }).join('');
+
+      familiesHtml += `<div class="compliance-family">
+        <div class="compliance-family-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+          <span>${fam}</span>
+          <span>${famData.completed}/${famData.total} controls (${famData.percentage}%)</span>
+        </div>
+        <div class="compliance-family-body">
+          ${progressBar(famData.percentage)}
+          <table class="mt-16"><thead><tr><th>Control</th><th>Name</th><th>Status</th><th>Actions</th><th>Details</th></tr></thead>
+          <tbody>${controlRows}</tbody></table>
+        </div>
+      </div>`;
+    }
+
+    return `<div id="fw-${i}" class="card ${i>0?'hidden':''}">
+      <div class="grid grid-3 mb-16">
+        <div class="stat-card">${gauge(data.percentage, 100)}<div class="label">${fw}</div></div>
+        <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
+        <div class="stat-card"><div class="value" style="color:var(--success)">${data.completed_controls}</div><div class="label">Completed</div></div>
+      </div>
+      ${familiesHtml}
+    </div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="tabs">${tabs}</div>
+    ${frameworkPanels}`;
+}
+
+function showFrameworkTab(el, tabId) {
+  el.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('[id^="fw-"]').forEach(p=>p.classList.add('hidden'));
+  document.getElementById(tabId)?.classList.remove('hidden');
+}
+
+async function mapCompliance() {
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/compliance/map`);
+  toast(`Mapped ${r.total_mappings} controls across ${Object.keys(r.by_framework||{}).length} frameworks`, 'success');
+  renderCompliance();
+}
+
+// ── Risk Register Page ──
+async function renderRisks() {
+  if(!requireTenant()) return;
+  const t = state.activeTenant.name;
+  document.getElementById('topbar-actions').innerHTML = '<button class="btn" onclick="expireRisks()">Check Expirations</button>';
+
+  const summary = await api.get(`/api/tenants/${t}/risk-summary`);
+
+  let expiredCards = summary.expired.map(a => `
+    <div class="risk-card expired card mb-8">
+      <div class="flex justify-between items-center">
+        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Expired: ${a.risk_expiry_date}</div></div>
+        <button class="btn btn-sm btn-danger" onclick="showEditAction('${a.id}')">Review</button>
+      </div>
+    </div>`).join('');
+
+  let upcomingCards = summary.upcoming_reviews.map(a => `
+    <div class="risk-card upcoming card mb-8">
+      <div class="flex justify-between items-center">
+        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Review by: ${a.risk_review_date}</div></div>
+        <button class="btn btn-sm" onclick="showEditAction('${a.id}')">Review</button>
+      </div>
+    </div>`).join('');
+
+  let acceptedRows = summary.accepted.map(a => `<tr>
+    <td>${a.title?.substring(0,45)}</td>
+    <td>${a.risk_owner||'N/A'}</td>
+    <td style="font-size:12px">${a.risk_justification?.substring(0,60)||'N/A'}</td>
+    <td>${a.risk_accepted_at?.substring(0,10)||'N/A'}</td>
+    <td>${a.risk_expiry_date||'No expiry'}</td>
+    <td>${a.risk_review_date||'Not set'}</td>
+    <td><button class="btn btn-sm" onclick="showEditAction('${a.id}')">View</button></td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-3 mb-16">
+      <div class="card stat-card"><div class="value">${summary.total_accepted}</div><div class="label">Accepted Risks</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--danger)">${summary.expired.length}</div><div class="label">Expired</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--warning)">${summary.upcoming_reviews.length}</div><div class="label">Reviews Due (30d)</div></div>
+    </div>
+    ${summary.expired.length?`<div class="card mb-16"><div class="card-header" style="color:var(--danger)">Expired Risk Acceptances</div>${expiredCards}</div>`:''}
+    ${summary.upcoming_reviews.length?`<div class="card mb-16"><div class="card-header" style="color:var(--warning)">Upcoming Reviews</div>${upcomingCards}</div>`:''}
+    <div class="card"><div class="card-header">All Accepted Risks</div>
+      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Owner</th><th>Justification</th><th>Accepted</th><th>Expiry</th><th>Review</th><th></th></tr></thead>
+      <tbody>${acceptedRows||'<tr><td colspan="7" class="text-center">No accepted risks</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+async function expireRisks() {
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/expire-risks`);
+  if(r.expired_count > 0) {
+    toast(`${r.expired_count} risk acceptance(s) expired and reverted to ToDo`, 'info');
+  } else {
+    toast('No expired risk acceptances found', 'info');
+  }
+  renderRisks();
+}
+
+// ── Risk Acceptance Modal ──
+function showAcceptRisk(actionId) {
+  openModal('Accept Risk', `
+    <p style="margin-bottom:12px;color:var(--text-light)">Document the risk acceptance decision. The action will be marked as "Risk Accepted".</p>
+    <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Why is this risk being accepted?"></textarea></div>
+    <div class="form-group"><label>Risk Owner (required)</label><input id="ra-owner" placeholder="Person responsible for this risk"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Review Date</label><input id="ra-review" type="date"></div>
+      <div class="form-group"><label>Expiry Date (auto-revert to ToDo)</label><input id="ra-expiry" type="date"></div>
+    </div>
+    <div class="form-group"><label>Your Name</label><input id="ra-by" placeholder="Who is recording this"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="acceptRisk('${actionId}')">Accept Risk</button>`);
+}
+
+async function acceptRisk(actionId) {
+  const justification = document.getElementById('ra-justification').value.trim();
+  const risk_owner = document.getElementById('ra-owner').value.trim();
+  if(!justification) return toast('Justification is required','error');
+  if(!risk_owner) return toast('Risk owner is required','error');
+  const data = {
+    justification, risk_owner,
+    review_date: document.getElementById('ra-review').value || null,
+    expiry_date: document.getElementById('ra-expiry').value || null,
+    changed_by: document.getElementById('ra-by').value || '',
+  };
+  const r = await api.post(`/api/actions/${actionId}/accept-risk`, data);
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Risk accepted', 'success');
+  filterActions();
+}
+
+// ── Dependencies ──
+async function loadActionDeps(actionId) {
+  const el = document.getElementById('deps-'+actionId);
+  if(!el) return;
+  const deps = await api.get(`/api/actions/${actionId}/dependencies`);
+  if(!deps.depends_on.length && !deps.blocks.length) { el.innerHTML = ''; return; }
+
+  let html = '';
+  if(deps.depends_on.length) {
+    html += `<div class="field-label mb-8">Depends On</div>`;
+    html += deps.depends_on.map(d => {
+      const blocked = d.status !== 'Completed' && d.status !== 'Risk Accepted';
+      return `<span class="dep-tag ${blocked?'blocked':''}">
+        ${blocked?'&#128274; ':'&#9989; '}${d.title?.substring(0,35)} (${d.status})
+        <button style="background:none;border:none;cursor:pointer;font-size:14px;color:#999" onclick="removeDep('${actionId}','${d.depends_on_id}');event.stopPropagation()">&times;</button>
+      </span>`;
+    }).join('');
+  }
+  if(deps.blocks.length) {
+    html += `<div class="field-label mb-8 ${deps.depends_on.length?'mt-16':''}">Blocks</div>`;
+    html += deps.blocks.map(d => `<span class="dep-tag">${d.title?.substring(0,35)} (${d.status})</span>`).join('');
+  }
+  el.innerHTML = `<div class="mb-16">${html}</div>`;
+}
+
+function showAddDependency(actionId) {
+  // Load actions to select from
+  (async () => {
+    const actions = await api.get(`/api/tenants/${state.activeTenant.name}/actions`);
+    const otherActions = actions.filter(a => a.id !== actionId);
+    let options = otherActions.map(a => `<option value="${a.id}">${a.title.substring(0,60)} [${a.status}]</option>`).join('');
+    openModal('Add Dependency', `
+      <p style="margin-bottom:12px;color:var(--text-light)">Select an action that must be completed before this one can proceed.</p>
+      <div class="form-group"><label>Depends On</label><select id="dep-target">${options}</select></div>
+      <div class="form-group"><label>Notes (optional)</label><input id="dep-notes" placeholder="Why this dependency exists"></div>`,
+      `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addDependency('${actionId}')">Add Dependency</button>`);
+  })();
+}
+
+async function addDependency(actionId) {
+  const depends_on_id = document.getElementById('dep-target').value;
+  const notes = document.getElementById('dep-notes').value;
+  const r = await api.post(`/api/actions/${actionId}/dependencies`, {depends_on_id, notes});
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Dependency added', 'success');
+  loadActionDeps(actionId);
+}
+
+async function removeDep(actionId, dependsOnId) {
+  await api.del(`/api/actions/${actionId}/dependencies/${dependsOnId}`);
+  toast('Dependency removed', 'success');
+  loadActionDeps(actionId);
 }
 
 // Boot

@@ -89,6 +89,13 @@ class EssentialEightMaturity(str, Enum):
     LEVEL_3 = "Maturity Level 3"
 
 
+class ComplianceFramework(str, Enum):
+    NIST_800_53 = "NIST 800-53"
+    CIS_M365 = "CIS Microsoft 365"
+    ISO_27001 = "ISO 27001"
+    ESSENTIAL_EIGHT = "Essential Eight"
+
+
 @dataclass
 class HistoryEntry:
     """A single point-in-time snapshot of an action's status."""
@@ -143,6 +150,15 @@ class Action:
     source_report_date: str = ""
     raw_data: dict = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
+    # Risk acceptance workflow
+    risk_justification: str = ""
+    risk_owner: str = ""
+    risk_review_date: Optional[str] = None
+    risk_expiry_date: Optional[str] = None
+    risk_accepted_at: Optional[str] = None
+    # Dependencies
+    depends_on: list[str] = field(default_factory=list)
+    blocks: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

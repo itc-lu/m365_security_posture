@@ -19,7 +19,7 @@ from .database import Database
 from .models import (
     Action, TenantConfig, ActionStatus, Priority, RiskLevel,
     UserImpact, ImplementationEffort, SourceTool, Workload,
-    EssentialEightControl, EssentialEightMaturity,
+    EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
 )
 from .parsers import (
     SecureScoreParser, ScubaParser, ZeroTrustParser, SCTParser, M365AssessParser,
@@ -28,6 +28,8 @@ from .essential_eight import apply_e8_mapping, get_e8_summary
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions, calculate_action_roi
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
+from .compliance import auto_map_compliance, map_action_to_frameworks, ComplianceFramework
+from .drift import detect_drift
 from .web_frontend import get_spa_html
 
 PARSER_MAP = {
@@ -68,6 +70,7 @@ def create_app(db_path: str = None) -> Flask:
             "e8_controls": [c.value for c in EssentialEightControl],
             "e8_maturities": [m.value for m in EssentialEightMaturity],
             "import_sources": list(PARSER_MAP.keys()),
+            "compliance_frameworks": [f.value for f in ComplianceFramework],
         })
 
     # ── Tenant endpoints ──
@@ -215,6 +218,18 @@ def create_app(db_path: str = None) -> Flask:
             # Auto-correlate after import
             corr = auto_correlate(db, name)
 
+            # Auto-map compliance frameworks
+            compliance = auto_map_compliance(db, name)
+
+            # Take score snapshot for trending
+            snapshot = db.take_score_snapshot(name, trigger=f"import:{source}")
+
+            # Expire any risk acceptances past their date
+            expired = db.expire_risk_acceptances(name)
+
+            # Detect drift vs previous snapshot
+            drift = detect_drift(db, name, source_tool)
+
             return jsonify({
                 "success": True,
                 "source": source,
@@ -223,6 +238,10 @@ def create_app(db_path: str = None) -> Flask:
                 "new_actions": new_count,
                 "updated_actions": updated_count,
                 "correlation": corr,
+                "compliance": compliance,
+                "drift": drift,
+                "expired_risk_acceptances": len(expired),
+                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
             })
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
@@ -483,6 +502,170 @@ def create_app(db_path: str = None) -> Flask:
         finally:
             # Cleanup will happen after response
             pass
+
+    # ── Score Trending endpoints ──
+
+    @app.route("/api/tenants/<name>/snapshots", methods=["GET"])
+    def api_snapshots(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 50, type=int)
+        return jsonify(db.get_score_snapshots(name, limit))
+
+    @app.route("/api/tenants/<name>/snapshots", methods=["POST"])
+    def api_take_snapshot(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        trigger = (request.get_json() or {}).get("trigger", "manual")
+        snapshot = db.take_score_snapshot(name, trigger)
+        return jsonify(snapshot), 201
+
+    # ── Dependency endpoints ──
+
+    @app.route("/api/actions/<action_id>/dependencies", methods=["GET"])
+    def api_get_dependencies(action_id):
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        return jsonify(db.get_dependencies(action_id))
+
+    @app.route("/api/actions/<action_id>/dependencies", methods=["POST"])
+    def api_add_dependency(action_id):
+        data = request.get_json() or {}
+        depends_on_id = data.get("depends_on_id")
+        if not depends_on_id:
+            return _json_error("depends_on_id is required")
+        try:
+            result = db.add_dependency(
+                action_id, depends_on_id,
+                data.get("dependency_type", "requires"),
+                data.get("notes", ""),
+            )
+            return jsonify(result), 201
+        except ValueError as e:
+            return _json_error(str(e))
+
+    @app.route("/api/actions/<action_id>/dependencies/<depends_on_id>", methods=["DELETE"])
+    def api_remove_dependency(action_id, depends_on_id):
+        db.remove_dependency(action_id, depends_on_id)
+        return jsonify({"removed": True})
+
+    @app.route("/api/tenants/<name>/dependency-graph", methods=["GET"])
+    def api_dependency_graph(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_dependency_graph(name))
+
+    @app.route("/api/tenants/<name>/blocked-actions", methods=["GET"])
+    def api_blocked_actions(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_blocked_actions(name))
+
+    @app.route("/api/tenants/<name>/implementation-order", methods=["POST"])
+    def api_implementation_order(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        action_ids = data.get("action_ids")
+        return jsonify(db.get_implementation_order(name, action_ids))
+
+    # ── Compliance endpoints ──
+
+    @app.route("/api/tenants/<name>/compliance", methods=["GET"])
+    def api_compliance(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        framework = request.args.get("framework")
+        return jsonify(db.get_compliance_summary(name, framework))
+
+    @app.route("/api/tenants/<name>/compliance/map", methods=["POST"])
+    def api_map_compliance(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        frameworks = data.get("frameworks")
+        result = auto_map_compliance(db, name, frameworks)
+        return jsonify(result)
+
+    @app.route("/api/actions/<action_id>/compliance", methods=["GET"])
+    def api_action_compliance(action_id):
+        return jsonify(db.get_action_compliance(action_id))
+
+    # ── Risk Acceptance endpoints ──
+
+    @app.route("/api/actions/<action_id>/accept-risk", methods=["POST"])
+    def api_accept_risk(action_id):
+        data = request.get_json() or {}
+        justification = data.get("justification", "").strip()
+        risk_owner = data.get("risk_owner", "").strip()
+        if not justification:
+            return _json_error("justification is required")
+        if not risk_owner:
+            return _json_error("risk_owner is required")
+        result = db.accept_risk(
+            action_id, justification, risk_owner,
+            review_date=data.get("review_date"),
+            expiry_date=data.get("expiry_date"),
+            changed_by=data.get("changed_by", ""),
+        )
+        if not result:
+            return _json_error("Action not found", 404)
+        return jsonify(result)
+
+    @app.route("/api/tenants/<name>/risk-summary", methods=["GET"])
+    def api_risk_summary(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        expired = db.get_expired_risk_acceptances(name)
+        upcoming = db.get_upcoming_risk_reviews(name, days=30)
+        all_accepted = db.get_actions(name, {"status": "Risk Accepted"})
+        return jsonify({
+            "total_accepted": len(all_accepted),
+            "expired": [{"id": a["id"], "title": a["title"],
+                         "risk_owner": a.get("risk_owner"),
+                         "risk_expiry_date": a.get("risk_expiry_date")} for a in expired],
+            "upcoming_reviews": [{"id": a["id"], "title": a["title"],
+                                  "risk_owner": a.get("risk_owner"),
+                                  "risk_review_date": a.get("risk_review_date")} for a in upcoming],
+            "accepted": [{"id": a["id"], "title": a["title"],
+                          "risk_owner": a.get("risk_owner"),
+                          "risk_justification": a.get("risk_justification"),
+                          "risk_expiry_date": a.get("risk_expiry_date"),
+                          "risk_review_date": a.get("risk_review_date"),
+                          "risk_accepted_at": a.get("risk_accepted_at")} for a in all_accepted],
+        })
+
+    @app.route("/api/tenants/<name>/expire-risks", methods=["POST"])
+    def api_expire_risks(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        expired = db.expire_risk_acceptances(name)
+        return jsonify({"expired_count": len(expired),
+                        "expired": [{"id": a["id"], "title": a["title"]} for a in expired]})
+
+    # ── Drift Detection endpoints ──
+
+    @app.route("/api/tenants/<name>/drift", methods=["GET"])
+    def api_drift_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 20, type=int)
+        return jsonify(db.get_drift_reports(name, limit))
+
+    @app.route("/api/tenants/<name>/drift/detect", methods=["POST"])
+    def api_detect_drift(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        result = detect_drift(db, name, data.get("source_tool"))
+        return jsonify(result)
+
+    # ── Enums update ──
+
+    @app.route("/api/enums/frameworks", methods=["GET"])
+    def api_frameworks():
+        return jsonify([f.value for f in ComplianceFramework])
 
     return app
 
