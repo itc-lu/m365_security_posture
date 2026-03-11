@@ -156,6 +156,8 @@ class Action:
     risk_review_date: Optional[str] = None
     risk_expiry_date: Optional[str] = None
     risk_accepted_at: Optional[str] = None
+    # Link to reference control
+    control_id: Optional[str] = None
     # Dependencies
     depends_on: list[str] = field(default_factory=list)
     blocks: list[str] = field(default_factory=list)
@@ -199,6 +201,38 @@ class Action:
         if self.max_score and self.max_score > 0:
             self.score_percentage = round((new_score / self.max_score) * 100, 1)
         self.updated_at = datetime.utcnow().isoformat()
+
+
+@dataclass
+class SecureScoreControl:
+    """Reference data for a Microsoft Secure Score control.
+
+    This is the static/shared metadata that is identical across all tenants.
+    Per-tenant actions link to this via control_id.
+    """
+    id: str = ""  # Slug identifier, e.g. "AdminMFAV2"
+    title: str = ""  # English display title
+    description: str = ""
+    remediation_steps: str = ""
+    prerequisites: str = ""
+    user_impact_description: str = ""
+    implementation_cost: str = ""  # Easy / Moderate / Difficult
+    category: str = ""  # Identity / Data / Device / Apps / Infrastructure
+    product: str = ""
+    reference_url: str = ""
+    max_score: float = 0.0
+    # Localized title variants for matching CSV imports in different languages
+    title_variants: list[str] = field(default_factory=list)
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> SecureScoreControl:
+        valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**valid_fields)
 
 
 @dataclass

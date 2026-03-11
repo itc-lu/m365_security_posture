@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework
+from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
@@ -224,6 +224,24 @@ class Database:
                     summary TEXT DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_drift_tenant ON drift_reports(tenant_name, timestamp);
+
+                -- Reference table of Secure Score controls (shared across tenants)
+                CREATE TABLE IF NOT EXISTS secure_score_controls (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    description TEXT DEFAULT '',
+                    remediation_steps TEXT DEFAULT '',
+                    prerequisites TEXT DEFAULT '',
+                    user_impact_description TEXT DEFAULT '',
+                    implementation_cost TEXT DEFAULT '',
+                    category TEXT DEFAULT '',
+                    product TEXT DEFAULT '',
+                    reference_url TEXT DEFAULT '',
+                    max_score REAL DEFAULT 0,
+                    title_variants TEXT DEFAULT '[]',
+                    updated_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_ssc_title ON secure_score_controls(title);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -233,11 +251,118 @@ class Database:
                 ("risk_review_date", "TEXT", "NULL"),
                 ("risk_expiry_date", "TEXT", "NULL"),
                 ("risk_accepted_at", "TEXT", "NULL"),
+                ("control_id", "TEXT", "NULL"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
+
+    # ── Secure Score Controls (reference table) ──
+
+    def upsert_control(self, control: SecureScoreControl) -> dict:
+        """Insert or update a secure score control reference entry."""
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT id FROM secure_score_controls WHERE id=?", (control.id,)
+            ).fetchone()
+            variants_json = json.dumps(control.title_variants if control.title_variants else [])
+            if existing:
+                conn.execute(
+                    """UPDATE secure_score_controls SET title=?, description=?,
+                       remediation_steps=?, prerequisites=?, user_impact_description=?,
+                       implementation_cost=?, category=?, product=?, reference_url=?,
+                       max_score=?, title_variants=?, updated_at=?
+                       WHERE id=?""",
+                    (control.title, control.description, control.remediation_steps,
+                     control.prerequisites, control.user_impact_description,
+                     control.implementation_cost, control.category, control.product,
+                     control.reference_url, control.max_score, variants_json, now,
+                     control.id),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO secure_score_controls
+                       (id, title, description, remediation_steps, prerequisites,
+                        user_impact_description, implementation_cost, category, product,
+                        reference_url, max_score, title_variants, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (control.id, control.title, control.description,
+                     control.remediation_steps, control.prerequisites,
+                     control.user_impact_description, control.implementation_cost,
+                     control.category, control.product, control.reference_url,
+                     control.max_score, variants_json, now),
+                )
+        return self.get_control(control.id)
+
+    def get_control(self, control_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM secure_score_controls WHERE id=?", (control_id,)
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+            return d
+
+    def list_controls(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM secure_score_controls ORDER BY title"
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+                result.append(d)
+            return result
+
+    def delete_control(self, control_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM secure_score_controls WHERE id=?", (control_id,))
+
+    def find_control_by_title(self, title: str) -> dict | None:
+        """Find a control by exact title or any title variant (case-insensitive)."""
+        title_lower = title.strip().lower()
+        with self._conn() as conn:
+            # Try exact title match first
+            row = conn.execute(
+                "SELECT * FROM secure_score_controls WHERE LOWER(title)=?",
+                (title_lower,),
+            ).fetchone()
+            if row:
+                d = dict(row)
+                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+                return d
+
+            # Search title_variants (JSON array)
+            rows = conn.execute("SELECT * FROM secure_score_controls").fetchall()
+            for r in rows:
+                variants = json.loads(r["title_variants"] or "[]")
+                for v in variants:
+                    if v.strip().lower() == title_lower:
+                        d = dict(r)
+                        d["title_variants"] = variants
+                        return d
+        return None
+
+    def seed_controls(self, controls: list[SecureScoreControl]) -> dict:
+        """Bulk upsert controls from seed data. Returns counts."""
+        new_count = 0
+        updated_count = 0
+        for ctrl in controls:
+            with self._conn() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM secure_score_controls WHERE id=?", (ctrl.id,)
+                ).fetchone()
+            self.upsert_control(ctrl)
+            if existing:
+                updated_count += 1
+            else:
+                new_count += 1
+        return {"new": new_count, "updated": updated_count, "total": len(controls)}
 
     # ── Tenant operations ──
 
@@ -506,6 +631,11 @@ class Database:
                         changes["essential_eight_control"] = action.essential_eight_control
                         changes["essential_eight_maturity"] = action.essential_eight_maturity
 
+                    # Link to reference control if available
+                    control_id = getattr(action, "control_id", None)
+                    if control_id:
+                        changes["control_id"] = control_id
+
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
                     changes["updated_at"] = datetime.utcnow().isoformat()
@@ -519,6 +649,7 @@ class Database:
                     # Insert new action
                     now = datetime.utcnow().isoformat()
                     action_id = action.id or _generate_id()
+                    control_id = getattr(action, "control_id", None) or None
                     conn.execute(
                         """INSERT INTO actions (id, tenant_name, title, description,
                            source_tool, source_id, workload, status, priority, risk_level,
@@ -528,8 +659,8 @@ class Database:
                            remediation_steps, current_value, recommended_value,
                            category, subcategory, planned_date, responsible,
                            tags, notes, reference_url, source_report_file,
-                           source_report_date, raw_data, created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           source_report_date, raw_data, created_at, updated_at, control_id)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (action_id, tenant_name, action.title, action.description,
                          action.source_tool, action.source_id, action.workload,
                          action.status, action.priority, action.risk_level,
@@ -543,7 +674,7 @@ class Database:
                          json.dumps(action.tags), action.notes, action.reference_url,
                          source_file, now,
                          json.dumps(action.raw_data if hasattr(action, "raw_data") else {}),
-                         action.created_at or now, now),
+                         action.created_at or now, now, control_id),
                     )
                     new_count += 1
 

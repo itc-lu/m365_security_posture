@@ -6,11 +6,15 @@ import csv
 import json
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
-    Action, SourceTool, Priority, RiskLevel, UserImpact,
+    Action, SecureScoreControl, SourceTool, Priority, RiskLevel, UserImpact,
     ImplementationEffort, Workload, ActionStatus,
 )
+
+if TYPE_CHECKING:
+    from ..database import Database
 
 
 # Map Secure Score categories to workloads (EN, DE, FR)
@@ -427,3 +431,108 @@ class SecureScoreParser:
             )
             actions.append(action)
         return actions
+
+
+def enrich_actions_from_controls(db: Database, actions: list[Action]) -> list[Action]:
+    """Enrich parsed actions with data from the secure_score_controls reference table.
+
+    Looks up each action by title (including localized variants) and fills in
+    missing description, remediation_steps, prerequisites, user_impact, etc.
+    Also sets the control_id link.
+    """
+    for action in actions:
+        if action.source_tool != SourceTool.SECURE_SCORE.value:
+            continue
+
+        control = db.find_control_by_title(action.title)
+        if not control:
+            continue
+
+        # Link to reference control
+        action.control_id = control["id"]
+
+        # Only fill in fields that are empty (don't overwrite existing data)
+        if not action.description:
+            action.description = control.get("description", "")
+
+        if not action.remediation_steps:
+            parts = []
+            prereqs = control.get("prerequisites", "")
+            steps = control.get("remediation_steps", "")
+            if prereqs:
+                parts.append(f"Prerequisites:\n{prereqs}")
+            if steps:
+                parts.append(f"Next steps:\n{steps}")
+            action.remediation_steps = "\n\n".join(parts)
+
+        if not action.reference_url:
+            action.reference_url = control.get("reference_url", "")
+
+        # Enrich implementation cost -> effort mapping
+        impl_cost = control.get("implementation_cost", "")
+        if impl_cost and action.implementation_effort == ImplementationEffort.MEDIUM.value:
+            action.implementation_effort = _map_effort(impl_cost)
+
+        # Enrich user impact from control description
+        ui_desc = control.get("user_impact_description", "")
+        if ui_desc and action.user_impact == UserImpact.LOW.value:
+            action.user_impact = _map_user_impact(ui_desc)
+
+    return actions
+
+
+def load_seed_controls() -> list[SecureScoreControl]:
+    """Load built-in seed data for Secure Score controls."""
+    seed_path = Path(__file__).parent.parent / "seed_data" / "secure_score_controls.json"
+    if not seed_path.exists():
+        return []
+    with open(seed_path) as f:
+        data = json.load(f)
+    controls = []
+    for entry in data:
+        controls.append(SecureScoreControl(
+            id=entry["id"],
+            title=entry.get("title", ""),
+            description=entry.get("description", ""),
+            remediation_steps=entry.get("remediation_steps", ""),
+            prerequisites=entry.get("prerequisites", ""),
+            user_impact_description=entry.get("user_impact_description", ""),
+            implementation_cost=entry.get("implementation_cost", ""),
+            category=entry.get("category", ""),
+            product=entry.get("product", ""),
+            reference_url=entry.get("reference_url", ""),
+            max_score=entry.get("max_score", 0.0),
+            title_variants=entry.get("title_variants", []),
+        ))
+    return controls
+
+
+def parse_graph_control_profiles(data: dict | list) -> list[SecureScoreControl]:
+    """Parse secureScoreControlProfiles from MS Graph API into reference controls.
+
+    Call with the response from GET /security/secureScoreControlProfiles.
+    """
+    if isinstance(data, dict):
+        profiles = data.get("value", [])
+    elif isinstance(data, list):
+        profiles = data
+    else:
+        profiles = []
+
+    controls = []
+    for p in profiles:
+        ctrl = SecureScoreControl(
+            id=p.get("id", p.get("controlName", "")),
+            title=p.get("title", p.get("controlName", "")),
+            description=p.get("description", ""),
+            remediation_steps=p.get("remediation", p.get("implementationStatus", "")),
+            prerequisites=p.get("prerequisites", ""),
+            user_impact_description=p.get("userImpact", ""),
+            implementation_cost=p.get("implementationCost", ""),
+            category=p.get("controlCategory", ""),
+            product=", ".join(p.get("service", "").split(";")) if p.get("service") else "",
+            reference_url=p.get("actionUrl", ""),
+            max_score=float(p.get("maxScore", 0)),
+        )
+        controls.append(ctrl)
+    return controls

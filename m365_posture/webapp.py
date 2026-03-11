@@ -23,6 +23,7 @@ from .models import (
 )
 from .parsers import (
     SecureScoreParser, ScubaParser, ZeroTrustParser, SCTParser, M365AssessParser,
+    enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
 )
 from .essential_eight import apply_e8_mapping, get_e8_summary
 from .correlation import auto_correlate, get_correlation_summary
@@ -213,6 +214,11 @@ def create_app(db_path: str = None) -> Flask:
             parser = parser_cls()
             actions = parser.parse_file(tmp_path)
             actions = apply_e8_mapping(actions)
+
+            # Enrich Secure Score actions from the reference control table
+            if source == "secure-score":
+                actions = enrich_actions_from_controls(db, actions)
+
             new_count, updated_count = db.merge_actions(name, actions, source_tool, file.filename)
 
             # Auto-correlate after import
@@ -660,6 +666,94 @@ def create_app(db_path: str = None) -> Flask:
         data = request.get_json() or {}
         result = detect_drift(db, name, data.get("source_tool"))
         return jsonify(result)
+
+    # ── Secure Score Controls (reference table) endpoints ──
+
+    @app.route("/api/secure-score-controls", methods=["GET"])
+    def api_list_controls():
+        return jsonify(db.list_controls())
+
+    @app.route("/api/secure-score-controls/<control_id>", methods=["GET"])
+    def api_get_control(control_id):
+        ctrl = db.get_control(control_id)
+        if not ctrl:
+            return _json_error("Control not found", 404)
+        return jsonify(ctrl)
+
+    @app.route("/api/secure-score-controls/<control_id>", methods=["PUT"])
+    def api_update_control(control_id):
+        data = request.get_json() or {}
+        from .models import SecureScoreControl as SSC
+        existing = db.get_control(control_id)
+        if not existing:
+            return _json_error("Control not found", 404)
+        existing.update(data)
+        existing["id"] = control_id  # Prevent id change
+        ctrl = SSC.from_dict(existing)
+        result = db.upsert_control(ctrl)
+        return jsonify(result)
+
+    @app.route("/api/secure-score-controls/<control_id>", methods=["DELETE"])
+    def api_delete_control(control_id):
+        if not db.get_control(control_id):
+            return _json_error("Control not found", 404)
+        db.delete_control(control_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/secure-score-controls/seed", methods=["POST"])
+    def api_seed_controls():
+        """Load built-in seed data into the controls reference table."""
+        controls = load_seed_controls()
+        if not controls:
+            return _json_error("Seed data file not found")
+        result = db.seed_controls(controls)
+        return jsonify(result)
+
+    @app.route("/api/tenants/<name>/fetch-controls", methods=["POST"])
+    def api_fetch_controls(name):
+        """Fetch secureScoreControlProfiles from Graph API using tenant credentials."""
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+
+        client_id = tenant.get("client_id", "")
+        client_secret = tenant.get("client_secret", "")
+        tenant_id = tenant.get("tenant_id", "")
+
+        if not all([client_id, client_secret, tenant_id]):
+            return _json_error(
+                "Tenant must have client_id, client_secret, and tenant_id configured "
+                "to fetch from Graph API. Use POST /api/secure-score-controls/seed "
+                "for offline seeding instead."
+            )
+
+        try:
+            import requests as http_requests
+            # Get access token
+            token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+            token_resp = http_requests.post(token_url, data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scope": "https://graph.microsoft.com/.default",
+                "grant_type": "client_credentials",
+            }, timeout=30)
+            token_resp.raise_for_status()
+            access_token = token_resp.json()["access_token"]
+
+            # Fetch control profiles
+            graph_url = "https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            resp = http_requests.get(graph_url, headers=headers, timeout=30)
+            resp.raise_for_status()
+
+            controls = parse_graph_control_profiles(resp.json())
+            result = db.seed_controls(controls)
+            return jsonify(result)
+
+        except ImportError:
+            return _json_error("requests library is required for Graph API calls. Install with: pip install requests")
+        except Exception as e:
+            return _json_error(f"Graph API fetch failed: {str(e)}")
 
     # ── Enums update ──
 
