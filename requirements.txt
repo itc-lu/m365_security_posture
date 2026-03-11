@@ -1,0 +1,5 @@
+# Core - no external dependencies required for basic operation
+
+# Optional: For MS Graph API integration (Secure Score auto-fetch)
+# requests>=2.28
+# msal>=1.20
