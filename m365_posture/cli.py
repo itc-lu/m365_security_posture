@@ -488,47 +488,7 @@ def cmd_web(args):
         if data_dir:
             db_path = os.path.join(data_dir, "m365_posture.db")
 
-    # Auto-migrate if JSON data exists
-    if not db_path or not os.path.exists(db_path):
-        _auto_migrate(args, db_path)
-
     run_server(port=args.port, db_path=db_path, open_browser=not args.no_browser)
-
-
-def cmd_migrate(args):
-    from .database import Database
-
-    db_path = args.db_path
-    data_dir = getattr(args, "data_dir", None) or os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "data"
-    )
-
-    db = Database(db_path)
-    result = db.migrate_from_json(data_dir)
-    if result.get("migrated"):
-        print(f"Migration complete. Tenants: {', '.join(result.get('tenants', []))}")
-        print(f"Database: {db.db_path}")
-    else:
-        print("No data to migrate.")
-
-
-def _auto_migrate(args, db_path):
-    """Auto-migrate JSON data to SQLite on first web launch."""
-    from .database import Database
-
-    data_dir = getattr(args, "data_dir", None) or os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "data"
-    )
-
-    # Check if there's JSON data to migrate
-    from .storage import StorageManager
-    sm = StorageManager(data_dir)
-    tenants = sm.list_tenants()
-    if tenants:
-        print(f"Found {len(tenants)} tenant(s) in JSON format. Auto-migrating to SQLite...")
-        db = Database(db_path)
-        db.migrate_from_json(data_dir)
-        print("Migration complete.")
 
 
 # ── Main CLI ──
@@ -644,11 +604,6 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--no-browser", action="store_true", help="Don't open browser automatically")
     web.add_argument("--db", dest="db_path", help="Path to SQLite database file")
     web.set_defaults(func=cmd_web)
-
-    # Migrate command
-    migrate = sub.add_parser("migrate", help="Migrate JSON data to SQLite database")
-    migrate.add_argument("--db", dest="db_path", help="Path to SQLite database file")
-    migrate.set_defaults(func=cmd_migrate)
 
     return parser
 

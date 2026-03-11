@@ -484,18 +484,6 @@ def create_app(db_path: str = None) -> Flask:
             # Cleanup will happen after response
             pass
 
-    # ── Migration endpoint ──
-
-    @app.route("/api/migrate", methods=["POST"])
-    def api_migrate():
-        data = request.get_json() or {}
-        data_dir = data.get("data_dir")
-        if not data_dir:
-            # Default: same directory where DB is
-            data_dir = str(Path(db.db_path).parent)
-        result = db.migrate_from_json(data_dir)
-        return jsonify(result)
-
     return app
 
 
