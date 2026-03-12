@@ -1065,34 +1065,60 @@ async function batchDeleteActions() {
 let _addToPlanIds = [];
 
 async function showAddToPlan(actionIds) {
-  // If called without args, get from selected checkboxes
   if(!actionIds) {
     actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   }
   if(!actionIds.length) return toast('No actions selected', 'error');
-  _addToPlanIds = actionIds;
+
+  // Filter out completed/risk-accepted/not-applicable actions
+  const validActions = _actionsData.filter(a => actionIds.includes(a.id) && !['Completed','Risk Accepted','Not Applicable','Third Party'].includes(a.status));
+  if(!validActions.length) return toast('All selected actions are already completed or excluded', 'error');
+  _addToPlanIds = validActions.map(a => a.id);
+
   const t = state.activeTenant.name;
   const plans = await api.get(`/api/tenants/${t}/plans`);
-
-  let planOptions = plans.map(p => `<option value="${p.id}">${p.name} (${p.item_count} actions, ${p.status})</option>`).join('');
   const hasPlans = plans.length > 0;
 
-  openModal(`Add ${actionIds.length} Action${actionIds.length>1?'s':''} to Plan`, `
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="this.querySelector('input').checked=true;this.querySelector('input').dispatchEvent(new Event('change'))">
-        <input type="radio" name="plan-mode" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''} onchange="document.getElementById('existing-plan-section').classList.remove('hidden');document.getElementById('new-plan-section').classList.add('hidden')">
-        <span style="font-size:13px;font-weight:500;color:var(--text)">Add to existing plan</span>
+  // For each plan, fetch its items to know which actions are already in it
+  const planData = [];
+  for(const p of plans) {
+    const full = await api.get(`/api/plans/${p.id}`);
+    planData.push({...p, existingIds: new Set(full.items.map(i => i.action_id))});
+  }
+
+  let planOptions = planData.map(p => {
+    const dupes = _addToPlanIds.filter(id => p.existingIds.has(id)).length;
+    const dupeNote = dupes ? ` - ${dupes} already in plan` : '';
+    return `<option value="${p.id}" data-dupes="${dupes}">${p.name} (${p.item_count} actions, ${p.status})${dupeNote}</option>`;
+  }).join('');
+
+  // Store plan data for submit validation
+  window._atpPlanData = planData;
+
+  const skipped = actionIds.length - _addToPlanIds.length;
+  const skippedNote = skipped ? `<div style="font-size:12px;color:var(--warning);margin-bottom:8px">${skipped} completed/excluded action${skipped>1?'s':''} skipped</div>` : '';
+
+  openModal(`Add ${_addToPlanIds.length} Action${_addToPlanIds.length>1?'s':''} to Plan`, `
+    ${skippedNote}
+    <div style="margin-bottom:12px">
+      <div style="margin-bottom:8px">
+        <input type="radio" name="plan-mode" id="pm-existing" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''}
+          onchange="document.getElementById('existing-plan-section').style.display='';document.getElementById('new-plan-section').style.display='none'">
+        <span onclick="document.getElementById('pm-existing').click()" style="font-size:14px;cursor:pointer;margin-left:4px">Add to existing plan</span>
       </div>
-      <div id="existing-plan-section" class="${hasPlans?'':'hidden'}" style="padding-left:28px">
+      <div id="existing-plan-section" style="${hasPlans?'':'display:none;'}padding-left:24px;margin-bottom:12px">
         <select id="atp-plan-id" style="width:100%">${planOptions||'<option>No plans available</option>'}</select>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="this.querySelector('input').checked=true;this.querySelector('input').dispatchEvent(new Event('change'))">
-        <input type="radio" name="plan-mode" value="new" ${!hasPlans?'checked':''} onchange="document.getElementById('new-plan-section').classList.remove('hidden');document.getElementById('existing-plan-section').classList.add('hidden')">
-        <span style="font-size:13px;font-weight:500;color:var(--text)">Create new plan</span>
+    </div>
+    <div>
+      <div style="margin-bottom:8px">
+        <input type="radio" name="plan-mode" id="pm-new" value="new" ${!hasPlans?'checked':''}
+          onchange="document.getElementById('new-plan-section').style.display='';document.getElementById('existing-plan-section').style.display='none'">
+        <span onclick="document.getElementById('pm-new').click()" style="font-size:14px;cursor:pointer;margin-left:4px">Create new plan</span>
       </div>
-      <div id="new-plan-section" class="${hasPlans?'hidden':''}" style="padding-left:28px">
-        <div class="form-group"><label>Plan Name</label><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
-        <div class="form-group"><label>Description</label><textarea id="atp-new-desc" rows="2"></textarea></div>
+      <div id="new-plan-section" style="${hasPlans?'display:none;':''}padding-left:24px">
+        <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Plan Name</span><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
+        <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Description</span><textarea id="atp-new-desc" rows="2"></textarea></div>
       </div>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
@@ -1101,27 +1127,38 @@ async function showAddToPlan(actionIds) {
 
 async function addToPlanSubmit() {
   const actionIds = _addToPlanIds;
+  if(!actionIds.length) return toast('No actions to add', 'error');
   const mode = document.querySelector('input[name="plan-mode"]:checked')?.value;
   const t = state.activeTenant.name;
-  let planId;
 
   if(mode === 'new') {
     const name = document.getElementById('atp-new-name').value;
     if(!name) return toast('Plan name required', 'error');
     const r = await api.post(`/api/tenants/${t}/plans`, {name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds});
     if(r.error) return toast(r.error, 'error');
-    planId = r.id;
+    closeModal();
+    toast(`Plan created with ${actionIds.length} action${actionIds.length>1?'s':''}`, 'success');
   } else {
-    planId = document.getElementById('atp-plan-id').value;
+    const planId = document.getElementById('atp-plan-id').value;
     if(!planId) return toast('Select a plan', 'error');
-    // Add actions one by one
-    for(const aid of actionIds) {
-      const r = await api.post(`/api/plans/${planId}/items`, {action_id: aid});
-      if(r.error && !r.error.includes('UNIQUE')) toast(r.error, 'error');
+    // Filter out actions already in the plan
+    const planInfo = (window._atpPlanData||[]).find(p => p.id === planId);
+    const existingIds = planInfo ? planInfo.existingIds : new Set();
+    const newIds = actionIds.filter(id => !existingIds.has(id));
+    const dupes = actionIds.length - newIds.length;
+
+    if(!newIds.length) {
+      closeModal();
+      return toast('All selected actions are already in this plan', 'error');
     }
+
+    for(const aid of newIds) {
+      await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+    }
+    closeModal();
+    const dupeMsg = dupes ? ` (${dupes} already in plan, skipped)` : '';
+    toast(`${newIds.length} action${newIds.length>1?'s':''} added to plan${dupeMsg}`, 'success');
   }
-  closeModal();
-  toast(`${actionIds.length} action${actionIds.length>1?'s':''} added to plan`, 'success');
 }
 
 function actionDetailHtml(a) {
