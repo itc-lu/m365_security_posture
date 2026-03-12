@@ -151,6 +151,12 @@ class Action:
     source_report_date: str = ""
     raw_data: dict = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
+    # Secure Score enrichment fields
+    threats: list[str] = field(default_factory=list)  # Threats mitigated (e.g. accountBreach, dataExfiltration)
+    tier: str = ""  # Control tier: Core, Defense in Depth, Advanced
+    action_type: str = ""  # Config, Review, Behavior
+    remediation_impact: str = ""  # Impact description of implementing remediation
+    deprecated: bool = False  # Whether the control is deprecated
     # Risk acceptance workflow
     risk_justification: str = ""
     risk_owner: str = ""
@@ -200,7 +206,7 @@ class Action:
         if max_score is not None:
             self.max_score = max_score
         if self.max_score and self.max_score > 0:
-            self.score_percentage = round((new_score / self.max_score) * 100, 1)
+            self.score_percentage = round((new_score / self.max_score) * 100, 2)
         self.updated_at = datetime.utcnow().isoformat()
 
 

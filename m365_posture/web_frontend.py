@@ -394,7 +394,7 @@ function gauge(pct, size=120, label='') {
       <circle class="track" cx="50" cy="50" r="${r}"/>
       <circle class="fill" cx="50" cy="50" r="${r}" stroke="${pctColor(pct)}" stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
     </svg>
-    <div class="pct">${Math.round(pct)}%<small>${label}</small></div>
+    <div class="pct">${pct.toFixed(2)}%<small>${label}</small></div>
   </div>`;
 }
 
@@ -484,7 +484,10 @@ function requireTenant() {
 }
 
 // ── Dashboard ──
-async function renderDashboard() {
+// Store dashboard data for source filter switching
+let _dashData = {};
+
+async function renderDashboard(sourceFilter) {
   const c = document.getElementById('content');
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
@@ -499,30 +502,96 @@ async function renderDashboard() {
     ${state.tenants.length>=2?'<button class="btn btn-sm" onclick="showDashboardCompare()">Compare Tenants</button>':''}
     <button class="btn btn-sm btn-primary" onclick="downloadDashboardPDF()">PDF Report</button>`;
 
-  const [scores, prioritized, snapshots, riskSummary] = await Promise.all([
-    api.get(`/api/tenants/${t}/scores`),
-    api.get(`/api/tenants/${t}/prioritized?limit=10`),
-    api.get(`/api/tenants/${t}/snapshots?limit=20`),
-    api.get(`/api/tenants/${t}/risk-summary`),
-  ]);
+  // Fetch data (or reuse if just switching source filter)
+  if(!sourceFilter && sourceFilter !== '') {
+    const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
+      api.get(`/api/tenants/${t}/scores`),
+      api.get(`/api/tenants/${t}/prioritized?limit=10`),
+      api.get(`/api/tenants/${t}/snapshots?limit=20`),
+      api.get(`/api/tenants/${t}/risk-summary`),
+      api.get(`/api/tenants/${t}/actions`),
+    ]);
+    _dashData = {scores, prioritized, snapshots, riskSummary, allActions};
+  }
 
+  const {scores, prioritized, snapshots, riskSummary, allActions} = _dashData;
+  const sf = sourceFilter || '';
+
+  // Filter actions by source if selected
+  const filteredActions = sf ? allActions.filter(a => a.source_tool === sf) : allActions;
+
+  // Compute filtered scores
+  let dispScore, dispMax, dispPct, dispTotal, dispCompleted;
+  if(sf) {
+    const toolData = scores.by_tool?.[sf];
+    if(toolData) {
+      dispScore = toolData.score;
+      dispMax = toolData.max_score;
+      dispPct = toolData.percentage;
+      dispTotal = toolData.total;
+      dispCompleted = toolData.completed;
+    } else {
+      dispScore = 0; dispMax = 0; dispPct = 0; dispTotal = 0; dispCompleted = 0;
+    }
+  } else {
+    dispScore = scores.total_score;
+    dispMax = scores.total_max;
+    dispPct = scores.percentage;
+    dispTotal = scores.total_actions;
+    dispCompleted = scores.completed_actions;
+  }
+
+  // Build source filter options
+  const sourceTools = Object.keys(scores.by_tool||{});
+  const sourceOpts = [`<option value="">All Sources (Overall)</option>`].concat(
+    sourceTools.map(s => `<option value="${s}" ${sf===s?'selected':''}>${s}</option>`)
+  ).join('');
+
+  // Tool gauge cards
   let toolCards = '';
   for(const [tool, d] of Object.entries(scores.by_tool||{})) {
-    toolCards += `<div class="card stat-card"><div class="card-header">${tool}</div>${gauge(d.percentage, 100)}<div class="label">${d.completed}/${d.total} actions</div></div>`;
+    const isActive = sf === tool;
+    toolCards += `<div class="card stat-card" style="${isActive?'border:2px solid var(--primary);':''}cursor:pointer" onclick="renderDashboard('${tool}')">
+      <div class="card-header">${tool}</div>${gauge(d.percentage, 100)}
+      <div class="label">${d.score}/${d.max_score} pts &middot; ${d.completed}/${d.total} actions</div>
+    </div>`;
   }
 
+  // Workload bars (filtered by source if selected)
   let wlBars = '';
-  for(const [wl, d] of Object.entries(scores.by_workload||{})) {
-    const color = d.percentage >= 80 ? 'var(--success)' : d.percentage >= 40 ? 'var(--warning)' : 'var(--danger)';
-    wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(1)}%</span></div>${progressBar(d.percentage, color)}</div>`;
+  if(sf) {
+    // Compute per-workload scores for filtered actions
+    const wlMap = {};
+    filteredActions.forEach(a => {
+      if(!wlMap[a.workload]) wlMap[a.workload] = {score:0, max_score:0, total:0, completed:0};
+      wlMap[a.workload].score += a.score||0;
+      wlMap[a.workload].max_score += a.max_score||0;
+      wlMap[a.workload].total++;
+      if(a.status==='Completed') wlMap[a.workload].completed++;
+    });
+    for(const [wl, d] of Object.entries(wlMap)) {
+      const pct = d.max_score > 0 ? (d.score/d.max_score*100) : 0;
+      const color = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${pct.toFixed(2)}%</span></div>${progressBar(pct, color)}</div>`;
+    }
+  } else {
+    for(const [wl, d] of Object.entries(scores.by_workload||{})) {
+      const color = d.percentage >= 80 ? 'var(--success)' : d.percentage >= 40 ? 'var(--warning)' : 'var(--danger)';
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(2)}%</span></div>${progressBar(d.percentage, color)}</div>`;
+    }
   }
 
+  // Status pills (filtered)
   let statusPills = '';
-  for(const [s, n] of Object.entries(scores.by_status||{})) {
-    statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
+  if(sf) {
+    const stMap = {};
+    filteredActions.forEach(a => { stMap[a.status] = (stMap[a.status]||0)+1; });
+    for(const [s, n] of Object.entries(stMap)) statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
+  } else {
+    for(const [s, n] of Object.entries(scores.by_status||{})) statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
   }
 
-  let topActions = prioritized.slice(0,10).map(a => `<tr><td>${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td></tr>`).join('');
+  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => `<tr><td>${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td></tr>`).join('');
 
   // Mini trend sparkline
   let trendHtml = '';
@@ -530,7 +599,7 @@ async function renderDashboard() {
     const pts = snapshots.slice().reverse();
     const delta = pts[pts.length-1].percentage - pts[pts.length-2].percentage;
     const cls = delta > 0 ? 'drift-positive' : delta < 0 ? 'drift-negative' : 'drift-neutral';
-    trendHtml = `<div class="card stat-card"><div class="value ${cls}">${delta>=0?'+':''}${delta.toFixed(1)}%</div><div class="label">Last Change</div><div style="margin-top:8px">${miniSparkline(pts.map(p=>p.percentage))}</div></div>`;
+    trendHtml = `<div class="card stat-card"><div class="value ${cls}">${delta>=0?'+':''}${delta.toFixed(2)}%</div><div class="label">Last Change</div><div style="margin-top:8px">${miniSparkline(pts.map(p=>p.percentage))}</div></div>`;
   } else {
     trendHtml = `<div class="card stat-card"><div class="value drift-neutral">--</div><div class="label">Last Change</div><div style="font-size:12px;color:var(--text-light);margin-top:8px">Import data twice to see trends</div></div>`;
   }
@@ -545,6 +614,8 @@ async function renderDashboard() {
   }
 
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+  const scoreLabel = sf ? sf : 'Overall Security Score';
+  const pointsLabel = dispScore != null && dispMax ? `${dispScore}/${dispMax} points` : scoreLabel;
 
   c.innerHTML = `${riskAlert}
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
@@ -554,23 +625,28 @@ async function renderDashboard() {
           <div style="font-size:13px;opacity:.7;margin-top:4px">${state.activeTenant.tenant_id||'No Tenant ID'} &middot; ${today}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:42px;font-weight:800">${scores.percentage?.toFixed(1)||0}%</div>
-          <div style="font-size:12px;opacity:.7">${scores.total_score && scores.total_max ? scores.total_score + '/' + scores.total_max + ' points' : 'Overall Security Score'}</div>
+          <div style="font-size:42px;font-weight:800">${(dispPct||0).toFixed(2)}%</div>
+          <div style="font-size:12px;opacity:.7">${pointsLabel}</div>
         </div>
       </div>
     </div>
+    <div class="mb-16" style="display:flex;align-items:center;gap:12px">
+      <label style="font-size:13px;font-weight:600;margin:0;width:auto">Score Source:</label>
+      <select id="dash-source-filter" onchange="renderDashboard(this.value)" style="max-width:280px">${sourceOpts}</select>
+      ${sf?`<button class="btn btn-sm" onclick="renderDashboard('')">Show All</button>`:''}
+    </div>
     <div id="dashboard-report">
     <div class="grid grid-4 mb-16">
-      <div class="card stat-card"><div class="value">${scores.percentage?.toFixed(1)||0}%</div><div class="label">Overall Score</div></div>
-      <div class="card stat-card"><div class="value">${scores.total_actions||0}</div><div class="label">Total Actions</div></div>
-      <div class="card stat-card"><div class="value">${scores.completed_actions||0}</div><div class="label">Completed</div></div>
+      <div class="card stat-card"><div class="value">${(dispPct||0).toFixed(2)}%</div><div class="label">${sf?sf+' Score':'Overall Score'}</div></div>
+      <div class="card stat-card"><div class="value">${dispTotal||0}</div><div class="label">Total Actions</div></div>
+      <div class="card stat-card"><div class="value">${dispCompleted||0}</div><div class="label">Completed</div></div>
       ${trendHtml}
     </div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Score by Source Tool</div><div class="grid grid-2">${toolCards}</div></div>
-      <div class="card"><div class="card-header">Score by Workload</div>${wlBars}</div>
+      <div class="card"><div class="card-header">Score by Workload${sf?' ('+sf+')':''}</div>${wlBars||'<div style="color:var(--text-light);padding:8px">No workload data</div>'}</div>
     </div>
-    <div class="card mb-16"><div class="card-header">Status Distribution</div><div style="padding:8px">${statusPills}</div></div>
+    <div class="card mb-16"><div class="card-header">Status Distribution${sf?' ('+sf+')':''}</div><div style="padding:8px">${statusPills||'No data'}</div></div>
     <div class="card"><div class="card-header">Top Priority Actions (by ROI)</div>
       <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th></tr></thead><tbody>${topActions||'<tr><td colspan="4" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
     </div>
@@ -610,12 +686,12 @@ async function doDashboardCompare() {
   }).join('');
 
   let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(1)}%</td>`).join('');
+    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
     return `<tr><td>${tool}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(1)}%</td>`).join('');
+    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
     return `<tr><td>${wl}</td>${cells}</tr>`;
   }).join('');
 
@@ -931,6 +1007,8 @@ function actionDetailHtml(a) {
       <div class="action-detail-layout">
         <div>
           ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
+          ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+t+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
           <div id="deps-${a.id}" class="mb-8"></div>
@@ -949,6 +1027,9 @@ function actionDetailHtml(a) {
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
             <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort}</div></div>
             <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${a.required_licence||'N/A'}</div></div>
+            ${a.tier?`<div class="sidebar-field"><div class="field-label">Tier</div><div class="field-value">${a.tier}</div></div>`:''}
+            ${a.action_type?`<div class="sidebar-field"><div class="field-label">Action Type</div><div class="field-value">${a.action_type}</div></div>`:''}
+            ${a.deprecated?`<div class="sidebar-field"><div class="field-label">Status</div><div class="field-value"><span class="badge badge-danger">Deprecated</span></div></div>`:''}
             ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${a.responsible}</div></div>`:''}
             ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
             ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
@@ -1185,7 +1266,7 @@ async function graphImportScores() {
       <div class="stat-card card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
       <div class="stat-card card"><div class="value" style="color:var(--success)">${r.new_actions}</div><div class="label">New</div></div>
       <div class="stat-card card"><div class="value" style="color:var(--warning)">${r.updated_actions}</div><div class="label">Updated</div></div>
-      <div class="stat-card card"><div class="value">${r.snapshot?.percentage?.toFixed(1)||'--'}%</div><div class="label">Score</div></div>
+      <div class="stat-card card"><div class="value">${r.snapshot?.percentage?.toFixed(2)||'--'}%</div><div class="label">Score</div></div>
     </div>`;
 }
 
@@ -1233,14 +1314,14 @@ async function doImport() {
       <div class="card mb-16">
         <div class="card-header">Drift Detection</div>
         <div class="drift-banner ${cls}">
-          <div class="delta ${deltaCls}">${drift.score_delta>=0?'+':''}${drift.score_delta.toFixed(1)}%</div>
+          <div class="delta ${deltaCls}">${drift.score_delta>=0?'+':''}${drift.score_delta.toFixed(2)}%</div>
           <div>
             <strong>${drift.summary}</strong><br>
             <span style="font-size:12px;color:var(--text-light)">Compared: ${drift.previous_timestamp?.substring(0,16)} vs ${drift.current_timestamp?.substring(0,16)}</span>
           </div>
         </div>
-        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${r.scope}</strong>: ${r.old_value.toFixed(1)}% → ${r.new_value.toFixed(1)}% <span class="drift-negative">(${r.delta.toFixed(1)}%)</span></div>`).join('')}</div>`:''}
-        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${i.scope}</strong>: ${i.old_value.toFixed(1)}% → ${i.new_value.toFixed(1)}% <span class="drift-positive">(+${i.delta.toFixed(1)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${r.scope}</strong>: ${r.old_value.toFixed(2)}% → ${r.new_value.toFixed(2)}% <span class="drift-negative">(${r.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${i.scope}</strong>: ${i.old_value.toFixed(2)}% → ${i.new_value.toFixed(2)}% <span class="drift-positive">(+${i.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
         ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.scope}: <strong>${f.count}</strong> new action(s) from ${f.file||'import'}</div>`).join('')}</div>`:''}
         ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.title} (was: ${f.old_status})</div>`).join('')}</div>`:''}
       </div>`;
@@ -1332,8 +1413,8 @@ async function viewPlan(planId) {
   ]);
 
   let toolImpact = Object.entries(sim.by_tool||{}).map(([tool,d]) => `
-    <div class="mb-8"><div class="flex justify-between"><span style="font-size:13px">${tool}</span><span style="font-size:13px;font-weight:600;color:var(--success)">+${d.percentage_gain?.toFixed(1)||0}%</span></div>
-    <div class="flex gap-8" style="font-size:12px;color:var(--text-light)">${d.current_percentage?.toFixed(1)}% → ${d.projected_percentage?.toFixed(1)}% (${d.actions_resolved} actions)</div>
+    <div class="mb-8"><div class="flex justify-between"><span style="font-size:13px">${tool}</span><span style="font-size:13px;font-weight:600;color:var(--success)">+${d.percentage_gain?.toFixed(2)||0}%</span></div>
+    <div class="flex gap-8" style="font-size:12px;color:var(--text-light)">${d.current_percentage?.toFixed(2)}% → ${d.projected_percentage?.toFixed(2)}% (${d.actions_resolved} actions)</div>
     ${progressBar(d.projected_percentage)}</div>`).join('');
 
   let e8Impact = Object.entries(sim.essential_eight_impact||{}).map(([ctrl,d]) => `
@@ -1361,7 +1442,7 @@ async function viewPlan(planId) {
 
     <div class="grid grid-4 mb-16">
       <div class="card stat-card"><div class="value">${sim.actions_count}</div><div class="label">Actions to Implement</div></div>
-      <div class="card stat-card"><div class="value" style="color:var(--success)">+${sim.percentage_gain?.toFixed(1)}%</div><div class="label">Projected Score Gain</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--success)">+${sim.percentage_gain?.toFixed(2)}%</div><div class="label">Projected Score Gain</div></div>
       <div class="card stat-card">${gauge(sim.current_percentage||0, 100, 'Current')}</div>
       <div class="card stat-card">${gauge(sim.projected_percentage||0, 100, 'Projected')}</div>
     </div>
@@ -1473,7 +1554,7 @@ async function doCompare() {
   }).join('');
 
   let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(1)}%</td>`).join('');
+    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
     return `<tr><td>${tool}</td>${cells}</tr>`;
   }).join('');
 
@@ -1548,7 +1629,7 @@ function miniSparkline(values, w=200, h=40) {
   const pts = values.map((v,i) => {
     const x = (i/(values.length-1||1))*w;
     const y = h - ((v-min)/range)*h;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
   });
   const area = `${pts.join(' ')} ${w},${h} 0,${h}`;
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
@@ -1582,9 +1663,9 @@ function trendChart(snapshots, w=800, h=250) {
     return {x, y, p};
   });
 
-  const line = coords.map(c=>`${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-  const area = line + ` ${coords[coords.length-1].x.toFixed(1)},${pad.t+ch} ${coords[0].x.toFixed(1)},${pad.t+ch}`;
-  const dots = coords.map(c=>`<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" class="dot"><title>${c.p.timestamp?.substring(0,16)}: ${c.p.percentage.toFixed(1)}% (${c.p.trigger||''})</title></circle>`).join('');
+  const line = coords.map(c=>`${c.x.toFixed(2)},${c.y.toFixed(2)}`).join(' ');
+  const area = line + ` ${coords[coords.length-1].x.toFixed(2)},${pad.t+ch} ${coords[0].x.toFixed(2)},${pad.t+ch}`;
+  const dots = coords.map(c=>`<circle cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" class="dot"><title>${c.p.timestamp?.substring(0,16)}: ${c.p.percentage.toFixed(2)}% (${c.p.trigger||''})</title></circle>`).join('');
 
   // X-axis labels (show max 8)
   let xLabels = '';
@@ -1618,11 +1699,11 @@ async function renderTrending() {
 
   // Snapshot table
   let snapRows = snapshots.map(s => {
-    const tools = Object.entries(s.by_tool||{}).map(([tool,d])=>`${tool}: ${d.percentage?.toFixed(1)||0}%`).join(', ');
+    const tools = Object.entries(s.by_tool||{}).map(([tool,d])=>`${tool}: ${d.percentage?.toFixed(2)||0}%`).join(', ');
     return `<tr>
       <td><code>${s.timestamp?.substring(0,16)}</code></td>
       <td>${s.trigger||''}</td>
-      <td><strong>${s.percentage?.toFixed(1)}%</strong></td>
+      <td><strong>${s.percentage?.toFixed(2)}%</strong></td>
       <td>${s.total_actions}</td>
       <td>${s.completed_actions}</td>
       <td style="font-size:12px">${tools||'-'}</td>
@@ -1635,8 +1716,8 @@ async function renderTrending() {
     return `<tr>
       <td><code>${d.timestamp?.substring(0,16)}</code></td>
       <td>${d.source_tool}</td>
-      <td class="${cls}">${d.score_delta>=0?'+':''}${d.score_delta?.toFixed(1)}%</td>
-      <td>${d.score_before?.toFixed(1)}% → ${d.score_after?.toFixed(1)}%</td>
+      <td class="${cls}">${d.score_delta>=0?'+':''}${d.score_delta?.toFixed(2)}%</td>
+      <td>${d.score_before?.toFixed(2)}% → ${d.score_after?.toFixed(2)}%</td>
       <td>${d.regressions?.length||0}</td>
       <td>${d.improvements?.length||0}</td>
       <td style="font-size:12px;max-width:200px">${d.summary}</td>
@@ -1671,7 +1752,7 @@ function showTrendTab(el, tabId) {
 
 async function takeSnapshot() {
   const r = await api.post(`/api/tenants/${state.activeTenant.name}/snapshots`, {trigger:'manual'});
-  toast(`Snapshot taken: ${r.percentage?.toFixed(1)}%`, 'success');
+  toast(`Snapshot taken: ${r.percentage?.toFixed(2)}%`, 'success');
   renderTrending();
 }
 

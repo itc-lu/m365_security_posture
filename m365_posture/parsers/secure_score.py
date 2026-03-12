@@ -380,7 +380,7 @@ class SecureScoreParser:
             required_licence=licence_text,
             score=score,
             max_score=max_score,
-            score_percentage=round((score / max_score * 100), 1) if max_score > 0 else 0,
+            score_percentage=round((score / max_score * 100), 2) if max_score > 0 else 0,
             remediation_steps=remediation_text,
             category=category,
             subcategory=product,
@@ -486,6 +486,23 @@ class SecureScoreParser:
             # Rank as reference_id
             rank = profile.get("rank", idx)
 
+            # Additional enrichment fields from control profiles
+            threats = profile.get("threats", []) or []
+            tier = profile.get("tier", "")
+            action_type = profile.get("actionType", "")
+            remediation_impact = profile.get("remediationImpact", "")
+            deprecated = bool(profile.get("deprecated", False))
+
+            # Control state updates from profile (e.g. ignored, thirdParty)
+            control_state = profile.get("controlStateUpdates", [])
+
+            # Map risk level from tier
+            tier_risk = {
+                "Core": RiskLevel.HIGH.value,
+                "Defense in Depth": RiskLevel.MEDIUM.value,
+                "Advanced": RiskLevel.LOW.value,
+            }
+
             action = Action(
                 title=name,
                 description=description,
@@ -495,19 +512,25 @@ class SecureScoreParser:
                 workload=CATEGORY_WORKLOAD_MAP.get(category, Workload.GENERAL.value),
                 status=_determine_status(score, max_score) if max_score > 0 else ActionStatus.TODO.value,
                 priority=_map_priority(max_score),
-                risk_level=RiskLevel.MEDIUM.value,
+                risk_level=tier_risk.get(tier, RiskLevel.MEDIUM.value),
                 user_impact=_map_user_impact(user_impact_str or user_impact_desc),
                 implementation_effort=_map_effort(difficulty),
                 required_licence=licence,
                 score=score,
                 max_score=max_score,
-                score_percentage=round((score / max_score * 100), 1) if max_score > 0 else 0,
+                score_percentage=round((score / max_score * 100), 2) if max_score > 0 else 0,
                 remediation_steps=remediation,
                 category=category,
                 subcategory=product,
                 reference_url=ref_url,
                 source_report_file=source_file,
                 raw_data=ctrl,
+                threats=threats,
+                tier=tier,
+                action_type=action_type,
+                remediation_impact=remediation_impact,
+                deprecated=deprecated,
+                tags=threats[:],  # Use threats as tags too
             )
             actions.append(action)
         return actions

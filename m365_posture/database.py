@@ -254,6 +254,11 @@ class Database:
                 ("risk_accepted_at", "TEXT", "NULL"),
                 ("control_id", "TEXT", "NULL"),
                 ("reference_id", "TEXT", "''"),
+                ("threats", "TEXT", "'[]'"),
+                ("tier", "TEXT", "''"),
+                ("action_type", "TEXT", "''"),
+                ("remediation_impact", "TEXT", "''"),
+                ("deprecated", "INTEGER", "0"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -463,9 +468,12 @@ class Database:
         d = dict(row)
         d["tags"] = json.loads(d.get("tags") or "[]")
         d["raw_data"] = json.loads(d.get("raw_data") or "{}")
+        d["threats"] = json.loads(d.get("threats") or "[]")
+        d["deprecated"] = bool(d.get("deprecated", 0))
         # Ensure risk fields exist even on older DBs
         for field in ("risk_justification", "risk_owner", "risk_review_date",
-                       "risk_expiry_date", "risk_accepted_at"):
+                       "risk_expiry_date", "risk_accepted_at",
+                       "tier", "action_type", "remediation_impact", "reference_id"):
             if field not in d:
                 d[field] = None
         if conn:
@@ -517,8 +525,10 @@ class Database:
                    essential_eight_control, essential_eight_maturity, remediation_steps,
                    current_value, recommended_value, category, subcategory, planned_date,
                    responsible, tags, notes, reference_url, source_report_file,
-                   source_report_date, raw_data, correlation_group_id, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   source_report_date, raw_data, correlation_group_id,
+                   threats, tier, action_type, remediation_impact, deprecated,
+                   created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (action_id, tenant_name,
                  data.get("title", ""), data.get("description", ""),
                  data.get("source_tool", "Manual"), data.get("source_id", ""),
@@ -538,6 +548,11 @@ class Database:
                  data.get("source_report_date", ""),
                  json.dumps(data.get("raw_data", {})),
                  data.get("correlation_group_id"),
+                 json.dumps(data.get("threats", [])),
+                 data.get("tier", ""),
+                 data.get("action_type", ""),
+                 data.get("remediation_impact", ""),
+                 1 if data.get("deprecated") else 0,
                  data.get("created_at", now), now),
             )
         return self.get_action(action_id)
@@ -634,7 +649,7 @@ class Database:
                         changes["max_score"] = action.max_score
                         if action.max_score and action.max_score > 0:
                             changes["score_percentage"] = round(
-                                (action.score / action.max_score) * 100, 1)
+                                (action.score / action.max_score) * 100, 2)
 
                     if action.status != existing["status"]:
                         if existing["status"] in ("ToDo", "Completed") and existing["source_tool"] == source_tool:
@@ -682,7 +697,19 @@ class Database:
                     if action.max_score and action.max_score > 0 and (not existing.get("max_score") or existing.get("max_score") == 0):
                         changes["max_score"] = action.max_score
                         if action.score is not None:
-                            changes["score_percentage"] = round((action.score / action.max_score) * 100, 1)
+                            changes["score_percentage"] = round((action.score / action.max_score) * 100, 2)
+
+                    # Update Secure Score enrichment fields
+                    if action.threats:
+                        changes["threats"] = json.dumps(action.threats)
+                    if action.tier:
+                        changes["tier"] = action.tier
+                    if action.action_type:
+                        changes["action_type"] = action.action_type
+                    if action.remediation_impact:
+                        changes["remediation_impact"] = action.remediation_impact
+                    if action.deprecated:
+                        changes["deprecated"] = 1
 
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
@@ -707,8 +734,9 @@ class Database:
                            remediation_steps, current_value, recommended_value,
                            category, subcategory, planned_date, responsible,
                            tags, notes, reference_url, source_report_file,
-                           source_report_date, raw_data, created_at, updated_at, control_id)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           source_report_date, raw_data, created_at, updated_at, control_id,
+                           threats, tier, action_type, remediation_impact, deprecated)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (action_id, tenant_name, action.title, action.description,
                          action.source_tool, action.source_id, action.reference_id,
                          action.workload,
@@ -723,7 +751,9 @@ class Database:
                          json.dumps(action.tags), action.notes, action.reference_url,
                          source_file, now,
                          json.dumps(action.raw_data if hasattr(action, "raw_data") else {}),
-                         action.created_at or now, now, control_id),
+                         action.created_at or now, now, control_id,
+                         json.dumps(action.threats), action.tier, action.action_type,
+                         action.remediation_impact, 1 if action.deprecated else 0),
                     )
                     new_count += 1
 
@@ -1201,10 +1231,10 @@ class Database:
                         ctrl_data["status"] = "ToDo"
                 fam_data["total"] = fam_total
                 fam_data["completed"] = fam_completed
-                fam_data["percentage"] = round((fam_completed / fam_total) * 100, 1) if fam_total > 0 else 0
+                fam_data["percentage"] = round((fam_completed / fam_total) * 100, 2) if fam_total > 0 else 0
             fw_data["total_controls"] = total
             fw_data["completed_controls"] = completed
-            fw_data["percentage"] = round((completed / total) * 100, 1) if total > 0 else 0
+            fw_data["percentage"] = round((completed / total) * 100, 2) if total > 0 else 0
 
         return result
 
@@ -1427,7 +1457,7 @@ class Database:
         for group in [by_tool, by_workload]:
             for data in group.values():
                 m = data["max_score"]
-                data["percentage"] = round((data["score"] / m) * 100, 1) if m > 0 else 0
+                data["percentage"] = round((data["score"] / m) * 100, 2) if m > 0 else 0
 
         # Per-workload: distribute Graph scores proportionally if available
         if graph_max and graph_max > 0:
@@ -1436,13 +1466,13 @@ class Database:
                 if wl_action_max > 0 and action_total_max > 0:
                     # Scale the workload's share proportionally to the Graph total
                     proportion = wl_action_max / action_total_max
-                    wl_data["max_score"] = round(total_max * proportion, 1)
-                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 1) if wl_data["max_score"] > 0 else 0
+                    wl_data["max_score"] = round(total_max * proportion, 2)
+                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 2) if wl_data["max_score"] > 0 else 0
 
         return {
-            "total_score": round(total_score, 1),
-            "total_max": round(total_max, 1),
-            "percentage": round((total_score / total_max) * 100, 1) if total_max > 0 else 0,
+            "total_score": round(total_score, 2),
+            "total_max": round(total_max, 2),
+            "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
             "total_actions": len(actions),
             "completed_actions": completed,
             "by_tool": by_tool,
