@@ -1069,37 +1069,27 @@ async function showAddToPlan(actionIds) {
     actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   }
   if(!actionIds.length) return toast('No actions selected', 'error');
-
-  // Filter out completed/risk-accepted/not-applicable actions
-  const validActions = _actionsData.filter(a => actionIds.includes(a.id) && !['Completed','Risk Accepted','Not Applicable','Third Party'].includes(a.status));
-  if(!validActions.length) return toast('All selected actions are already completed or excluded', 'error');
-  _addToPlanIds = validActions.map(a => a.id);
+  _addToPlanIds = actionIds;
 
   const t = state.activeTenant.name;
   const plans = await api.get(`/api/tenants/${t}/plans`);
   const hasPlans = plans.length > 0;
 
-  // For each plan, fetch its items to know which actions are already in it
+  // Store plan existing items for dedup at submit time
   const planData = [];
   for(const p of plans) {
     const full = await api.get(`/api/plans/${p.id}`);
-    planData.push({...p, existingIds: new Set(full.items.map(i => i.action_id))});
+    planData.push({...p, existingActionIds: full.items.map(i => i.action_id)});
   }
-
-  let planOptions = planData.map(p => {
-    const dupes = _addToPlanIds.filter(id => p.existingIds.has(id)).length;
-    const dupeNote = dupes ? ` - ${dupes} already in plan` : '';
-    return `<option value="${p.id}" data-dupes="${dupes}">${p.name} (${p.item_count} actions, ${p.status})${dupeNote}</option>`;
-  }).join('');
-
-  // Store plan data for submit validation
   window._atpPlanData = planData;
 
-  const skipped = actionIds.length - _addToPlanIds.length;
-  const skippedNote = skipped ? `<div style="font-size:12px;color:var(--warning);margin-bottom:8px">${skipped} completed/excluded action${skipped>1?'s':''} skipped</div>` : '';
+  let planOptions = planData.map(p => {
+    const dupes = _addToPlanIds.filter(id => p.existingActionIds.includes(id)).length;
+    const dupeNote = dupes ? ` - ${dupes} already in plan` : '';
+    return `<option value="${p.id}">${p.name} (${p.item_count} actions, ${p.status})${dupeNote}</option>`;
+  }).join('');
 
   openModal(`Add ${_addToPlanIds.length} Action${_addToPlanIds.length>1?'s':''} to Plan`, `
-    ${skippedNote}
     <div style="margin-bottom:12px">
       <div style="margin-bottom:8px">
         <input type="radio" name="plan-mode" id="pm-existing" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''}
@@ -1143,8 +1133,8 @@ async function addToPlanSubmit() {
     if(!planId) return toast('Select a plan', 'error');
     // Filter out actions already in the plan
     const planInfo = (window._atpPlanData||[]).find(p => p.id === planId);
-    const existingIds = planInfo ? planInfo.existingIds : new Set();
-    const newIds = actionIds.filter(id => !existingIds.has(id));
+    const existingList = planInfo ? planInfo.existingActionIds : [];
+    const newIds = actionIds.filter(id => !existingList.includes(id));
     const dupes = actionIds.length - newIds.length;
 
     if(!newIds.length) {
