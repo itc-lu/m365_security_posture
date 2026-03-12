@@ -265,11 +265,15 @@ class Database:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
-            # Add Graph API overall scores to tenants (idempotent)
+            # Add Graph API overall scores and metadata to tenants (idempotent)
             for col, coltype, default in [
                 ("graph_current_score", "REAL", "NULL"),
                 ("graph_max_score", "REAL", "NULL"),
                 ("graph_score_date", "TEXT", "NULL"),
+                ("graph_active_user_count", "INTEGER", "0"),
+                ("graph_licensed_user_count", "INTEGER", "0"),
+                ("graph_enabled_services", "TEXT", "''"),
+                ("graph_comparative_scores", "TEXT", "''"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -279,14 +283,21 @@ class Database:
     # ── Graph API overall scores ──
 
     def store_graph_scores(self, tenant_name: str, overall_scores: dict):
-        """Store the authoritative overall scores from Microsoft Graph API."""
+        """Store the authoritative overall scores and metadata from Microsoft Graph API."""
         with self._conn() as conn:
             conn.execute(
                 """UPDATE tenants SET graph_current_score=?, graph_max_score=?,
-                   graph_score_date=? WHERE name=?""",
+                   graph_score_date=?, graph_active_user_count=?,
+                   graph_licensed_user_count=?, graph_enabled_services=?,
+                   graph_comparative_scores=?
+                   WHERE name=?""",
                 (overall_scores.get("currentScore", 0),
                  overall_scores.get("maxScore", 0),
-                 datetime.utcnow().isoformat(),
+                 overall_scores.get("createdDateTime") or datetime.utcnow().isoformat(),
+                 overall_scores.get("activeUserCount", 0),
+                 overall_scores.get("licensedUserCount", 0),
+                 json.dumps(overall_scores.get("enabledServices", [])),
+                 json.dumps(overall_scores.get("averageComparativeScores", [])),
                  tenant_name),
             )
 

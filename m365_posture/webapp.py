@@ -854,6 +854,8 @@ def create_app(db_path: str = None) -> Flask:
                 "drift": drift,
                 "expired_risk_acceptances": len(expired),
                 "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
+                "profiles_loaded": getattr(parser, '_profile_count', 0),
+                "unmatched_controls": getattr(parser, '_unmatched_controls', []),
             })
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")

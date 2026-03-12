@@ -415,22 +415,36 @@ class SecureScoreParser:
         else:
             controls = []
 
-        # Extract top-level overall scores from the secureScores object
+        # Extract top-level overall scores and metadata from the secureScores object
         if score_entry:
             overall_scores = {
                 "currentScore": float(score_entry.get("currentScore", 0)),
                 "maxScore": float(score_entry.get("maxScore", 0)),
+                "createdDateTime": score_entry.get("createdDateTime", ""),
+                "activeUserCount": score_entry.get("activeUserCount", 0),
+                "licensedUserCount": score_entry.get("licensedUserCount", 0),
+                "enabledServices": score_entry.get("enabledServices", []),
+                "averageComparativeScores": score_entry.get("averageComparativeScores", []),
             }
 
-        # Build a lookup from control profiles (by id/controlName)
+        # Build a lookup from control profiles (by id/controlName and title)
         profiles_map = {}
         if profiles_data:
             profiles_list = profiles_data.get("value", profiles_data) if isinstance(profiles_data, dict) else profiles_data
             if isinstance(profiles_list, list):
                 for p in profiles_list:
-                    pid = p.get("id", p.get("controlName", ""))
+                    # Index by id (primary key)
+                    pid = p.get("id", "")
                     if pid:
                         profiles_map[pid.lower()] = p
+                    # Also index by controlName if different from id
+                    cname = p.get("controlName", "")
+                    if cname and cname.lower() != pid.lower():
+                        profiles_map[cname.lower()] = p
+                    # Also index by title for fallback matching
+                    title = p.get("title", "")
+                    if title:
+                        profiles_map[title.lower()] = p
 
         actions = self._parse_controls(controls, "graph_api", profiles_map)
         return actions, overall_scores
@@ -439,17 +453,32 @@ class SecureScoreParser:
                         profiles_map: dict | None = None) -> list[Action]:
         profiles_map = profiles_map or {}
         actions = []
+        self._unmatched_controls = []  # Track controls with no profile match
+        self._profile_count = len(set(id(v) for v in profiles_map.values())) if profiles_map else 0
         for idx, ctrl in enumerate(controls, start=1):
             name = ctrl.get("controlName", ctrl.get("name", "Unknown Control"))
 
-            # Look up the control profile for full metadata
+            # Look up the control profile for full metadata (try id, controlName, then description/title)
             profile = profiles_map.get(name.lower(), {})
+            if not profile:
+                # Some controlScores use names that differ slightly from profile ids
+                # Try matching with common prefixes stripped
+                desc = ctrl.get("description", "")
+                if desc:
+                    profile = profiles_map.get(desc.lower(), {})
+
+            if not profile and profiles_map:
+                self._unmatched_controls.append(name)
 
             score = float(ctrl.get("score", ctrl.get("currentScore", 0)))
             # Get maxScore from profile first, then from control itself
             max_score = float(profile.get("maxScore", 0)) or float(ctrl.get("maxScore", 0))
-            if max_score == 0:
-                max_score = float(ctrl.get("scoreInPercentage", 0)) or 0
+            # Never use scoreInPercentage as max_score - it's a percentage (0-100), not points.
+            # If we still have no max_score, try to derive it from score + scoreInPercentage.
+            if max_score == 0 and score > 0:
+                pct = float(ctrl.get("scoreInPercentage", 0))
+                if pct > 0:
+                    max_score = round(score / (pct / 100), 2)
 
             category = ctrl.get("controlCategory", ctrl.get("category", "")) or profile.get("controlCategory", "")
             description = ctrl.get("description", "") or profile.get("description", "")

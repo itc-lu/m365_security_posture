@@ -1263,13 +1263,16 @@ async function graphImportScores() {
   }
 
   toast('Graph API import successful!', 'success');
+  const unmatchedHtml = r.unmatched_controls?.length ? `<div style="margin-top:8px;font-size:12px;color:var(--warning)">&#9888; ${r.unmatched_controls.length} control(s) had no profile match (max_score may be inaccurate): ${r.unmatched_controls.slice(0,5).join(', ')}${r.unmatched_controls.length>5?'...':''}</div>` : '';
   el.innerHTML = `
     <div class="grid grid-4" style="margin-top:8px">
       <div class="stat-card card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
       <div class="stat-card card"><div class="value" style="color:var(--success)">${r.new_actions}</div><div class="label">New</div></div>
       <div class="stat-card card"><div class="value" style="color:var(--warning)">${r.updated_actions}</div><div class="label">Updated</div></div>
       <div class="stat-card card"><div class="value">${r.snapshot?.percentage?.toFixed(2)||'--'}%</div><div class="label">Score</div></div>
-    </div>`;
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:var(--text-light)">Profiles loaded: ${r.profiles_loaded||0}</div>
+    ${unmatchedHtml}`;
 }
 
 async function graphFetchControls() {

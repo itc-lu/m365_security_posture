@@ -102,17 +102,26 @@ def fetch_secure_scores(access_token: str) -> dict:
 
 
 def fetch_control_profiles(access_token: str) -> dict:
-    """Fetch Secure Score control profiles from Microsoft Graph.
+    """Fetch ALL Secure Score control profiles from Microsoft Graph.
 
+    Handles pagination via @odata.nextLink to ensure every profile is returned.
     Calls GET /security/secureScoreControlProfiles.
     """
-    url = "https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles"
-    req = Request(url)
-    req.add_header("Authorization", f"Bearer {access_token}")
+    all_profiles = []
+    url = "https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles?$top=200"
 
-    try:
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
-    except HTTPError as e:
-        body = e.read().decode()
-        raise RuntimeError(f"Graph API error ({e.code}): {body}")
+    while url:
+        req = Request(url)
+        req.add_header("Authorization", f"Bearer {access_token}")
+
+        try:
+            with urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+        except HTTPError as e:
+            body = e.read().decode()
+            raise RuntimeError(f"Graph API error ({e.code}): {body}")
+
+        all_profiles.extend(data.get("value", []))
+        url = data.get("@odata.nextLink")
+
+    return {"value": all_profiles}
