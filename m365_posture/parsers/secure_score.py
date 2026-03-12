@@ -447,6 +447,13 @@ class SecureScoreParser:
                         profiles_map[title.lower()] = p
 
         actions = self._parse_controls(controls, "graph_api", profiles_map)
+
+        # Compute sequential Rang matching Microsoft portal:
+        # Sort by maxScore descending, assign 1..N (unique per tenant control)
+        actions.sort(key=lambda a: (a.max_score or 0), reverse=True)
+        for i, action in enumerate(actions, start=1):
+            action.reference_id = str(i)
+
         return actions, overall_scores
 
     def _parse_controls(self, controls: list[dict], source_file: str,
@@ -528,8 +535,8 @@ class SecureScoreParser:
             # ── License ──
             licence = profile.get("azureLicenseType", "")
 
-            # ── Rank from profile (Microsoft's fixed reference ID) ──
-            rank = profile.get("rank", idx)
+            # ── Rank placeholder (overwritten by sequential Rang computation) ──
+            rank = idx
 
             # ── Enrichment fields from profile ──
             threats = profile.get("threats", []) or []
@@ -631,11 +638,6 @@ def enrich_actions_from_controls(db: Database, actions: list[Action]) -> list[Ac
 
         if not action.reference_url:
             action.reference_url = control.get("reference_url", "")
-
-        # Enrich rank from reference control if not already set or is just an index
-        ctrl_rank = control.get("rank", 0)
-        if ctrl_rank:
-            action.reference_id = str(ctrl_rank)
 
         # Enrich implementation cost -> effort mapping
         impl_cost = control.get("implementation_cost", "")

@@ -449,14 +449,22 @@ function sortTable(table, colIdx, th) {
   // Update header indicators
   table.querySelectorAll('thead th').forEach(h => { h.classList.remove('sort-asc','sort-desc'); });
   th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
-  // Sort rows
+  // Sort rows - group main rows with their detail rows
   const tbody = table.querySelector('tbody');
   if(!tbody) return;
-  const rows = Array.from(tbody.querySelectorAll('tr'));
-  rows.sort((a, b) => {
-    let aVal = (a.children[colIdx]?.textContent || '').trim();
-    let bVal = (b.children[colIdx]?.textContent || '').trim();
-    // Try numeric sort (handle "8/10" as 8, percentages, plain numbers)
+  const allRows = Array.from(tbody.querySelectorAll('tr'));
+  // Build groups: each main row + any following detail rows (id starts with "detail-")
+  const groups = [];
+  allRows.forEach(r => {
+    if(r.id && r.id.startsWith('detail-')) {
+      if(groups.length) groups[groups.length-1].push(r);
+    } else {
+      groups.push([r]);
+    }
+  });
+  groups.sort((a, b) => {
+    let aVal = (a[0].children[colIdx]?.textContent || '').trim();
+    let bVal = (b[0].children[colIdx]?.textContent || '').trim();
     const aNum = parseFloat(aVal.replace(/[,%]/g,''));
     const bNum = parseFloat(bVal.replace(/[,%]/g,''));
     if(!isNaN(aNum) && !isNaN(bNum)) {
@@ -464,7 +472,7 @@ function sortTable(table, colIdx, th) {
     }
     return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
   });
-  rows.forEach(r => tbody.appendChild(r));
+  groups.forEach(g => g.forEach(r => tbody.appendChild(r)));
 }
 // Auto-apply to all tables after any render
 function applySort() {
