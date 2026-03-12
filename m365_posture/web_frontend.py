@@ -157,8 +157,42 @@ tr.selected td { background:#dbeafe; }
 .detail-panel { background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:8px 0; }
 .detail-panel .field { margin-bottom:8px; }
 .detail-panel .field-label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-light); }
-.detail-panel .field-value { font-size:14px; margin-top:2px; }
+.detail-panel .field-value { font-size:14px; margin-top:2px; white-space:pre-line; }
 .detail-panel pre { background:#1e293b; color:#e2e8f0; padding:12px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:pre-wrap; }
+
+/* Tenant switcher dropdown in sidebar */
+.tenant-indicator { cursor:pointer; position:relative; transition:background .15s; }
+.tenant-indicator:hover { background:var(--bg-sidebar-hover); }
+.tenant-indicator .switch-hint { font-size:10px; color:#64748b; margin-top:2px; opacity:0; transition:opacity .15s; }
+.tenant-indicator:hover .switch-hint { opacity:1; }
+.tenant-dropdown { display:none; position:absolute; bottom:100%; left:0; right:0; background:#1e293b; border:1px solid #334155; border-radius:8px 8px 0 0; max-height:240px; overflow-y:auto; box-shadow:0 -4px 16px rgba(0,0,0,.3); }
+.tenant-dropdown.open { display:block; }
+.tenant-dropdown .td-item { padding:10px 16px; font-size:13px; color:#cbd5e1; cursor:pointer; display:flex; justify-content:space-between; align-items:center; transition:background .1s; }
+.tenant-dropdown .td-item:hover { background:#334155; color:#fff; }
+.tenant-dropdown .td-item.active { color:#3b82f6; font-weight:600; }
+.tenant-dropdown .td-item .td-check { font-size:14px; }
+
+/* Action detail tabs */
+.action-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
+.action-tabs .atab { padding:8px 16px; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-light); border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+.action-tabs .atab:hover { color:var(--text); }
+.action-tabs .atab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.action-tab-content { display:none; }
+.action-tab-content.active { display:block; }
+
+/* Action detail sidebar (right column) */
+.action-detail-layout { display:grid; grid-template-columns:1fr 280px; gap:20px; }
+@media(max-width:900px) { .action-detail-layout { grid-template-columns:1fr; } }
+.action-sidebar-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+.action-sidebar-card .sidebar-field { margin-bottom:12px; }
+.action-sidebar-card .sidebar-field .field-label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-light); margin-bottom:2px; }
+.action-sidebar-card .sidebar-field .field-value { font-size:13px; }
+
+/* Score bar for action detail */
+.score-bar-wrap { margin:8px 0; }
+.score-bar { height:10px; background:var(--border); border-radius:5px; overflow:hidden; position:relative; }
+.score-bar .bar { height:100%; border-radius:5px; background:var(--primary); transition:width .5s; }
+.score-label { font-size:20px; font-weight:700; text-align:right; color:var(--text); }
 
 /* Trend chart */
 .trend-chart { width:100%; height:200px; position:relative; }
@@ -271,9 +305,11 @@ tr.selected td { background:#dbeafe; }
       History
     </a>
   </nav>
-  <div class="tenant-indicator" id="tenant-indicator">
+  <div class="tenant-indicator" id="tenant-indicator" onclick="toggleTenantDropdown(event)">
+    <div class="tenant-dropdown" id="tenant-dropdown"></div>
     <div style="color:var(--text-sidebar)">Active Tenant</div>
     <div class="name" id="active-tenant-name">None</div>
+    <div class="switch-hint">Click to switch</div>
   </div>
 </div>
 
@@ -362,8 +398,9 @@ function gauge(pct, size=120, label='') {
   </div>`;
 }
 
-function progressBar(pct, h=8) {
-  return `<div class="progress" style="height:${h}px"><div class="bar" style="width:${Math.min(100,pct)}%;background:${pctColor(pct)}"></div></div>`;
+function progressBar(pct, color=null, h=8) {
+  const c = color || pctColor(pct);
+  return `<div class="progress" style="height:${h}px"><div class="bar" style="width:${Math.min(100,pct)}%;background:${c}"></div></div>`;
 }
 
 function selectOptions(values, selected='') {
@@ -408,6 +445,39 @@ function updateTenantIndicator() {
   el.textContent = state.activeTenant ? (state.activeTenant.display_name || state.activeTenant.name) : 'None';
 }
 
+function toggleTenantDropdown(e) {
+  e.stopPropagation();
+  const dd = document.getElementById('tenant-dropdown');
+  if(dd.classList.contains('open')) { dd.classList.remove('open'); return; }
+  // Build dropdown items
+  let items = state.tenants.map(t => {
+    const isActive = state.activeTenant && state.activeTenant.name === t.name;
+    return `<div class="td-item ${isActive?'active':''}" onclick="switchTenant('${t.name}');event.stopPropagation()">
+      <span>${t.display_name||t.name}</span>
+      ${isActive?'<span class="td-check">&#10003;</span>':''}
+    </div>`;
+  }).join('');
+  if(!items) items = '<div class="td-item" style="color:#64748b">No tenants</div>';
+  dd.innerHTML = items;
+  dd.classList.add('open');
+}
+
+async function switchTenant(name) {
+  document.getElementById('tenant-dropdown').classList.remove('open');
+  await api.post(`/api/tenants/${name}/activate`);
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  state.tenants = await api.get('/api/tenants');
+  updateTenantIndicator();
+  toast(`Switched to ${state.activeTenant?.display_name||name}`, 'success');
+  navigate(state.currentPage);
+}
+
+// Close dropdown when clicking elsewhere
+document.addEventListener('click', () => {
+  document.getElementById('tenant-dropdown')?.classList.remove('open');
+});
+
 function requireTenant() {
   if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('tenants'); return false; }
   return true;
@@ -418,6 +488,17 @@ async function renderDashboard() {
   const c = document.getElementById('content');
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
+  const displayName = state.activeTenant.display_name || state.activeTenant.name;
+
+  // Topbar: tenant switcher, compare button, PDF download
+  let tenantSwitchOpts = state.tenants.map(tn =>
+    `<option value="${tn.name}" ${tn.name===t?'selected':''}>${tn.display_name||tn.name}</option>`
+  ).join('');
+  document.getElementById('topbar-actions').innerHTML = `
+    <select id="dash-tenant-switch" onchange="switchTenantFromDashboard(this.value)" style="max-width:200px;font-size:13px">${tenantSwitchOpts}</select>
+    ${state.tenants.length>=2?'<button class="btn btn-sm" onclick="showDashboardCompare()">Compare Tenants</button>':''}
+    <button class="btn btn-sm btn-primary" onclick="downloadDashboardPDF()">PDF Report</button>`;
+
   const [scores, prioritized, snapshots, riskSummary] = await Promise.all([
     api.get(`/api/tenants/${t}/scores`),
     api.get(`/api/tenants/${t}/prioritized?limit=10`),
@@ -432,7 +513,8 @@ async function renderDashboard() {
 
   let wlBars = '';
   for(const [wl, d] of Object.entries(scores.by_workload||{})) {
-    wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(1)}%</span></div>${progressBar(d.percentage)}</div>`;
+    const color = d.percentage >= 80 ? 'var(--success)' : d.percentage >= 40 ? 'var(--warning)' : 'var(--danger)';
+    wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(1)}%</span></div>${progressBar(d.percentage, color)}</div>`;
   }
 
   let statusPills = '';
@@ -462,7 +544,22 @@ async function renderDashboard() {
     riskAlert += `<div class="drift-banner neutral mb-16"><span style="font-size:20px">&#128197;</span><div><strong>${riskSummary.upcoming_reviews.length} risk review(s)</strong> due within 30 days. <a href="#risks" style="text-decoration:underline">View</a></div></div>`;
   }
 
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
   c.innerHTML = `${riskAlert}
+    <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
+      <div class="flex justify-between items-center">
+        <div>
+          <div style="font-size:24px;font-weight:700">${displayName}</div>
+          <div style="font-size:13px;opacity:.7;margin-top:4px">${state.activeTenant.tenant_id||'No Tenant ID'} &middot; ${today}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:42px;font-weight:800">${scores.percentage?.toFixed(1)||0}%</div>
+          <div style="font-size:12px;opacity:.7">Overall Security Score</div>
+        </div>
+      </div>
+    </div>
+    <div id="dashboard-report">
     <div class="grid grid-4 mb-16">
       <div class="card stat-card"><div class="value">${scores.percentage?.toFixed(1)||0}%</div><div class="label">Overall Score</div></div>
       <div class="card stat-card"><div class="value">${scores.total_actions||0}</div><div class="label">Total Actions</div></div>
@@ -476,7 +573,121 @@ async function renderDashboard() {
     <div class="card mb-16"><div class="card-header">Status Distribution</div><div style="padding:8px">${statusPills}</div></div>
     <div class="card"><div class="card-header">Top Priority Actions (by ROI)</div>
       <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th></tr></thead><tbody>${topActions||'<tr><td colspan="4" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
+    </div>
     </div>`;
+}
+
+async function switchTenantFromDashboard(name) {
+  await api.post(`/api/tenants/${name}/activate`);
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  state.tenants = await api.get('/api/tenants');
+  updateTenantIndicator();
+  renderDashboard();
+}
+
+function showDashboardCompare() {
+  let checks = state.tenants.map(t => {
+    const checked = t.is_active || t.name === state.tenants.find(x=>!x.is_active)?.name;
+    return `<label style="display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''}> ${t.display_name||t.name}</label>`;
+  }).join('');
+  openModal('Compare Tenants', `
+    <p style="margin-bottom:12px;color:var(--text-light)">Select 2 tenants to compare side by side.</p>
+    <div style="display:flex;flex-direction:column;gap:4px">${checks}</div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doDashboardCompare()">Compare</button>');
+}
+
+async function doDashboardCompare() {
+  const tenants = [...document.querySelectorAll('.dash-cmp:checked')].map(c=>c.value);
+  if(tenants.length < 2) return toast('Select at least 2 tenants','error');
+  closeModal();
+  const r = await api.post('/api/compare', {tenants});
+  const c = document.getElementById('content');
+
+  let rows = tenants.map(t => {
+    const d = r.overall[t]||{};
+    return `<tr><td><strong>${t}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+  }).join('');
+
+  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
+    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(1)}%</td>`).join('');
+    return `<tr><td>${tool}</td>${cells}</tr>`;
+  }).join('');
+
+  let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
+    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(1)}%</td>`).join('');
+    return `<tr><td>${wl}</td>${cells}</tr>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <h2 style="font-size:18px;font-weight:600">Tenant Comparison</h2>
+      <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
+    </div>
+    <div class="card mb-16"><div class="card-header">Overall</div>
+      <table><thead><tr><th>Tenant</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="grid grid-2 mb-16">
+      <div class="card"><div class="card-header">By Source Tool</div>
+        <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+      <div class="card"><div class="card-header">By Workload</div>
+        <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+// ── PDF Report Download ──
+function downloadDashboardPDF() {
+  const displayName = state.activeTenant?.display_name || state.activeTenant?.name || 'Unknown';
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+  // Use print-specific styling to generate a clean PDF via browser print dialog
+  const reportEl = document.getElementById('dashboard-report');
+  if(!reportEl) { toast('Dashboard not loaded','error'); return; }
+
+  const printWin = window.open('','_blank','width=900,height=700');
+  printWin.document.write(`<!DOCTYPE html><html><head><title>Security Posture Report - ${displayName}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; padding:40px; }
+      .report-header { text-align:center; margin-bottom:32px; padding-bottom:24px; border-bottom:3px solid #3b82f6; }
+      .report-header h1 { font-size:28px; color:#0f172a; }
+      .report-header .subtitle { color:#64748b; font-size:14px; margin-top:8px; }
+      .report-header .score { font-size:56px; font-weight:800; color:#3b82f6; margin-top:16px; }
+      .card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px; break-inside:avoid; }
+      .card-header { font-size:14px; font-weight:600; margin-bottom:12px; }
+      .grid { display:grid; gap:12px; }
+      .grid-2 { grid-template-columns:1fr 1fr; }
+      .grid-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
+      .stat-card { text-align:center; padding:16px; }
+      .stat-card .value { font-size:28px; font-weight:700; color:#3b82f6; }
+      .stat-card .label { font-size:12px; color:#64748b; margin-top:4px; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th { text-align:left; padding:8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; font-size:11px; text-transform:uppercase; }
+      td { padding:8px; border-bottom:1px solid #e2e8f0; }
+      .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
+      .badge-success { background:#d1fae5; color:#065f46; }
+      .badge-warning { background:#fef3c7; color:#92400e; }
+      .badge-danger { background:#fee2e2; color:#991b1b; }
+      .badge-info { background:#dbeafe; color:#1e40af; }
+      .badge-purple { background:#ede9fe; color:#5b21b6; }
+      .badge-gray { background:#f1f5f9; color:#475569; }
+      .progress { height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; }
+      .progress .bar { height:100%; border-radius:4px; }
+      .gauge svg { transform:rotate(-90deg); }
+      .gauge .track { fill:none; stroke:#e2e8f0; stroke-width:10; }
+      .gauge .fill { fill:none; stroke-width:10; stroke-linecap:round; }
+      .gauge { position:relative; width:100px; height:100px; display:inline-block; }
+      .gauge .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
+      .footer { text-align:center; margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; }
+      @media print { body { padding:20px; } .report-header { margin-bottom:20px; padding-bottom:16px; } }
+    </style></head><body>
+    <div class="report-header">
+      <h1>M365 Security Posture Report</h1>
+      <div class="subtitle">${displayName} &middot; ${today}</div>
+    </div>
+    ${reportEl.innerHTML}
+    <div class="footer">Generated by M365 Security Posture Manager &middot; ${today}</div>
+    <script>setTimeout(()=>{window.print();},400);</script>
+  </body></html>`);
+  printWin.document.close();
 }
 
 // ── Tenants ──
@@ -635,33 +846,103 @@ function actionDetailHtml(a) {
     </div>`;
   }
 
+  // Score bar
+  const scorePct = a.max_score > 0 ? Math.round(a.score / a.max_score * 100) : 0;
+  const scoreDisplay = a.score != null ? `${a.score} / ${a.max_score}` : 'N/A';
+
+  // Source badge color
+  const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Manual':'badge-gray'};
+  const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
+
+  // Remediation steps - split into structured parts if possible
+  let prerequisitesHtml = '';
+  let stepsHtml = '';
+  const remText = a.remediation_steps || '';
+  if(remText.includes('Prerequisites:') && remText.includes('Next steps:')) {
+    const parts = remText.split('Next steps:');
+    const prereq = parts[0].replace('Prerequisites:', '').trim();
+    const steps = parts[1]?.trim() || '';
+    prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${prereq}</div></div>` : '';
+    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${steps}</div></div>` : '';
+  } else if(remText) {
+    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${remText}</div></div>`;
+  }
+
+  const uid = a.id.replace(/[^a-zA-Z0-9]/g,'');
+
   return `<div class="detail-panel">
-    <div class="flex gap-8 mb-16">
-      <button class="btn btn-sm" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</button>
-      ${a.status!=='Risk Accepted'?`<button class="btn btn-sm" style="background:var(--warning-light);border-color:var(--warning);color:#92400e" onclick="showAcceptRisk('${a.id}');event.stopPropagation()">Accept Risk</button>`:''}
-      <button class="btn btn-sm" onclick="showAddDependency('${a.id}');event.stopPropagation()">+ Dependency</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteAction('${a.id}');event.stopPropagation()">Delete</button>
+    <div class="flex justify-between items-center mb-16">
+      <div class="flex gap-8">
+        <button class="btn btn-sm" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</button>
+        ${a.status!=='Risk Accepted'?`<button class="btn btn-sm" style="background:var(--warning-light);border-color:var(--warning);color:#92400e" onclick="showAcceptRisk('${a.id}');event.stopPropagation()">Accept Risk</button>`:''}
+        <button class="btn btn-sm" onclick="showAddDependency('${a.id}');event.stopPropagation()">+ Dependency</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAction('${a.id}');event.stopPropagation()">Delete</button>
+      </div>
+      <div>${srcBadge} ${statusBadge(a.status)}</div>
     </div>
     ${riskHtml}
-    <div class="grid grid-3 mb-16">
-      <div class="field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
-      <div class="field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
-      <div class="field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort}</div></div>
-      <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control||'N/A'}</div></div>
-      <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity||'N/A'}</div></div>
-      <div class="field"><div class="field-label">Licence</div><div class="field-value">${a.required_licence||'N/A'}</div></div>
-      <div class="field"><div class="field-label">Responsible</div><div class="field-value">${a.responsible||'Not assigned'}</div></div>
-      <div class="field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date||'Not set'}</div></div>
-      <div class="field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
+    <div class="action-tabs">
+      <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
+      <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
+      ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
-    <div id="deps-${a.id}" class="mb-8"></div>
-    ${a.description?`<div class="field mb-8"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:''}
-    ${a.current_value?`<div class="field mb-8"><div class="field-label">Current Value</div><pre>${a.current_value}</pre></div>`:''}
-    ${a.recommended_value?`<div class="field mb-8"><div class="field-label">Recommended Value</div><pre>${a.recommended_value}</pre></div>`:''}
-    ${a.remediation_steps?`<div class="field mb-8"><div class="field-label">Remediation Steps</div><div class="field-value">${a.remediation_steps}</div></div>`:''}
-    ${a.reference_url?`<div class="field mb-8"><div class="field-label">Reference</div><div class="field-value"><a href="${a.reference_url}" target="_blank">${a.reference_url}</a></div></div>`:''}
-    ${hist?`<div class="field"><div class="field-label">History (${a.history.length})</div>${hist}</div>`:''}
+    <!-- General Tab -->
+    <div class="action-tab-content active" id="atab-${uid}-general">
+      <div class="action-detail-layout">
+        <div>
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
+          ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
+          <div id="deps-${a.id}" class="mb-8"></div>
+        </div>
+        <div>
+          <div class="action-sidebar-card">
+            <div class="sidebar-field">
+              <div class="field-label">Score</div>
+              <div class="score-label">${scoreDisplay}</div>
+              <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
+            </div>
+            <div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
+            <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
+            <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
+            <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort}</div></div>
+            <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${a.required_licence||'N/A'}</div></div>
+            ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${a.responsible}</div></div>`:''}
+            ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
+            ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
+            ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity}</div></div>`:''}
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Implementation Tab -->
+    <div class="action-tab-content" id="atab-${uid}-implementation">
+      ${prerequisitesHtml}
+      ${stepsHtml}
+      ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
+      ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${a.reference_url}" target="_blank" onclick="event.stopPropagation()">${a.reference_url}</a></div></div>`:''}
+      <div class="grid grid-3 mb-16">
+        <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control||'N/A'}</div></div>
+        <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity||'N/A'}</div></div>
+        <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${a.source_id||'N/A'}</code></div></div>
+      </div>
+    </div>
+    <!-- History Tab -->
+    ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
   </div>`;
+}
+
+function switchActionTab(uid, tab, el) {
+  // Toggle active tab button
+  el.parentElement.querySelectorAll('.atab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  // Toggle content
+  const parent = el.closest('.detail-panel');
+  parent.querySelectorAll('.action-tab-content').forEach(c => c.classList.remove('active'));
+  const target = document.getElementById(`atab-${uid}-${tab}`);
+  if(target) target.classList.add('active');
 }
 
 function toggleActionDetail(id) {
