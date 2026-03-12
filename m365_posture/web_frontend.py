@@ -1079,17 +1079,17 @@ async function showAddToPlan(actionIds) {
 
   openModal(`Add ${actionIds.length} Action${actionIds.length>1?'s':''} to Plan`, `
     <div style="display:flex;flex-direction:column;gap:12px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="this.querySelector('input').checked=true;this.querySelector('input').dispatchEvent(new Event('change'))">
         <input type="radio" name="plan-mode" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''} onchange="document.getElementById('existing-plan-section').classList.remove('hidden');document.getElementById('new-plan-section').classList.add('hidden')">
-        <span>Add to existing plan</span>
-      </label>
+        <span style="font-size:13px;font-weight:500;color:var(--text)">Add to existing plan</span>
+      </div>
       <div id="existing-plan-section" class="${hasPlans?'':'hidden'}" style="padding-left:28px">
         <select id="atp-plan-id" style="width:100%">${planOptions||'<option>No plans available</option>'}</select>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="this.querySelector('input').checked=true;this.querySelector('input').dispatchEvent(new Event('change'))">
         <input type="radio" name="plan-mode" value="new" ${!hasPlans?'checked':''} onchange="document.getElementById('new-plan-section').classList.remove('hidden');document.getElementById('existing-plan-section').classList.add('hidden')">
-        <span>Create new plan</span>
-      </label>
+        <span style="font-size:13px;font-weight:500;color:var(--text)">Create new plan</span>
+      </div>
       <div id="new-plan-section" class="${hasPlans?'hidden':''}" style="padding-left:28px">
         <div class="form-group"><label>Plan Name</label><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
         <div class="form-group"><label>Description</label><textarea id="atp-new-desc" rows="2"></textarea></div>
