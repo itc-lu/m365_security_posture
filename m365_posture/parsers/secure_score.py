@@ -447,6 +447,12 @@ class SecureScoreParser:
                         profiles_map[title.lower()] = p
 
         actions = self._parse_controls(controls, "graph_api", profiles_map)
+
+        # Compute sequential Rang (like Microsoft portal): sort by maxScore desc, assign 1..N
+        actions.sort(key=lambda a: (a.max_score or 0), reverse=True)
+        for i, action in enumerate(actions, start=1):
+            action.reference_id = str(i)
+
         return actions, overall_scores
 
     def _parse_controls(self, controls: list[dict], source_file: str,
@@ -528,8 +534,8 @@ class SecureScoreParser:
             # ── License ──
             licence = profile.get("azureLicenseType", "")
 
-            # ── Rank as reference_id ──
-            rank = profile.get("rank", idx)
+            # ── Rank placeholder (overwritten by sequential Rang after sorting) ──
+            rank = idx
 
             # ── Enrichment fields from profile ──
             threats = profile.get("threats", []) or []

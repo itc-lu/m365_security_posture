@@ -98,6 +98,13 @@ tr.selected td { background:#dbeafe; }
 .badge-gray { background:#f1f5f9; color:#475569; }
 .badge-cyan { background:#cffafe; color:#155e75; }
 
+/* Sortable table headers */
+th.sort-asc::after, th.sort-desc::after { margin-left:4px; font-size:10px; opacity:.6; }
+th.sort-asc::after { content:"▲"; }
+th.sort-desc::after { content:"▼"; }
+thead th[style*="cursor"] { transition:background .15s; }
+thead th[style*="cursor"]:hover { background:var(--primary-light); }
+
 /* Modal */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200; justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto; }
 .modal-overlay.open { display:flex; }
@@ -416,6 +423,57 @@ function openModal(title, bodyHtml, footerHtml='') {
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
 
+// ── Sortable Tables ──
+let _sortState = {}; // tableId -> {col, dir}
+function makeSortable(table) {
+  if(!table || !table.querySelector('thead')) return;
+  const headers = table.querySelectorAll('thead th');
+  headers.forEach((th, colIdx) => {
+    // Skip checkbox columns
+    if(th.querySelector('input[type="checkbox"]')) return;
+    th.style.cursor = 'pointer';
+    th.style.userSelect = 'none';
+    th.style.whiteSpace = 'nowrap';
+    th.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sortTable(table, colIdx, th);
+    });
+  });
+}
+function sortTable(table, colIdx, th) {
+  const tid = table.id || 'tbl_' + Math.random().toString(36).slice(2,6);
+  if(!table.id) table.id = tid;
+  const prev = _sortState[tid];
+  const dir = (prev && prev.col === colIdx && prev.dir === 'asc') ? 'desc' : 'asc';
+  _sortState[tid] = {col: colIdx, dir};
+  // Update header indicators
+  table.querySelectorAll('thead th').forEach(h => { h.classList.remove('sort-asc','sort-desc'); });
+  th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  // Sort rows
+  const tbody = table.querySelector('tbody');
+  if(!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    let aVal = (a.children[colIdx]?.textContent || '').trim();
+    let bVal = (b.children[colIdx]?.textContent || '').trim();
+    // Try numeric sort (handle "8/10" as 8, percentages, plain numbers)
+    const aNum = parseFloat(aVal.replace(/[,%]/g,''));
+    const bNum = parseFloat(bVal.replace(/[,%]/g,''));
+    if(!isNaN(aNum) && !isNaN(bNum)) {
+      return dir === 'asc' ? aNum - bNum : bNum - aNum;
+    }
+    return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+// Auto-apply to all tables after any render
+function applySort() {
+  document.querySelectorAll('table:not([data-sortable])').forEach(t => {
+    t.setAttribute('data-sortable', '1');
+    makeSortable(t);
+  });
+}
+
 // ── Router ──
 async function navigate(page) {
   state.currentPage = page;
@@ -427,6 +485,7 @@ async function navigate(page) {
   if(page !== 'dashboard') _dashData = {};
   const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
+  setTimeout(applySort, 50);
 }
 
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
@@ -910,6 +969,7 @@ function renderActionsTable(actions) {
 
   // Wire up checkbox change listeners
   el.querySelectorAll('.action-cb').forEach(cb => cb.addEventListener('change', updateBatchBar));
+  setTimeout(applySort, 10);
 }
 
 function toggleSelectAllActions(master) {
@@ -1287,7 +1347,7 @@ async function graphFetchControls() {
   }
 
   toast('Control profiles updated!', 'success');
-  el.innerHTML = `<div style="margin-top:8px;font-size:13px">Updated <strong>${r.total}</strong> controls (${r.new} new, ${r.updated} updated)</div>`;
+  el.innerHTML = `<div style="margin-top:8px;font-size:13px">Updated <strong>${r.total}</strong> reference profiles (${r.new} new, ${r.updated} updated).<br><span style="color:var(--text-light);font-size:12px">These are template definitions from Microsoft (${r.total} across all M365 services). Your tenant has ${r.total > 72 ? 'fewer' : ''} active controls — use "Import Secure Scores" to import your actual scores.</span></div>`;
 }
 
 let selectedFile = null;
