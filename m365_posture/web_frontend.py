@@ -1062,12 +1062,15 @@ async function batchDeleteActions() {
   filterActions();
 }
 
+let _addToPlanIds = [];
+
 async function showAddToPlan(actionIds) {
   // If called without args, get from selected checkboxes
   if(!actionIds) {
     actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   }
   if(!actionIds.length) return toast('No actions selected', 'error');
+  _addToPlanIds = actionIds;
   const t = state.activeTenant.name;
   const plans = await api.get(`/api/tenants/${t}/plans`);
 
@@ -1075,24 +1078,29 @@ async function showAddToPlan(actionIds) {
   const hasPlans = plans.length > 0;
 
   openModal(`Add ${actionIds.length} Action${actionIds.length>1?'s':''} to Plan`, `
-    <div class="form-group">
-      <label><input type="radio" name="plan-mode" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''} onchange="document.getElementById('existing-plan-section').classList.remove('hidden');document.getElementById('new-plan-section').classList.add('hidden')"> Add to existing plan</label>
-    </div>
-    <div id="existing-plan-section" class="${hasPlans?'':'hidden'} mb-16" style="padding-left:20px">
-      <select id="atp-plan-id" style="width:100%">${planOptions||'<option>No plans available</option>'}</select>
-    </div>
-    <div class="form-group">
-      <label><input type="radio" name="plan-mode" value="new" ${!hasPlans?'checked':''} onchange="document.getElementById('new-plan-section').classList.remove('hidden');document.getElementById('existing-plan-section').classList.add('hidden')"> Create new plan</label>
-    </div>
-    <div id="new-plan-section" class="${hasPlans?'hidden':''}" style="padding-left:20px">
-      <div class="form-group"><label>Plan Name</label><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
-      <div class="form-group"><label>Description</label><textarea id="atp-new-desc" rows="2"></textarea></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="radio" name="plan-mode" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''} onchange="document.getElementById('existing-plan-section').classList.remove('hidden');document.getElementById('new-plan-section').classList.add('hidden')">
+        <span>Add to existing plan</span>
+      </label>
+      <div id="existing-plan-section" class="${hasPlans?'':'hidden'}" style="padding-left:28px">
+        <select id="atp-plan-id" style="width:100%">${planOptions||'<option>No plans available</option>'}</select>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="radio" name="plan-mode" value="new" ${!hasPlans?'checked':''} onchange="document.getElementById('new-plan-section').classList.remove('hidden');document.getElementById('existing-plan-section').classList.add('hidden')">
+        <span>Create new plan</span>
+      </label>
+      <div id="new-plan-section" class="${hasPlans?'hidden':''}" style="padding-left:28px">
+        <div class="form-group"><label>Plan Name</label><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
+        <div class="form-group"><label>Description</label><textarea id="atp-new-desc" rows="2"></textarea></div>
+      </div>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" onclick="addToPlanSubmit(${JSON.stringify(actionIds)})">Add to Plan</button>`);
+     <button class="btn btn-primary" onclick="addToPlanSubmit()">Add to Plan</button>`);
 }
 
-async function addToPlanSubmit(actionIds) {
+async function addToPlanSubmit() {
+  const actionIds = _addToPlanIds;
   const mode = document.querySelector('input[name="plan-mode"]:checked')?.value;
   const t = state.activeTenant.name;
   let planId;
