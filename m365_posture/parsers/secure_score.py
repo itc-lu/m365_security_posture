@@ -272,7 +272,16 @@ class SecureScoreParser:
         else:
             controls = []
 
-        return self._parse_controls(controls, str(path))
+        # For JSON imports that include full control profile data (e.g. controlProfiles),
+        # build a profiles map for enrichment
+        profiles_map = {}
+        profiles = data.get("controlProfiles", []) if isinstance(data, dict) else []
+        for p in profiles:
+            pid = p.get("id", p.get("controlName", ""))
+            if pid:
+                profiles_map[pid.lower()] = p
+
+        return self._parse_controls(controls, str(path), profiles_map or None)
 
     def _parse_csv(self, path: Path) -> list[Action]:
         """Parse a Secure Score CSV export from the M365 portal (any language)."""
@@ -353,7 +362,7 @@ class SecureScoreParser:
             desc_parts.append(f"Implementation status:\n{implementation_status}")
         description_text = "\n\n".join(desc_parts)
 
-        # Rank as source_id
+        # Rank as reference_id
         rank = row.get("rank", "")
 
         action = Action(
@@ -361,6 +370,7 @@ class SecureScoreParser:
             description=description_text,
             source_tool=self.source_tool,
             source_id=f"ss_{title.replace(' ', '_').lower()[:40]}",
+            reference_id=rank,
             workload=workload,
             status=status,
             priority=priority,
@@ -379,8 +389,13 @@ class SecureScoreParser:
         )
         return action
 
-    def parse_graph_response(self, data: dict) -> list[Action]:
-        """Parse a direct MS Graph API response."""
+    def parse_graph_response(self, data: dict, profiles_data: dict | list | None = None) -> list[Action]:
+        """Parse a direct MS Graph API response.
+
+        If profiles_data is provided (from secureScoreControlProfiles),
+        it will be used to enrich actions with maxScore, description,
+        remediation steps, user impact, etc.
+        """
         if "controlScores" in data:
             controls = data["controlScores"]
         elif "value" in data:
@@ -391,41 +406,90 @@ class SecureScoreParser:
                 controls = value
         else:
             controls = []
-        return self._parse_controls(controls, "graph_api")
 
-    def _parse_controls(self, controls: list[dict], source_file: str) -> list[Action]:
+        # Build a lookup from control profiles (by id/controlName)
+        profiles_map = {}
+        if profiles_data:
+            profiles_list = profiles_data.get("value", profiles_data) if isinstance(profiles_data, dict) else profiles_data
+            if isinstance(profiles_list, list):
+                for p in profiles_list:
+                    pid = p.get("id", p.get("controlName", ""))
+                    if pid:
+                        profiles_map[pid.lower()] = p
+
+        return self._parse_controls(controls, "graph_api", profiles_map)
+
+    def _parse_controls(self, controls: list[dict], source_file: str,
+                        profiles_map: dict | None = None) -> list[Action]:
+        profiles_map = profiles_map or {}
         actions = []
-        for ctrl in controls:
-            score = float(ctrl.get("score", ctrl.get("currentScore", 0)))
-            max_score = float(ctrl.get("maxScore", ctrl.get("scoreInPercentage", 0)))
-            if max_score == 0 and "scoreInPercentage" in ctrl:
-                max_score = 10  # Default max
-
+        for idx, ctrl in enumerate(controls, start=1):
             name = ctrl.get("controlName", ctrl.get("name", "Unknown Control"))
-            category = ctrl.get("controlCategory", ctrl.get("category", ""))
-            description = ctrl.get("description", "")
-            remediation = ctrl.get("remediation", ctrl.get("implementationStatus", ""))
-            user_impact_str = ctrl.get("userImpact", "")
-            difficulty = ctrl.get("implementationCost", ctrl.get("difficulty", ""))
+
+            # Look up the control profile for full metadata
+            profile = profiles_map.get(name.lower(), {})
+
+            score = float(ctrl.get("score", ctrl.get("currentScore", 0)))
+            # Get maxScore from profile first, then from control itself
+            max_score = float(profile.get("maxScore", 0)) or float(ctrl.get("maxScore", 0))
+            if max_score == 0:
+                max_score = float(ctrl.get("scoreInPercentage", 0)) or 0
+
+            category = ctrl.get("controlCategory", ctrl.get("category", "")) or profile.get("controlCategory", "")
+            description = ctrl.get("description", "") or profile.get("description", "")
+            user_impact_str = ctrl.get("userImpact", "") or profile.get("userImpact", "")
+            difficulty = ctrl.get("implementationCost", "") or profile.get("implementationCost", "")
+
+            # Build remediation from profile data
+            remediation_parts = []
+            prerequisites = profile.get("prerequisites", "")
+            impl_status = ctrl.get("implementationStatus", "") or profile.get("implementationStatus", "")
+            remediation_raw = profile.get("remediation", "") or ctrl.get("remediation", "")
+            if prerequisites:
+                remediation_parts.append(f"Prerequisites:\n{prerequisites}")
+            if remediation_raw:
+                remediation_parts.append(f"Next steps:\n{remediation_raw}")
+            elif impl_status:
+                remediation_parts.append(f"Implementation status:\n{impl_status}")
+            remediation = "\n\n".join(remediation_parts) if remediation_parts else impl_status
+
+            # User impact description from profile
+            user_impact_desc = profile.get("userImpact", "")
+
+            # Product / service from profile
+            product = profile.get("service", "")
+            if product:
+                product = ", ".join(product.split(";"))
+
+            # Reference URL
+            ref_url = profile.get("actionUrl", "") or ctrl.get("actionUrl", ctrl.get("referenceUrl", ""))
+
+            # License info
+            licence = profile.get("azureLicenseType", "") or ctrl.get("azureLicenseType", ctrl.get("license", ""))
+
+            # Rank as reference_id
+            rank = profile.get("rank", idx)
 
             action = Action(
                 title=name,
                 description=description,
                 source_tool=self.source_tool,
                 source_id=f"ss_{name.replace(' ', '_').lower()[:40]}",
+                reference_id=str(rank),
                 workload=CATEGORY_WORKLOAD_MAP.get(category, Workload.GENERAL.value),
-                status=_determine_status(score, max_score),
+                status=_determine_status(score, max_score) if max_score > 0 else ActionStatus.TODO.value,
                 priority=_map_priority(max_score),
                 risk_level=RiskLevel.MEDIUM.value,
-                user_impact=_map_user_impact(user_impact_str),
+                user_impact=_map_user_impact(user_impact_str or user_impact_desc),
                 implementation_effort=_map_effort(difficulty),
-                required_licence=ctrl.get("azureLicenseType", ctrl.get("license", "")),
+                required_licence=licence,
                 score=score,
                 max_score=max_score,
                 score_percentage=round((score / max_score * 100), 1) if max_score > 0 else 0,
                 remediation_steps=remediation,
                 category=category,
-                reference_url=ctrl.get("actionUrl", ctrl.get("referenceUrl", "")),
+                subcategory=product,
+                reference_url=ref_url,
                 source_report_file=source_file,
                 raw_data=ctrl,
             )

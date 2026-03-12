@@ -69,6 +69,7 @@ class Database:
                     description TEXT DEFAULT '',
                     source_tool TEXT NOT NULL DEFAULT 'Manual',
                     source_id TEXT DEFAULT '',
+                    reference_id TEXT DEFAULT '',
                     workload TEXT DEFAULT 'General',
                     status TEXT DEFAULT 'ToDo',
                     priority TEXT DEFAULT 'Medium',
@@ -252,6 +253,7 @@ class Database:
                 ("risk_expiry_date", "TEXT", "NULL"),
                 ("risk_accepted_at", "TEXT", "NULL"),
                 ("control_id", "TEXT", "NULL"),
+                ("reference_id", "TEXT", "''"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -485,16 +487,17 @@ class Database:
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO actions (id, tenant_name, title, description, source_tool,
-                   source_id, workload, status, priority, risk_level, user_impact,
+                   source_id, reference_id, workload, status, priority, risk_level, user_impact,
                    implementation_effort, required_licence, score, max_score, score_percentage,
                    essential_eight_control, essential_eight_maturity, remediation_steps,
                    current_value, recommended_value, category, subcategory, planned_date,
                    responsible, tags, notes, reference_url, source_report_file,
                    source_report_date, raw_data, correlation_group_id, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (action_id, tenant_name,
                  data.get("title", ""), data.get("description", ""),
                  data.get("source_tool", "Manual"), data.get("source_id", ""),
+                 data.get("reference_id", ""),
                  data.get("workload", "General"), data.get("status", "ToDo"),
                  data.get("priority", "Medium"), data.get("risk_level", "Medium"),
                  data.get("user_impact", "Low"), data.get("implementation_effort", "Medium"),
@@ -636,6 +639,26 @@ class Database:
                     if control_id:
                         changes["control_id"] = control_id
 
+                    # Update reference_id if available
+                    if action.reference_id:
+                        changes["reference_id"] = action.reference_id
+
+                    # Update subcategory (product) if available
+                    if action.subcategory:
+                        changes["subcategory"] = action.subcategory
+
+                    # Update user_impact and implementation_effort if enriched
+                    if action.user_impact and action.user_impact != "Low":
+                        changes["user_impact"] = action.user_impact
+                    if action.implementation_effort and action.implementation_effort != "Medium":
+                        changes["implementation_effort"] = action.implementation_effort
+
+                    # Update max_score if we now have it from profiles
+                    if action.max_score and action.max_score > 0 and (not existing.get("max_score") or existing.get("max_score") == 0):
+                        changes["max_score"] = action.max_score
+                        if action.score is not None:
+                            changes["score_percentage"] = round((action.score / action.max_score) * 100, 1)
+
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
                     changes["updated_at"] = datetime.utcnow().isoformat()
@@ -652,17 +675,18 @@ class Database:
                     control_id = getattr(action, "control_id", None) or None
                     conn.execute(
                         """INSERT INTO actions (id, tenant_name, title, description,
-                           source_tool, source_id, workload, status, priority, risk_level,
-                           user_impact, implementation_effort, required_licence,
+                           source_tool, source_id, reference_id, workload, status, priority,
+                           risk_level, user_impact, implementation_effort, required_licence,
                            score, max_score, score_percentage,
                            essential_eight_control, essential_eight_maturity,
                            remediation_steps, current_value, recommended_value,
                            category, subcategory, planned_date, responsible,
                            tags, notes, reference_url, source_report_file,
                            source_report_date, raw_data, created_at, updated_at, control_id)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (action_id, tenant_name, action.title, action.description,
-                         action.source_tool, action.source_id, action.workload,
+                         action.source_tool, action.source_id, action.reference_id,
+                         action.workload,
                          action.status, action.priority, action.risk_level,
                          action.user_impact, action.implementation_effort,
                          action.required_licence,

@@ -186,6 +186,19 @@ def create_app(db_path: str = None) -> Flask:
         db.delete_action(action_id)
         return jsonify({"deleted": True})
 
+    @app.route("/api/actions/batch-delete", methods=["POST"])
+    def api_batch_delete_actions():
+        data = request.get_json() or {}
+        action_ids = data.get("action_ids", [])
+        if not action_ids:
+            return _json_error("action_ids is required")
+        deleted = 0
+        for aid in action_ids:
+            if db.get_action(aid):
+                db.delete_action(aid)
+                deleted += 1
+        return jsonify({"deleted": deleted, "total_requested": len(action_ids)})
+
     @app.route("/api/actions/<action_id>/history", methods=["GET"])
     def api_action_history(action_id):
         return jsonify(db.get_action_history(action_id))
@@ -796,10 +809,23 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            # Fetch scores
+            # Fetch scores and control profiles for full enrichment
             scores_data = fetch_secure_scores(flow["access_token"])
+            try:
+                profiles_data = fetch_control_profiles(flow["access_token"])
+            except Exception:
+                profiles_data = None
+
+            # If we got profiles, update the reference table too
+            if profiles_data:
+                try:
+                    controls = parse_graph_control_profiles(profiles_data)
+                    db.seed_controls(controls)
+                except Exception:
+                    pass  # Non-critical
+
             parser = SecureScoreParser()
-            actions = parser.parse_graph_response(scores_data)
+            actions = parser.parse_graph_response(scores_data, profiles_data)
             actions = apply_e8_mapping(actions)
             actions = enrich_actions_from_controls(db, actions)
 

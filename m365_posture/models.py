@@ -124,6 +124,7 @@ class Action:
     description: str = ""
     source_tool: str = SourceTool.MANUAL.value
     source_id: str = ""  # Original ID from the source tool
+    reference_id: str = ""  # External reference ID (e.g. Rang from Secure Score)
     workload: str = Workload.GENERAL.value
     status: str = ActionStatus.TODO.value
     priority: str = Priority.MEDIUM.value

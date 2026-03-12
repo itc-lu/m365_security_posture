@@ -806,20 +806,60 @@ function renderActionsTable(actions) {
   const el = document.getElementById('actions-table');
   if(!actions.length) { el.innerHTML = '<div class="text-center" style="padding:40px;color:var(--text-light)">No actions found</div>'; return; }
 
-  let rows = actions.map(a => `
+  let rows = actions.map(a => {
+    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
+      <td style="font-size:12px"><code>${a.reference_id||'-'}</code></td>
       <td style="max-width:300px">${a.title.substring(0,70)}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${a.workload}</td>
       <td style="font-size:12px">${a.source_tool}</td>
-      <td>${a.score!=null?`${a.score}/${a.max_score}`:'-'}</td>
+      <td>${scoreDisplay}</td>
     </tr>
-    <tr id="detail-${a.id}" class="hidden"><td colspan="7" style="padding:0">${actionDetailHtml(a)}</td></tr>`).join('');
+    <tr id="detail-${a.id}" class="hidden"><td colspan="9" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
+  }).join('');
 
-  el.innerHTML = `<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Source</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>
+  el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px">
+    <button class="btn btn-danger btn-sm" onclick="batchDeleteActions()">Delete Selected</button>
+    <span id="batch-count" style="font-size:12px;color:var(--text-light);margin-left:8px"></span>
+  </div>
+  <table><thead><tr><th onclick="event.stopPropagation()"><input type="checkbox" id="select-all-actions" onchange="toggleSelectAllActions(this)"></th><th>ID</th><th>Ref</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Source</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>
     <div style="padding:8px;font-size:12px;color:var(--text-light)">${actions.length} actions</div>`;
+
+  // Wire up checkbox change listeners
+  el.querySelectorAll('.action-cb').forEach(cb => cb.addEventListener('change', updateBatchBar));
+}
+
+function toggleSelectAllActions(master) {
+  document.querySelectorAll('.action-cb').forEach(cb => cb.checked = master.checked);
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const checked = document.querySelectorAll('.action-cb:checked');
+  const bar = document.getElementById('batch-actions');
+  const count = document.getElementById('batch-count');
+  if(checked.length > 0) {
+    bar.style.display = 'flex';
+    bar.style.alignItems = 'center';
+    count.textContent = checked.length + ' selected';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function batchDeleteActions() {
+  const ids = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
+  if(!ids.length) return;
+  if(!confirm('Delete ' + ids.length + ' selected actions?')) return;
+  const r = await api.post('/api/actions/batch-delete', {action_ids: ids});
+  if(r.error) return toast(r.error, 'error');
+  toast(r.deleted + ' actions deleted', 'success');
+  filterActions();
 }
 
 function actionDetailHtml(a) {
@@ -923,10 +963,11 @@ function actionDetailHtml(a) {
       ${stepsHtml}
       ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
       ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${a.reference_url}" target="_blank" onclick="event.stopPropagation()">${a.reference_url}</a></div></div>`:''}
-      <div class="grid grid-3 mb-16">
+      <div class="grid grid-4 mb-16">
         <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control||'N/A'}</div></div>
         <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity||'N/A'}</div></div>
         <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${a.source_id||'N/A'}</code></div></div>
+        <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${a.reference_id||'N/A'}</code></div></div>
       </div>
     </div>
     <!-- History Tab -->
