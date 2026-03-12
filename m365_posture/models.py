@@ -228,6 +228,7 @@ class SecureScoreControl:
     product: str = ""
     reference_url: str = ""
     max_score: float = 0.0
+    rank: int = 0  # Microsoft's fixed Rang/reference ID
     # Localized title variants for matching CSV imports in different languages
     title_variants: list[str] = field(default_factory=list)
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())

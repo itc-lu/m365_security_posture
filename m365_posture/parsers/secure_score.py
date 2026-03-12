@@ -447,12 +447,6 @@ class SecureScoreParser:
                         profiles_map[title.lower()] = p
 
         actions = self._parse_controls(controls, "graph_api", profiles_map)
-
-        # Compute sequential Rang (like Microsoft portal): sort by maxScore desc, assign 1..N
-        actions.sort(key=lambda a: (a.max_score or 0), reverse=True)
-        for i, action in enumerate(actions, start=1):
-            action.reference_id = str(i)
-
         return actions, overall_scores
 
     def _parse_controls(self, controls: list[dict], source_file: str,
@@ -534,8 +528,8 @@ class SecureScoreParser:
             # ── License ──
             licence = profile.get("azureLicenseType", "")
 
-            # ── Rank placeholder (overwritten by sequential Rang after sorting) ──
-            rank = idx
+            # ── Rank from profile (Microsoft's fixed reference ID) ──
+            rank = profile.get("rank", idx)
 
             # ── Enrichment fields from profile ──
             threats = profile.get("threats", []) or []
@@ -638,6 +632,11 @@ def enrich_actions_from_controls(db: Database, actions: list[Action]) -> list[Ac
         if not action.reference_url:
             action.reference_url = control.get("reference_url", "")
 
+        # Enrich rank from reference control if not already set or is just an index
+        ctrl_rank = control.get("rank", 0)
+        if ctrl_rank:
+            action.reference_id = str(ctrl_rank)
+
         # Enrich implementation cost -> effort mapping
         impl_cost = control.get("implementation_cost", "")
         if impl_cost and action.implementation_effort == ImplementationEffort.MEDIUM.value:
@@ -672,6 +671,7 @@ def load_seed_controls() -> list[SecureScoreControl]:
             product=entry.get("product", ""),
             reference_url=entry.get("reference_url", ""),
             max_score=entry.get("max_score", 0.0),
+            rank=entry.get("rank", 0),
             title_variants=entry.get("title_variants", []),
         ))
     return controls
@@ -703,6 +703,7 @@ def parse_graph_control_profiles(data: dict | list) -> list[SecureScoreControl]:
             product=", ".join(p.get("service", "").split(";")) if p.get("service") else "",
             reference_url=p.get("actionUrl", ""),
             max_score=float(p.get("maxScore", 0)),
+            rank=int(p.get("rank", 0)),
         )
         controls.append(ctrl)
     return controls
