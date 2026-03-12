@@ -654,7 +654,15 @@ class Database:
                         ).fetchone()
                         if row:
                             existing = dict(row)
-                    # Fallback: match by title
+                    # Fallback: match by controlName as old title (old imports used controlName as title)
+                    if not existing and action.source_id:
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
+                            (tenant_name, action.source_tool, action.source_id),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
+                    # Fallback: match by new title
                     if not existing and action.title:
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
@@ -808,6 +816,43 @@ class Database:
             )
 
         return new_count, updated_count
+
+    def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
+        """Remove duplicate actions, keeping the most recently updated one.
+
+        Duplicates are detected by matching source_id (new-style controlName)
+        against old-style source_id (ss_<controlname>) and by matching titles
+        that are controlName slugs vs profile titles for the same control.
+        """
+        actions = self.get_actions(tenant_name)
+        if source_tool:
+            actions = [a for a in actions if a["source_tool"] == source_tool]
+
+        # Group by normalized controlName
+        groups = {}
+        for a in actions:
+            sid = a.get("source_id", "")
+            # Normalize: strip ss_ prefix, lowercase
+            key = sid.lower()
+            if key.startswith("ss_"):
+                key = key[3:]
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(a)
+
+        removed = 0
+        with self._conn() as conn:
+            for key, group in groups.items():
+                if len(group) <= 1:
+                    continue
+                # Keep the one with the most recent updated_at
+                group.sort(key=lambda a: a.get("updated_at", ""), reverse=True)
+                keep = group[0]
+                for dup in group[1:]:
+                    conn.execute("DELETE FROM actions WHERE id=?", (dup["id"],))
+                    removed += 1
+
+        return {"removed": removed, "checked": len(actions)}
 
     # ── Action history ──
 

@@ -832,6 +832,9 @@ def create_app(db_path: str = None) -> Flask:
             source_tool = SourceTool.SECURE_SCORE.value
             new_count, updated_count = db.merge_actions(name, actions, source_tool, "graph_api")
 
+            # Remove any duplicates from previous imports with different source_id formats
+            dedup = db.deduplicate_actions(name, source_tool)
+
             # Store the authoritative overall scores from Graph API
             if overall_scores.get("maxScore", 0) > 0:
                 db.store_graph_scores(name, overall_scores)
@@ -856,6 +859,7 @@ def create_app(db_path: str = None) -> Flask:
                 "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
                 "profiles_loaded": getattr(parser, '_profile_count', 0),
                 "unmatched_controls": getattr(parser, '_unmatched_controls', []),
+                "duplicates_removed": dedup.get("removed", 0),
             })
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")
