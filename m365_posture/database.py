@@ -260,6 +260,31 @@ class Database:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
+            # Add Graph API overall scores to tenants (idempotent)
+            for col, coltype, default in [
+                ("graph_current_score", "REAL", "NULL"),
+                ("graph_max_score", "REAL", "NULL"),
+                ("graph_score_date", "TEXT", "NULL"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+    # ── Graph API overall scores ──
+
+    def store_graph_scores(self, tenant_name: str, overall_scores: dict):
+        """Store the authoritative overall scores from Microsoft Graph API."""
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE tenants SET graph_current_score=?, graph_max_score=?,
+                   graph_score_date=? WHERE name=?""",
+                (overall_scores.get("currentScore", 0),
+                 overall_scores.get("maxScore", 0),
+                 datetime.utcnow().isoformat(),
+                 tenant_name),
+            )
+
     # ── Secure Score Controls (reference table) ──
 
     def upsert_control(self, control: SecureScoreControl) -> dict:
@@ -1332,15 +1357,42 @@ class Database:
     # ── Scoring helpers ──
 
     def get_scores(self, tenant_name: str) -> dict:
-        """Calculate live scores from action data."""
+        """Calculate live scores from action data.
+
+        Uses authoritative Graph API overall scores when available (stored
+        by store_graph_scores). Falls back to summing per-action scores.
+        Per-workload/tool breakdowns always use per-action data.
+        """
         actions = self.get_actions(tenant_name)
         if not actions:
             return {"percentage": 0, "total_actions": 0, "completed_actions": 0,
                     "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {}}
 
-        total_score = sum(a.get("score") or 0 for a in actions)
-        total_max = sum(a.get("max_score") or 0 for a in actions)
+        # Sum per-action scores
+        action_total_score = sum(a.get("score") or 0 for a in actions)
+        action_total_max = sum(a.get("max_score") or 0 for a in actions)
         completed = sum(1 for a in actions if a["status"] == ActionStatus.COMPLETED.value)
+
+        # Check for authoritative Graph API scores
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT graph_current_score, graph_max_score, graph_score_date FROM tenants WHERE name=?",
+                (tenant_name,)
+            ).fetchone()
+
+        graph_score = None
+        graph_max = None
+        if row:
+            graph_score = row["graph_current_score"] if "graph_current_score" in row.keys() else None
+            graph_max = row["graph_max_score"] if "graph_max_score" in row.keys() else None
+
+        # Use Graph API authoritative scores for overall percentage when available
+        if graph_max and graph_max > 0:
+            total_score = graph_score or 0
+            total_max = graph_max
+        else:
+            total_score = action_total_score
+            total_max = action_total_max
 
         by_tool = {}
         by_workload = {}
@@ -1353,7 +1405,7 @@ class Database:
             st = a["status"]
             pr = a["priority"]
 
-            for group, key, in [(by_tool, tool), (by_workload, wl)]:
+            for group, key in [(by_tool, tool), (by_workload, wl)]:
                 if key not in group:
                     group[key] = {"score": 0, "max_score": 0, "total": 0, "completed": 0}
                 group[key]["score"] += a.get("score") or 0
@@ -1365,10 +1417,27 @@ class Database:
             by_status[st] = by_status.get(st, 0) + 1
             by_priority[pr] = by_priority.get(pr, 0) + 1
 
+        # For tool/workload breakdowns, use Graph max if available for Secure Score
+        if graph_max and graph_max > 0:
+            ss_key = "Microsoft Secure Score"
+            if ss_key in by_tool:
+                by_tool[ss_key]["score"] = total_score
+                by_tool[ss_key]["max_score"] = total_max
+
         for group in [by_tool, by_workload]:
             for data in group.values():
                 m = data["max_score"]
                 data["percentage"] = round((data["score"] / m) * 100, 1) if m > 0 else 0
+
+        # Per-workload: distribute Graph scores proportionally if available
+        if graph_max and graph_max > 0:
+            for wl_data in by_workload.values():
+                wl_action_max = wl_data["max_score"]
+                if wl_action_max > 0 and action_total_max > 0:
+                    # Scale the workload's share proportionally to the Graph total
+                    proportion = wl_action_max / action_total_max
+                    wl_data["max_score"] = round(total_max * proportion, 1)
+                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 1) if wl_data["max_score"] > 0 else 0
 
         return {
             "total_score": round(total_score, 1),

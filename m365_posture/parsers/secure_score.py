@@ -389,23 +389,38 @@ class SecureScoreParser:
         )
         return action
 
-    def parse_graph_response(self, data: dict, profiles_data: dict | list | None = None) -> list[Action]:
+    def parse_graph_response(self, data: dict, profiles_data: dict | list | None = None) -> tuple[list[Action], dict]:
         """Parse a direct MS Graph API response.
 
         If profiles_data is provided (from secureScoreControlProfiles),
         it will be used to enrich actions with maxScore, description,
         remediation steps, user impact, etc.
+
+        Returns (actions, overall_scores) where overall_scores has
+        currentScore and maxScore from the top-level secureScores object.
         """
+        overall_scores = {}
+        score_entry = None
+
         if "controlScores" in data:
             controls = data["controlScores"]
+            score_entry = data
         elif "value" in data:
             value = data["value"]
             if value and isinstance(value[0], dict) and "controlScores" in value[0]:
-                controls = value[0]["controlScores"]
+                score_entry = value[0]
+                controls = score_entry["controlScores"]
             else:
                 controls = value
         else:
             controls = []
+
+        # Extract top-level overall scores from the secureScores object
+        if score_entry:
+            overall_scores = {
+                "currentScore": float(score_entry.get("currentScore", 0)),
+                "maxScore": float(score_entry.get("maxScore", 0)),
+            }
 
         # Build a lookup from control profiles (by id/controlName)
         profiles_map = {}
@@ -417,7 +432,8 @@ class SecureScoreParser:
                     if pid:
                         profiles_map[pid.lower()] = p
 
-        return self._parse_controls(controls, "graph_api", profiles_map)
+        actions = self._parse_controls(controls, "graph_api", profiles_map)
+        return actions, overall_scores
 
     def _parse_controls(self, controls: list[dict], source_file: str,
                         profiles_map: dict | None = None) -> list[Action]:

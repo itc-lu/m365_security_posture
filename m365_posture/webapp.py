@@ -825,12 +825,16 @@ def create_app(db_path: str = None) -> Flask:
                     pass  # Non-critical
 
             parser = SecureScoreParser()
-            actions = parser.parse_graph_response(scores_data, profiles_data)
+            actions, overall_scores = parser.parse_graph_response(scores_data, profiles_data)
             actions = apply_e8_mapping(actions)
             actions = enrich_actions_from_controls(db, actions)
 
             source_tool = SourceTool.SECURE_SCORE.value
             new_count, updated_count = db.merge_actions(name, actions, source_tool, "graph_api")
+
+            # Store the authoritative overall scores from Graph API
+            if overall_scores.get("maxScore", 0) > 0:
+                db.store_graph_scores(name, overall_scores)
 
             # Post-import processing
             corr = auto_correlate(db, name)

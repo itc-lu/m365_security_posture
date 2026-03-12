@@ -555,7 +555,7 @@ async function renderDashboard() {
         </div>
         <div style="text-align:right">
           <div style="font-size:42px;font-weight:800">${scores.percentage?.toFixed(1)||0}%</div>
-          <div style="font-size:12px;opacity:.7">Overall Security Score</div>
+          <div style="font-size:12px;opacity:.7">${scores.total_score && scores.total_max ? scores.total_score + '/' + scores.total_max + ' points' : 'Overall Security Score'}</div>
         </div>
       </div>
     </div>
