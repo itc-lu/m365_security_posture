@@ -1005,10 +1005,57 @@ async function deleteAction(id) {
 // ── Import ──
 async function renderImport() {
   if(!requireTenant()) return;
+  const t = state.activeTenant.name;
   const c = document.getElementById('content');
+
+  // Check Graph API auth status
+  const graphStatus = await api.get(`/api/tenants/${t}/graph/status`);
+  const hasCredentials = state.activeTenant.tenant_id && state.activeTenant.client_id;
+
+  let graphSection = '';
+  if(!hasCredentials) {
+    graphSection = `
+      <div class="card mb-16">
+        <div class="card-header">Import from Microsoft Graph API</div>
+        <div style="padding:16px 0;color:var(--text-light)">
+          <p style="margin-bottom:8px">To import directly from Microsoft Graph, configure your tenant with:</p>
+          <ol style="margin-left:20px;font-size:13px;line-height:1.8">
+            <li>Register an app in <strong>Entra ID > App registrations</strong></li>
+            <li>Set <strong>Allow public client flows</strong> to <strong>Yes</strong></li>
+            <li>Add API permission: <strong>Microsoft Graph > SecurityEvents.Read.All</strong> (delegated)</li>
+            <li>Set the <strong>Tenant ID</strong> and <strong>Client ID</strong> on your tenant configuration</li>
+          </ol>
+          <button class="btn btn-sm mt-16" onclick="navigate('tenants')">Go to Tenant Settings</button>
+        </div>
+      </div>`;
+  } else if(graphStatus.authenticated) {
+    const mins = Math.round((graphStatus.expires_in||0)/60);
+    graphSection = `
+      <div class="card mb-16">
+        <div class="card-header flex justify-between items-center">
+          <span>Import from Microsoft Graph API</span>
+          <span class="badge badge-success">Authenticated (${mins}m remaining)</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="graphImportScores()">Import Secure Scores</button>
+          <button class="btn" onclick="graphFetchControls()">Update Control Reference Data</button>
+        </div>
+        <div id="graph-result" style="margin-top:12px"></div>
+      </div>`;
+  } else {
+    graphSection = `
+      <div class="card mb-16">
+        <div class="card-header">Import from Microsoft Graph API</div>
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. No credentials are stored.</p>
+        <button class="btn btn-primary" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Microsoft</button>
+        <div id="graph-auth-status" style="margin-top:12px"></div>
+      </div>`;
+  }
+
   c.innerHTML = `
+    ${graphSection}
     <div class="card mb-16">
-      <div class="card-header">Import Assessment Data</div>
+      <div class="card-header">Import from File</div>
       <div class="form-group"><label>Source Tool</label>
         <select id="imp-source">${selectOptions(state.enums.import_sources)}</select></div>
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('imp-file').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
@@ -1021,6 +1068,99 @@ async function renderImport() {
       <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import</button>
     </div>
     <div id="imp-result"></div>`;
+}
+
+// ── Graph API Auth ──
+let graphPollTimer = null;
+
+async function startGraphAuth() {
+  const t = state.activeTenant.name;
+  const btn = document.getElementById('graph-auth-btn');
+  const statusEl = document.getElementById('graph-auth-status');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+
+  const r = await api.post(`/api/tenants/${t}/graph/device-code`);
+  if(r.error) {
+    btn.disabled = false;
+    btn.textContent = 'Sign in with Microsoft';
+    toast(r.error, 'error');
+    return;
+  }
+
+  btn.textContent = 'Waiting for authentication...';
+  statusEl.innerHTML = `
+    <div class="card" style="border-left:4px solid var(--primary);background:#f8fafc">
+      <div style="font-size:14px;margin-bottom:12px"><strong>Sign in at:</strong></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+        <a href="${r.verification_uri}" target="_blank" class="btn btn-primary" style="text-decoration:none">${r.verification_uri}</a>
+      </div>
+      <div style="font-size:14px;margin-bottom:8px"><strong>Enter code:</strong></div>
+      <div style="font-size:28px;font-weight:800;letter-spacing:4px;font-family:monospace;color:var(--primary);user-select:all;cursor:pointer" onclick="navigator.clipboard.writeText('${r.user_code}');toast('Code copied!','success')" title="Click to copy">${r.user_code}</div>
+      <div style="font-size:12px;color:var(--text-light);margin-top:8px">Click the code to copy it. Expires in ${Math.round((r.expires_in||900)/60)} minutes.</div>
+    </div>`;
+
+  // Start polling
+  const interval = (r.interval || 5) * 1000;
+  if(graphPollTimer) clearInterval(graphPollTimer);
+  graphPollTimer = setInterval(() => pollGraphToken(), interval);
+}
+
+async function pollGraphToken() {
+  const t = state.activeTenant.name;
+  const r = await api.post(`/api/tenants/${t}/graph/poll-token`);
+
+  if(r.error) {
+    clearInterval(graphPollTimer);
+    graphPollTimer = null;
+    toast(r.error, 'error');
+    renderImport();
+    return;
+  }
+
+  if(r.status === 'authenticated') {
+    clearInterval(graphPollTimer);
+    graphPollTimer = null;
+    toast('Authenticated successfully!', 'success');
+    renderImport();
+  }
+  // If 'pending', keep polling (timer continues)
+}
+
+async function graphImportScores() {
+  const t = state.activeTenant.name;
+  const el = document.getElementById('graph-result');
+  el.innerHTML = '<div style="color:var(--text-light)">Importing from Microsoft Graph...</div>';
+
+  const r = await api.post(`/api/tenants/${t}/graph/import-scores`);
+  if(r.error) {
+    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+
+  toast('Graph API import successful!', 'success');
+  el.innerHTML = `
+    <div class="grid grid-4" style="margin-top:8px">
+      <div class="stat-card card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
+      <div class="stat-card card"><div class="value" style="color:var(--success)">${r.new_actions}</div><div class="label">New</div></div>
+      <div class="stat-card card"><div class="value" style="color:var(--warning)">${r.updated_actions}</div><div class="label">Updated</div></div>
+      <div class="stat-card card"><div class="value">${r.snapshot?.percentage?.toFixed(1)||'--'}%</div><div class="label">Score</div></div>
+    </div>`;
+}
+
+async function graphFetchControls() {
+  const t = state.activeTenant.name;
+  const el = document.getElementById('graph-result');
+  el.innerHTML = '<div style="color:var(--text-light)">Fetching control profiles...</div>';
+
+  const r = await api.post(`/api/tenants/${t}/graph/fetch-controls`);
+  if(r.error) {
+    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+
+  toast('Control profiles updated!', 'success');
+  el.innerHTML = `<div style="margin-top:8px;font-size:13px">Updated <strong>${r.total}</strong> controls (${r.new} new, ${r.updated} updated)</div>`;
 }
 
 let selectedFile = null;

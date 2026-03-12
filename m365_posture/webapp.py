@@ -31,6 +31,7 @@ from .planner import simulate_plan, suggest_phases, get_prioritized_actions, cal
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
 from .compliance import auto_map_compliance, map_action_to_frameworks
 from .drift import detect_drift
+from .graph_api import start_device_code_flow, poll_for_token, fetch_secure_scores, fetch_control_profiles
 from .web_frontend import get_spa_html
 
 PARSER_MAP = {
@@ -709,51 +710,159 @@ def create_app(db_path: str = None) -> Flask:
         result = db.seed_controls(controls)
         return jsonify(result)
 
-    @app.route("/api/tenants/<name>/fetch-controls", methods=["POST"])
-    def api_fetch_controls(name):
-        """Fetch secureScoreControlProfiles from Graph API using tenant credentials."""
+    # ── Graph API (Device Code Auth) ──
+
+    # In-memory store for pending device code flows (per-tenant)
+    _device_flows = {}
+
+    @app.route("/api/tenants/<name>/graph/device-code", methods=["POST"])
+    def api_graph_device_code(name):
+        """Start device code authentication flow for Graph API access."""
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
 
-        client_id = tenant.get("client_id", "")
-        client_secret = tenant.get("client_secret", "")
         tenant_id = tenant.get("tenant_id", "")
+        client_id = tenant.get("client_id", "")
 
-        if not all([client_id, client_secret, tenant_id]):
+        if not tenant_id or not client_id:
             return _json_error(
-                "Tenant must have client_id, client_secret, and tenant_id configured "
-                "to fetch from Graph API. Use POST /api/secure-score-controls/seed "
-                "for offline seeding instead."
+                "Tenant must have tenant_id and client_id configured. "
+                "Register an app in Entra ID (set 'Allow public client flows' = Yes, "
+                "add SecurityEvents.Read.All delegated permission) and set the IDs on the tenant."
             )
 
         try:
-            import requests as http_requests
-            # Get access token
-            token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-            token_resp = http_requests.post(token_url, data={
+            result = start_device_code_flow(tenant_id, client_id)
+            # Store the flow for polling
+            _device_flows[name] = {
+                "device_code": result["device_code"],
+                "tenant_id": tenant_id,
                 "client_id": client_id,
-                "client_secret": client_secret,
-                "scope": "https://graph.microsoft.com/.default",
-                "grant_type": "client_credentials",
-            }, timeout=30)
-            token_resp.raise_for_status()
-            access_token = token_resp.json()["access_token"]
+                "expires_at": datetime.utcnow().timestamp() + result.get("expires_in", 900),
+            }
+            return jsonify({
+                "user_code": result["user_code"],
+                "verification_uri": result.get("verification_uri", result.get("verification_url", "")),
+                "message": result.get("message", ""),
+                "expires_in": result.get("expires_in", 900),
+                "interval": result.get("interval", 5),
+            })
+        except Exception as e:
+            return _json_error(f"Device code flow failed: {str(e)}")
 
-            # Fetch control profiles
-            graph_url = "https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles"
-            headers = {"Authorization": f"Bearer {access_token}"}
-            resp = http_requests.get(graph_url, headers=headers, timeout=30)
-            resp.raise_for_status()
+    @app.route("/api/tenants/<name>/graph/poll-token", methods=["POST"])
+    def api_graph_poll_token(name):
+        """Poll for token after user completes device code authentication."""
+        flow = _device_flows.get(name)
+        if not flow:
+            return _json_error("No pending authentication flow. Start with /graph/device-code first.")
 
-            controls = parse_graph_control_profiles(resp.json())
+        if datetime.utcnow().timestamp() > flow["expires_at"]:
+            _device_flows.pop(name, None)
+            return _json_error("Device code expired. Please start a new flow.")
+
+        result = poll_for_token(flow["tenant_id"], flow["client_id"], flow["device_code"])
+
+        if "access_token" in result:
+            # Store token temporarily, remove device code
+            _device_flows[name] = {
+                "access_token": result["access_token"],
+                "expires_at": datetime.utcnow().timestamp() + result.get("expires_in", 3600),
+            }
+            return jsonify({"status": "authenticated", "expires_in": result.get("expires_in", 3600)})
+
+        error = result.get("error", "unknown")
+        if error == "authorization_pending":
+            return jsonify({"status": "pending", "message": "Waiting for user to authenticate..."})
+        elif error == "slow_down":
+            return jsonify({"status": "pending", "message": "Polling too fast, slowing down..."})
+        else:
+            _device_flows.pop(name, None)
+            return _json_error(result.get("error_description", f"Authentication failed: {error}"))
+
+    @app.route("/api/tenants/<name>/graph/import-scores", methods=["POST"])
+    def api_graph_import_scores(name):
+        """Import Secure Score data from Graph API using device code auth token."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+
+        flow = _device_flows.get(name)
+        if not flow or "access_token" not in flow:
+            return _json_error("Not authenticated. Complete device code flow first.")
+
+        if datetime.utcnow().timestamp() > flow["expires_at"]:
+            _device_flows.pop(name, None)
+            return _json_error("Token expired. Please re-authenticate.")
+
+        try:
+            # Fetch scores
+            scores_data = fetch_secure_scores(flow["access_token"])
+            parser = SecureScoreParser()
+            actions = parser.parse_graph_response(scores_data)
+            actions = apply_e8_mapping(actions)
+            actions = enrich_actions_from_controls(db, actions)
+
+            source_tool = SourceTool.SECURE_SCORE.value
+            new_count, updated_count = db.merge_actions(name, actions, source_tool, "graph_api")
+
+            # Post-import processing
+            corr = auto_correlate(db, name)
+            compliance = auto_map_compliance(db, name)
+            snapshot = db.take_score_snapshot(name, trigger="import:graph-api")
+            expired = db.expire_risk_acceptances(name)
+            drift = detect_drift(db, name, source_tool)
+
+            return jsonify({
+                "success": True,
+                "source": "Microsoft Graph API",
+                "total_parsed": len(actions),
+                "new_actions": new_count,
+                "updated_actions": updated_count,
+                "correlation": corr,
+                "compliance": compliance,
+                "drift": drift,
+                "expired_risk_acceptances": len(expired),
+                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
+            })
+        except Exception as e:
+            return _json_error(f"Graph API import failed: {str(e)}")
+
+    @app.route("/api/tenants/<name>/graph/fetch-controls", methods=["POST"])
+    def api_graph_fetch_controls(name):
+        """Fetch control profiles from Graph API to populate reference table."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+
+        flow = _device_flows.get(name)
+        if not flow or "access_token" not in flow:
+            return _json_error("Not authenticated. Complete device code flow first.")
+
+        if datetime.utcnow().timestamp() > flow["expires_at"]:
+            _device_flows.pop(name, None)
+            return _json_error("Token expired. Please re-authenticate.")
+
+        try:
+            profiles_data = fetch_control_profiles(flow["access_token"])
+            controls = parse_graph_control_profiles(profiles_data)
             result = db.seed_controls(controls)
             return jsonify(result)
-
-        except ImportError:
-            return _json_error("requests library is required for Graph API calls. Install with: pip install requests")
         except Exception as e:
-            return _json_error(f"Graph API fetch failed: {str(e)}")
+            return _json_error(f"Control profiles fetch failed: {str(e)}")
+
+    @app.route("/api/tenants/<name>/graph/status", methods=["GET"])
+    def api_graph_status(name):
+        """Check if the tenant has an active Graph API session."""
+        flow = _device_flows.get(name)
+        if not flow:
+            return jsonify({"authenticated": False})
+        if "access_token" not in flow:
+            return jsonify({"authenticated": False, "pending": True})
+        if datetime.utcnow().timestamp() > flow["expires_at"]:
+            _device_flows.pop(name, None)
+            return jsonify({"authenticated": False, "expired": True})
+        remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
+        return jsonify({"authenticated": True, "expires_in": remaining})
 
     # ── Enums update ──
 
