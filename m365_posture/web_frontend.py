@@ -449,11 +449,14 @@ function sortTable(table, colIdx, th) {
   // Update header indicators
   table.querySelectorAll('thead th').forEach(h => { h.classList.remove('sort-asc','sort-desc'); });
   th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
-  // Sort rows - pair each row-XXX with its detail-XXX
   const tbody = table.querySelector('tbody');
   if(!tbody) return;
   const allRows = Array.from(tbody.querySelectorAll('tr'));
-  // Build pairs: main row (id="row-*") + its detail row (id="detail-*")
+  // Collapse all expanded detail rows before sorting
+  allRows.forEach(r => {
+    if(r.id && r.id.startsWith('detail-')) r.classList.add('hidden');
+  });
+  // Only sort main rows (skip detail rows entirely)
   const mainRows = allRows.filter(r => !r.id || !r.id.startsWith('detail-'));
   const detailMap = {};
   allRows.filter(r => r.id && r.id.startsWith('detail-')).forEach(r => {
