@@ -449,22 +449,19 @@ function sortTable(table, colIdx, th) {
   // Update header indicators
   table.querySelectorAll('thead th').forEach(h => { h.classList.remove('sort-asc','sort-desc'); });
   th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
-  // Sort rows - group main rows with their detail rows
+  // Sort rows - pair each row-XXX with its detail-XXX
   const tbody = table.querySelector('tbody');
   if(!tbody) return;
   const allRows = Array.from(tbody.querySelectorAll('tr'));
-  // Build groups: each main row + any following detail rows (id starts with "detail-")
-  const groups = [];
-  allRows.forEach(r => {
-    if(r.id && r.id.startsWith('detail-')) {
-      if(groups.length) groups[groups.length-1].push(r);
-    } else {
-      groups.push([r]);
-    }
+  // Build pairs: main row (id="row-*") + its detail row (id="detail-*")
+  const mainRows = allRows.filter(r => !r.id || !r.id.startsWith('detail-'));
+  const detailMap = {};
+  allRows.filter(r => r.id && r.id.startsWith('detail-')).forEach(r => {
+    detailMap[r.id.replace('detail-','')] = r;
   });
-  groups.sort((a, b) => {
-    let aVal = (a[0].children[colIdx]?.textContent || '').trim();
-    let bVal = (b[0].children[colIdx]?.textContent || '').trim();
+  mainRows.sort((a, b) => {
+    let aVal = (a.children[colIdx]?.textContent || '').trim();
+    let bVal = (b.children[colIdx]?.textContent || '').trim();
     const aNum = parseFloat(aVal.replace(/[,%]/g,''));
     const bNum = parseFloat(bVal.replace(/[,%]/g,''));
     if(!isNaN(aNum) && !isNaN(bNum)) {
@@ -472,7 +469,11 @@ function sortTable(table, colIdx, th) {
     }
     return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
   });
-  groups.forEach(g => g.forEach(r => tbody.appendChild(r)));
+  mainRows.forEach(r => {
+    tbody.appendChild(r);
+    const key = (r.id||'').replace('row-','');
+    if(detailMap[key]) tbody.appendChild(detailMap[key]);
+  });
 }
 // Auto-apply to all tables after any render
 function applySort() {
