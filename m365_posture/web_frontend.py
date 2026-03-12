@@ -424,6 +424,7 @@ async function navigate(page) {
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
+  if(page !== 'dashboard') _dashData = {};
   const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
 }
@@ -502,8 +503,9 @@ async function renderDashboard(sourceFilter) {
     ${state.tenants.length>=2?'<button class="btn btn-sm" onclick="showDashboardCompare()">Compare Tenants</button>':''}
     <button class="btn btn-sm btn-primary" onclick="downloadDashboardPDF()">PDF Report</button>`;
 
-  // Fetch data (or reuse if just switching source filter)
-  if(!sourceFilter && sourceFilter !== '') {
+  // Fetch data on first load or full refresh; reuse when just switching source filter
+  const isFilterSwitch = (sourceFilter !== undefined) && Object.keys(_dashData).length > 0;
+  if(!isFilterSwitch) {
     const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
       api.get(`/api/tenants/${t}/scores`),
       api.get(`/api/tenants/${t}/prioritized?limit=10`),
