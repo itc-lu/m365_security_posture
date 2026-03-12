@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl
+from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, Workload
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
@@ -645,40 +645,65 @@ class Database:
                     ).fetchone()
                     if row:
                         existing = dict(row)
+                    # Fallback: match by old-style source_id (ss_<name>) for backwards compat
+                    if not existing:
+                        old_style_id = f"ss_{action.source_id.replace(' ', '_').lower()[:40]}"
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
+                            (tenant_name, action.source_tool, old_style_id),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
+                    # Fallback: match by title
+                    if not existing and action.title:
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
+                            (tenant_name, action.source_tool, action.title),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
 
                 if existing:
-                    # Update existing action
+                    # Update existing action with all current data
                     changes = {}
-                    if action.score is not None and action.score != existing["score"]:
+
+                    # Always sync score and max_score from latest import
+                    if action.score is not None and action.score != existing.get("score"):
                         conn.execute(
                             """INSERT INTO action_history (action_id, timestamp, old_score,
                                new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
                             (existing["id"], datetime.utcnow().isoformat(),
-                             existing["score"], action.score, source_file),
+                             existing.get("score"), action.score, source_file),
                         )
-                        changes["score"] = action.score
-                        changes["max_score"] = action.max_score
-                        if action.max_score and action.max_score > 0:
-                            changes["score_percentage"] = round(
-                                (action.score / action.max_score) * 100, 2)
+                    changes["score"] = action.score
+                    changes["max_score"] = action.max_score
+                    if action.max_score and action.max_score > 0:
+                        changes["score_percentage"] = round(
+                            (action.score / action.max_score) * 100, 2)
+                    else:
+                        changes["score_percentage"] = 0
 
                     if action.status != existing["status"]:
-                        if existing["status"] in ("ToDo", "Completed") and existing["source_tool"] == source_tool:
-                            conn.execute(
-                                """INSERT INTO action_history (action_id, timestamp,
-                                   old_status, new_status, source_report)
-                                   VALUES (?, ?, ?, ?, ?)""",
-                                (existing["id"], datetime.utcnow().isoformat(),
-                                 existing["status"], action.status, source_file),
-                            )
-                            changes["status"] = action.status
+                        conn.execute(
+                            """INSERT INTO action_history (action_id, timestamp,
+                               old_status, new_status, source_report)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (existing["id"], datetime.utcnow().isoformat(),
+                             existing["status"], action.status, source_file),
+                        )
+                        changes["status"] = action.status
 
+                    # Always update source_id and title to latest format
+                    changes["source_id"] = action.source_id
+                    if action.title:
+                        changes["title"] = action.title
+
+                    # Always sync enriched fields from profile
                     if action.description:
                         changes["description"] = action.description
                     if action.remediation_steps:
                         changes["remediation_steps"] = action.remediation_steps
-                    if action.current_value:
-                        changes["current_value"] = action.current_value
+                    changes["current_value"] = action.current_value or existing.get("current_value", "")
                     if action.recommended_value:
                         changes["recommended_value"] = action.recommended_value
                     if action.essential_eight_control:
@@ -690,27 +715,33 @@ class Database:
                     if control_id:
                         changes["control_id"] = control_id
 
-                    # Update reference_id if available
+                    # Always update reference_id, workload, category, subcategory, priority
                     if action.reference_id:
                         changes["reference_id"] = action.reference_id
-
-                    # Update subcategory (product) if available
+                    if action.workload and action.workload != Workload.GENERAL.value:
+                        changes["workload"] = action.workload
+                    elif action.workload and not existing.get("workload"):
+                        changes["workload"] = action.workload
+                    if action.category:
+                        changes["category"] = action.category
                     if action.subcategory:
                         changes["subcategory"] = action.subcategory
+                    if action.priority:
+                        changes["priority"] = action.priority
+                    if action.risk_level:
+                        changes["risk_level"] = action.risk_level
 
-                    # Update user_impact and implementation_effort if enriched
-                    if action.user_impact and action.user_impact != "Low":
+                    # Always sync user_impact and implementation_effort from profile
+                    if action.user_impact:
                         changes["user_impact"] = action.user_impact
-                    if action.implementation_effort and action.implementation_effort != "Medium":
+                    if action.implementation_effort:
                         changes["implementation_effort"] = action.implementation_effort
+                    if action.reference_url:
+                        changes["reference_url"] = action.reference_url
+                    if action.required_licence:
+                        changes["required_licence"] = action.required_licence
 
-                    # Update max_score if we now have it from profiles
-                    if action.max_score and action.max_score > 0 and (not existing.get("max_score") or existing.get("max_score") == 0):
-                        changes["max_score"] = action.max_score
-                        if action.score is not None:
-                            changes["score_percentage"] = round((action.score / action.max_score) * 100, 2)
-
-                    # Update Secure Score enrichment fields
+                    # Always sync Secure Score enrichment fields
                     if action.threats:
                         changes["threats"] = json.dumps(action.threats)
                     if action.tier:
@@ -719,8 +750,7 @@ class Database:
                         changes["action_type"] = action.action_type
                     if action.remediation_impact:
                         changes["remediation_impact"] = action.remediation_impact
-                    if action.deprecated:
-                        changes["deprecated"] = 1
+                    changes["deprecated"] = 1 if action.deprecated else 0
 
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
