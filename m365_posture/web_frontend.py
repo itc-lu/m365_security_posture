@@ -1022,7 +1022,8 @@ function _renderActionsTableSorted() {
     return `<th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="event.stopPropagation();sortActionsBy(${i})">${c}${arrow}</th>`;
   }).join('');
 
-  el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px">
+  el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px;gap:8px">
+    <button class="btn btn-primary btn-sm" onclick="showAddToPlan()">Add to Plan</button>
     <button class="btn btn-danger btn-sm" onclick="batchDeleteActions()">Delete Selected</button>
     <span id="batch-count" style="font-size:12px;color:var(--text-light);margin-left:8px"></span>
   </div>
@@ -1059,6 +1060,60 @@ async function batchDeleteActions() {
   if(r.error) return toast(r.error, 'error');
   toast(r.deleted + ' actions deleted', 'success');
   filterActions();
+}
+
+async function showAddToPlan(actionIds) {
+  // If called without args, get from selected checkboxes
+  if(!actionIds) {
+    actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
+  }
+  if(!actionIds.length) return toast('No actions selected', 'error');
+  const t = state.activeTenant.name;
+  const plans = await api.get(`/api/tenants/${t}/plans`);
+
+  let planOptions = plans.map(p => `<option value="${p.id}">${p.name} (${p.item_count} actions, ${p.status})</option>`).join('');
+  const hasPlans = plans.length > 0;
+
+  openModal(`Add ${actionIds.length} Action${actionIds.length>1?'s':''} to Plan`, `
+    <div class="form-group">
+      <label><input type="radio" name="plan-mode" value="existing" ${hasPlans?'checked':''} ${!hasPlans?'disabled':''} onchange="document.getElementById('existing-plan-section').classList.remove('hidden');document.getElementById('new-plan-section').classList.add('hidden')"> Add to existing plan</label>
+    </div>
+    <div id="existing-plan-section" class="${hasPlans?'':'hidden'} mb-16" style="padding-left:20px">
+      <select id="atp-plan-id" style="width:100%">${planOptions||'<option>No plans available</option>'}</select>
+    </div>
+    <div class="form-group">
+      <label><input type="radio" name="plan-mode" value="new" ${!hasPlans?'checked':''} onchange="document.getElementById('new-plan-section').classList.remove('hidden');document.getElementById('existing-plan-section').classList.add('hidden')"> Create new plan</label>
+    </div>
+    <div id="new-plan-section" class="${hasPlans?'hidden':''}" style="padding-left:20px">
+      <div class="form-group"><label>Plan Name</label><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
+      <div class="form-group"><label>Description</label><textarea id="atp-new-desc" rows="2"></textarea></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="addToPlanSubmit(${JSON.stringify(actionIds)})">Add to Plan</button>`);
+}
+
+async function addToPlanSubmit(actionIds) {
+  const mode = document.querySelector('input[name="plan-mode"]:checked')?.value;
+  const t = state.activeTenant.name;
+  let planId;
+
+  if(mode === 'new') {
+    const name = document.getElementById('atp-new-name').value;
+    if(!name) return toast('Plan name required', 'error');
+    const r = await api.post(`/api/tenants/${t}/plans`, {name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds});
+    if(r.error) return toast(r.error, 'error');
+    planId = r.id;
+  } else {
+    planId = document.getElementById('atp-plan-id').value;
+    if(!planId) return toast('Select a plan', 'error');
+    // Add actions one by one
+    for(const aid of actionIds) {
+      const r = await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+      if(r.error && !r.error.includes('UNIQUE')) toast(r.error, 'error');
+    }
+  }
+  closeModal();
+  toast(`${actionIds.length} action${actionIds.length>1?'s':''} added to plan`, 'success');
 }
 
 function actionDetailHtml(a) {
@@ -1113,6 +1168,7 @@ function actionDetailHtml(a) {
     <div class="flex justify-between items-center mb-16">
       <div class="flex gap-8">
         <button class="btn btn-sm" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</button>
+        <button class="btn btn-sm btn-primary" onclick="showAddToPlan(['${a.id}']);event.stopPropagation()">Add to Plan</button>
         ${a.status!=='Risk Accepted'?`<button class="btn btn-sm" style="background:var(--warning-light);border-color:var(--warning);color:#92400e" onclick="showAcceptRisk('${a.id}');event.stopPropagation()">Accept Risk</button>`:''}
         <button class="btn btn-sm" onclick="showAddDependency('${a.id}');event.stopPropagation()">+ Dependency</button>
         <button class="btn btn-sm btn-danger" onclick="deleteAction('${a.id}');event.stopPropagation()">Delete</button>
@@ -1483,15 +1539,18 @@ async function renderPlans() {
   if(!plans.length) {
     html = '<div class="card text-center" style="padding:60px"><h3>No remediation plans yet</h3><p style="color:var(--text-light);margin:12px 0">Create a plan to simulate and prioritize security improvements</p><button class="btn btn-primary" onclick="showCreatePlan()">+ Create Plan</button></div>';
   } else {
+    const statusColors = {Draft:'gray', Active:'success', Completed:'info', Archived:'warning'};
     html = plans.map(p => `
-      <div class="card mb-16">
-        <div class="card-header">${p.name} <span class="badge badge-${p.status==='Active'?'success':'gray'}">${p.status}</span></div>
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${p.description||'No description'}</p>
-        <div style="font-size:13px">${p.item_count} actions &middot; Created ${p.created_at?.substring(0,10)}</div>
-        <div class="btn-group mt-16">
-          <button class="btn btn-sm btn-primary" onclick="viewPlan('${p.id}')">Open</button>
-          <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}')">Delete</button>
+      <div class="card mb-16" style="cursor:pointer" onclick="viewPlan('${p.id}')">
+        <div class="flex justify-between items-center">
+          <div class="card-header" style="margin:0">${p.name} <span class="badge badge-${statusColors[p.status]||'gray'}">${p.status}</span></div>
+          <div class="flex gap-8">
+            <button class="btn btn-sm btn-primary" onclick="viewPlan('${p.id}');event.stopPropagation()">Open</button>
+            <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}');event.stopPropagation()">Delete</button>
+          </div>
         </div>
+        <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${p.description||'No description'}</p>
+        <div style="font-size:13px">${p.item_count} actions &middot; Created ${p.created_at?.substring(0,10)} &middot; Updated ${p.updated_at?.substring(0,10)||'N/A'}</div>
       </div>`).join('');
   }
   document.getElementById('content').innerHTML = html;
@@ -1528,15 +1587,23 @@ async function createPlan() {
   viewPlan(r.id);
 }
 
+let _currentPlanId = null;
+
 async function viewPlan(planId) {
   if(!requireTenant()) return;
+  _currentPlanId = planId;
   const t = state.activeTenant.name;
   const plan = await api.get(`/api/plans/${planId}`);
   const actionIds = plan.items.map(i => i.action_id);
-  const [sim, phases] = await Promise.all([
-    api.post(`/api/tenants/${t}/simulate`, {action_ids:actionIds}),
-    api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3})
-  ]);
+
+  let sim = {actions_count:0, percentage_gain:0, current_percentage:0, projected_percentage:0, by_tool:{}, essential_eight_impact:{}, risk_reduction:{}, licences_needed:[], effort_breakdown:{}, user_impact_summary:{}};
+  let phases = [];
+  if(actionIds.length) {
+    [sim, phases] = await Promise.all([
+      api.post(`/api/tenants/${t}/simulate`, {action_ids:actionIds}),
+      api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3})
+    ]);
+  }
 
   let toolImpact = Object.entries(sim.by_tool||{}).map(([tool,d]) => `
     <div class="mb-8"><div class="flex justify-between"><span style="font-size:13px">${tool}</span><span style="font-size:13px;font-weight:600;color:var(--success)">+${d.percentage_gain?.toFixed(2)||0}%</span></div>
@@ -1547,6 +1614,21 @@ async function viewPlan(planId) {
     <div style="font-size:13px;padding:4px 0">${ctrl}: <strong>${d.actions_resolved}</strong> actions → ${d.maturity_levels.join(', ')}</div>`).join('');
 
   let riskReduction = Object.entries(sim.risk_reduction||{}).map(([level,n]) => `<span class="badge badge-${level==='Critical'||level==='High'?'danger':'warning'}">${n}x ${level}</span>`).join(' ');
+
+  // Plan actions table with remove button
+  let planActionsRows = plan.items.map(item => {
+    const a = item;
+    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    return `<tr>
+      <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
+      <td>${statusBadge(a.status||'ToDo')}</td>
+      <td>${priorityBadge(a.priority||'Medium')}</td>
+      <td style="font-size:12px">${a.workload||''}</td>
+      <td style="font-size:12px">${a.implementation_effort||''}</td>
+      <td>${scoreDisplay}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
+    </tr>`;
+  }).join('');
 
   let phaseHtml = phases.map((ph,i) => `
     <div class="card phase-card phase-${i+1} mb-16">
@@ -1561,10 +1643,22 @@ async function viewPlan(planId) {
       </tbody></table></div>
     </div>`).join('');
 
+  const statusOpts = ['Draft','Active','Completed','Archived'].map(s => `<option value="${s}" ${s===plan.status?'selected':''}>${s}</option>`).join('');
+
   document.getElementById('content').innerHTML = `
     <button class="btn mb-16" onclick="renderPlans()">&larr; Back to Plans</button>
-    <h2 style="margin-bottom:4px">${plan.name}</h2>
-    <p style="color:var(--text-light);margin-bottom:16px">${plan.description||''}</p>
+
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-8">
+        <h2 style="margin:0">${plan.name}</h2>
+        <div class="flex gap-8 items-center">
+          <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
+          <button class="btn btn-sm" onclick="showEditPlan('${planId}', ${JSON.stringify(plan.name).replace(/"/g,'&quot;')}, ${JSON.stringify(plan.description||'').replace(/"/g,'&quot;')})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
+        </div>
+      </div>
+      <p style="color:var(--text-light);margin:0">${plan.description||'No description'}</p>
+    </div>
 
     <div class="grid grid-4 mb-16">
       <div class="card stat-card"><div class="value">${sim.actions_count}</div><div class="label">Actions to Implement</div></div>
@@ -1573,19 +1667,92 @@ async function viewPlan(planId) {
       <div class="card stat-card">${gauge(sim.projected_percentage||0, 100, 'Projected')}</div>
     </div>
 
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-8">
+        <div class="card-header" style="margin:0">Plan Actions (${plan.items.length})</div>
+        <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
+      </div>
+      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
+    </div>
+
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Impact by Source Tool</div>${toolImpact||'<div style="color:var(--text-light)">No data</div>'}</div>
       <div class="card">
-        <div class="card-header">Risk Reduction</div><div class="mb-8">${riskReduction}</div>
+        <div class="card-header">Risk Reduction</div><div class="mb-8">${riskReduction||'<span style="color:var(--text-light)">N/A</span>'}</div>
         <div class="card-header mt-16">Essential Eight Impact</div>${e8Impact||'<div style="color:var(--text-light)">No E8 mapped actions</div>'}
         <div class="card-header mt-16">Licences Required</div><div style="font-size:13px">${sim.licences_needed?.join(', ')||'None'}</div>
-        <div class="card-header mt-16">Effort Breakdown</div><div style="font-size:13px">${Object.entries(sim.effort_breakdown||{}).map(([e,n])=>`${n}x ${e}`).join(', ')}</div>
-        <div class="card-header mt-16">User Impact</div><div style="font-size:13px">${Object.entries(sim.user_impact_summary||{}).map(([e,n])=>`${n}x ${e}`).join(', ')}</div>
+        <div class="card-header mt-16">Effort Breakdown</div><div style="font-size:13px">${Object.entries(sim.effort_breakdown||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
+        <div class="card-header mt-16">User Impact</div><div style="font-size:13px">${Object.entries(sim.user_impact_summary||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
       </div>
     </div>
 
-    <h3 class="mb-16">Suggested Phased Rollout</h3>
-    ${phaseHtml}`;
+    ${phaseHtml ? `<h3 class="mb-16">Suggested Phased Rollout</h3>${phaseHtml}` : ''}`;
+  setTimeout(applySort, 50);
+}
+
+async function updatePlanStatus(planId, status) {
+  await api.put(`/api/plans/${planId}`, {status});
+  toast('Plan status updated to ' + status, 'success');
+}
+
+function showEditPlan(planId, name, desc) {
+  openModal('Edit Plan', `
+    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${name.replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${desc||''}</textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="submitEditPlan('${planId}')">Save</button>`);
+}
+
+async function submitEditPlan(planId) {
+  const name = document.getElementById('ep-name').value;
+  if(!name) return toast('Name required', 'error');
+  await api.put(`/api/plans/${planId}`, {name, description: document.getElementById('ep-desc').value});
+  closeModal();
+  toast('Plan updated', 'success');
+  viewPlan(planId);
+}
+
+async function removePlanItem(planId, actionId) {
+  if(!confirm('Remove this action from the plan?')) return;
+  await api.del(`/api/plans/${planId}/items/${actionId}`);
+  toast('Action removed from plan', 'success');
+  viewPlan(planId);
+}
+
+async function showAddActionsToPlan(planId) {
+  const t = state.activeTenant.name;
+  const plan = await api.get(`/api/plans/${planId}`);
+  const existingIds = new Set(plan.items.map(i => i.action_id));
+
+  const actions = await api.get(`/api/tenants/${t}/actions?status=ToDo`);
+  const inProgress = await api.get(`/api/tenants/${t}/actions?status=In Progress`);
+  const available = [...actions, ...inProgress].filter(a => !existingIds.has(a.id));
+
+  if(!available.length) {
+    return openModal('Add Actions to Plan', '<div style="padding:20px;text-align:center;color:var(--text-light)">All pending actions are already in this plan.</div>',
+      '<button class="btn" onclick="closeModal()">Close</button>');
+  }
+
+  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+
+  openModal('Add Actions to Plan', `
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${available.length} actions available (already in plan excluded)</div>
+    <div style="max-height:400px;overflow-y:auto">
+      <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-add-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="submitAddActionsToPlan('${planId}')">Add Selected</button>`);
+}
+
+async function submitAddActionsToPlan(planId) {
+  const ids = [...document.querySelectorAll('.plan-add-cb:checked')].map(c => c.value);
+  if(!ids.length) return toast('Select at least one action', 'error');
+  for(const aid of ids) {
+    await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+  }
+  closeModal();
+  toast(ids.length + ' action' + (ids.length>1?'s':'') + ' added', 'success');
+  viewPlan(planId);
 }
 
 async function deletePlan(id) {
