@@ -951,7 +951,49 @@ async function filterActions() {
   renderActionsTable(actions);
 }
 
+let _actionsData = [];
+let _actionsSortCol = null;
+let _actionsSortDir = 'asc';
+
 function renderActionsTable(actions) {
+  _actionsData = actions;
+  _actionsSortCol = null;
+  _actionsSortDir = 'asc';
+  _renderActionsTableSorted();
+}
+
+function sortActionsBy(colIdx) {
+  if(_actionsSortCol === colIdx) {
+    _actionsSortDir = _actionsSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _actionsSortCol = colIdx;
+    _actionsSortDir = 'asc';
+  }
+  // Sort keys by column index (matching header order: checkbox,ID,Ref,Title,Status,Priority,Workload,Source,Score)
+  const keys = [null,'id','reference_id','title','status','priority','workload','source_tool','_score'];
+  const key = keys[colIdx];
+  if(!key) return;
+  const sorted = [..._actionsData].sort((a,b) => {
+    let aVal, bVal;
+    if(key === '_score') {
+      aVal = a.score != null ? a.score : -1;
+      bVal = b.score != null ? b.score : -1;
+    } else if(key === 'reference_id') {
+      aVal = parseInt(a[key]) || 0;
+      bVal = parseInt(b[key]) || 0;
+    } else {
+      aVal = (a[key]||'').toString().toLowerCase();
+      bVal = (b[key]||'').toString().toLowerCase();
+    }
+    if(typeof aVal === 'number') return _actionsSortDir === 'asc' ? aVal - bVal : bVal - aVal;
+    return _actionsSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+  _actionsData = sorted;
+  _renderActionsTableSorted();
+}
+
+function _renderActionsTableSorted() {
+  const actions = _actionsData;
   const el = document.getElementById('actions-table');
   if(!actions.length) { el.innerHTML = '<div class="text-center" style="padding:40px;color:var(--text-light)">No actions found</div>'; return; }
 
@@ -972,16 +1014,23 @@ function renderActionsTable(actions) {
     <tr id="detail-${a.id}" class="hidden"><td colspan="9" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
   }).join('');
 
+  // Build sort indicators for headers
+  const cols = ['','ID','Ref','Title','Status','Priority','Workload','Source','Score'];
+  const headers = cols.map((c,i) => {
+    if(i===0) return '<th onclick="event.stopPropagation()"><input type="checkbox" id="select-all-actions" onchange="toggleSelectAllActions(this)"></th>';
+    const arrow = _actionsSortCol===i ? (_actionsSortDir==='asc'?' ▲':' ▼') : '';
+    return `<th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="event.stopPropagation();sortActionsBy(${i})">${c}${arrow}</th>`;
+  }).join('');
+
   el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px">
     <button class="btn btn-danger btn-sm" onclick="batchDeleteActions()">Delete Selected</button>
     <span id="batch-count" style="font-size:12px;color:var(--text-light);margin-left:8px"></span>
   </div>
-  <table><thead><tr><th onclick="event.stopPropagation()"><input type="checkbox" id="select-all-actions" onchange="toggleSelectAllActions(this)"></th><th>ID</th><th>Ref</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Source</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>
+  <table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>
     <div style="padding:8px;font-size:12px;color:var(--text-light)">${actions.length} actions</div>`;
 
   // Wire up checkbox change listeners
   el.querySelectorAll('.action-cb').forEach(cb => cb.addEventListener('change', updateBatchBar));
-  setTimeout(applySort, 10);
 }
 
 function toggleSelectAllActions(master) {
