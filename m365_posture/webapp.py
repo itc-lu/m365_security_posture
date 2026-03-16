@@ -8,8 +8,10 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import tempfile
 import webbrowser
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +24,8 @@ from .models import (
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
 )
 from .parsers import (
-    SecureScoreParser, ScubaParser, ZeroTrustParser, SCTParser, M365AssessParser,
+    SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
+    SCTParser, M365AssessParser,
     enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
 )
 from .essential_eight import apply_e8_mapping, get_e8_summary
@@ -38,6 +41,7 @@ PARSER_MAP = {
     "secure-score": (SecureScoreParser, SourceTool.SECURE_SCORE.value),
     "scuba": (ScubaParser, SourceTool.SCUBA.value),
     "zero-trust": (ZeroTrustParser, SourceTool.ZERO_TRUST.value),
+    "zero-trust-report": (ZeroTrustReportParser, SourceTool.ZERO_TRUST_REPORT.value),
     "sct": (SCTParser, SourceTool.SCT.value),
     "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
 }
@@ -45,7 +49,7 @@ PARSER_MAP = {
 
 def create_app(db_path: str = None) -> Flask:
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB (ZT reports with data can be large)
     db = Database(db_path)
 
     def _json_error(msg, code=400):
@@ -205,6 +209,71 @@ def create_app(db_path: str = None) -> Flask:
 
     # ── Import endpoint ──
 
+    def _store_zt_report(db, tenant_name, filename, tmp_path, parser, actions):
+        """Store ZT report HTML and data files, save metadata to DB."""
+        reports_dir = Path(db.db_path).parent / "zt_reports" / tenant_name
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        import uuid as _uuid
+        report_id = str(_uuid.uuid4())[:8]
+        report_dir = reports_dir / report_id
+        report_dir.mkdir(exist_ok=True)
+
+        html_path = ""
+        data_dir = ""
+
+        if Path(tmp_path).suffix.lower() == ".zip":
+            # Extract ZIP contents to report directory
+            extract_dir = getattr(parser, "_extract_dir", None)
+            if extract_dir and Path(extract_dir).exists():
+                # Move extracted files to permanent storage
+                for item in Path(extract_dir).iterdir():
+                    dest = report_dir / item.name
+                    if item.is_dir():
+                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(str(item), str(dest))
+                shutil.rmtree(extract_dir, ignore_errors=True)
+
+            # Find HTML file
+            for html_file in report_dir.rglob("*.html"):
+                html_path = str(html_file)
+                break
+
+            # Find zt-export data dir
+            for candidate in report_dir.rglob("zt-export"):
+                if candidate.is_dir():
+                    data_dir = str(candidate)
+                    break
+        else:
+            # Single JSON file - copy it
+            shutil.copy2(tmp_path, str(report_dir / filename))
+
+        # Count statuses
+        from collections import Counter
+        status_counts = Counter(a.status for a in actions)
+
+        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
+        report_data = {
+            "id": report_id,
+            "imported_at": datetime.utcnow().isoformat(),
+            "executed_at": metadata.get("executed_at", ""),
+            "report_tenant_id": metadata.get("tenant_id", ""),
+            "report_tenant_name": metadata.get("tenant_name", ""),
+            "report_domain": metadata.get("domain", ""),
+            "report_account": metadata.get("account", ""),
+            "tool_version": metadata.get("tool_version", ""),
+            "test_result_summary": getattr(parser, "test_result_summary", {}),
+            "tenant_info": getattr(parser, "tenant_info", {}),
+            "html_path": html_path,
+            "data_dir": data_dir,
+            "total_tests": len(actions),
+            "passed_tests": status_counts.get("Completed", 0),
+            "failed_tests": status_counts.get("ToDo", 0),
+            "source_file": filename,
+        }
+        return db.store_zt_report(tenant_name, report_data)
+
     @app.route("/api/tenants/<name>/import", methods=["POST"])
     def api_import(name):
         if not db.get_tenant(name):
@@ -235,6 +304,11 @@ def create_app(db_path: str = None) -> Flask:
 
             new_count, updated_count = db.merge_actions(name, actions, source_tool, file.filename)
 
+            # For Zero Trust Report: store HTML report and metadata
+            zt_report_id = None
+            if source == "zero-trust-report":
+                zt_report_id = _store_zt_report(db, name, file.filename, tmp_path, parser, actions)
+
             # Auto-correlate after import
             corr = auto_correlate(db, name)
 
@@ -250,7 +324,7 @@ def create_app(db_path: str = None) -> Flask:
             # Detect drift vs previous snapshot
             drift = detect_drift(db, name, source_tool)
 
-            return jsonify({
+            result = {
                 "success": True,
                 "source": source,
                 "file": file.filename,
@@ -262,11 +336,66 @@ def create_app(db_path: str = None) -> Flask:
                 "drift": drift,
                 "expired_risk_acceptances": len(expired),
                 "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
-            })
+            }
+            if zt_report_id:
+                result["zt_report_id"] = zt_report_id
+            return jsonify(result)
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
         finally:
             os.unlink(tmp_path)
+
+    # ── Zero Trust Report endpoints ──
+
+    def _zt_reports_dir():
+        return Path(db.db_path).parent / "zt_reports"
+
+    @app.route("/api/tenants/<name>/zt-reports", methods=["GET"])
+    def api_zt_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        reports = db.get_zt_reports(name)
+        # Don't send the full tenant_info blob in list view
+        for r in reports:
+            r.pop("tenant_info", None)
+        return jsonify(reports)
+
+    @app.route("/api/zt-reports/<report_id>", methods=["GET"])
+    def api_zt_report_detail(report_id):
+        report = db.get_zt_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        return jsonify(report)
+
+    @app.route("/api/zt-reports/<report_id>/html", methods=["GET"])
+    def api_zt_report_html(report_id):
+        report = db.get_zt_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path or not Path(html_path).exists():
+            return _json_error("HTML report file not found", 404)
+        return send_file(html_path, mimetype="text/html")
+
+    @app.route("/api/zt-reports/<report_id>/data/<path:filepath>", methods=["GET"])
+    def api_zt_report_data(report_id, filepath):
+        """Serve files from the report's zt-export data directory."""
+        report = db.get_zt_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        data_dir = report.get("data_dir", "")
+        if not data_dir:
+            return _json_error("No data directory for this report", 404)
+        full_path = Path(data_dir) / filepath
+        # Security: ensure path stays within data_dir
+        try:
+            full_path.resolve().relative_to(Path(data_dir).resolve())
+        except ValueError:
+            return _json_error("Invalid path", 400)
+        if not full_path.exists():
+            return _json_error("File not found", 404)
+        mime = "application/json" if full_path.suffix == ".json" else "application/octet-stream"
+        return send_file(str(full_path), mimetype=mime)
 
     # ── Scores endpoint ──
 

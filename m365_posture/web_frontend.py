@@ -1180,7 +1180,7 @@ function actionDetailHtml(a) {
   const scoreDisplay = a.score != null ? `${a.score} / ${a.max_score}` : 'N/A';
 
   // Source badge color
-  const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Manual':'badge-gray'};
+  const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
 
   // Remediation steps - split into structured parts if possible
@@ -1393,17 +1393,22 @@ async function renderImport() {
     <div class="card mb-16">
       <div class="card-header">Import from File</div>
       <div class="form-group"><label>Source Tool</label>
-        <select id="imp-source">${selectOptions(state.enums.import_sources)}</select></div>
+        <select id="imp-source" onchange="onSourceChange()">${selectOptions(state.enums.import_sources)}</select></div>
+      <div id="imp-source-hint" style="font-size:12px;color:var(--text-light);margin:-8px 0 8px 0;display:none"></div>
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('imp-file').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
         <div class="icon">&#128228;</div>
         <div><strong>Click to upload</strong> or drag and drop</div>
-        <div style="color:var(--text-light);font-size:13px;margin-top:4px">JSON or CSV file</div>
+        <div id="upload-hint" style="color:var(--text-light);font-size:13px;margin-top:4px">JSON or CSV file</div>
       </div>
-      <input type="file" id="imp-file" accept=".json,.csv" style="display:none" onchange="handleFileSelect(event)">
+      <input type="file" id="imp-file" accept=".json,.csv,.zip" style="display:none" onchange="handleFileSelect(event)">
       <div id="imp-file-name" style="margin-top:8px;font-size:13px"></div>
       <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import</button>
     </div>
-    <div id="imp-result"></div>`;
+    <div id="imp-result"></div>
+    <div id="zt-reports-section"></div>`;
+
+  // Load ZT reports if any exist
+  loadZtReports(t);
 }
 
 // ── Graph API Auth ──
@@ -1561,6 +1566,109 @@ async function doImport() {
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
     </div>`;
   selectedFile=null;
+  // Reload ZT reports after import
+  if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+}
+
+function onSourceChange() {
+  const src = document.getElementById('imp-source').value;
+  const hint = document.getElementById('imp-source-hint');
+  const uploadHint = document.getElementById('upload-hint');
+  if(src === 'zero-trust-report') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the full report directory as a <strong>ZIP file</strong> (containing ZeroTrustAssessmentReport.html and zt-export/), or just the ZeroTrustAssessmentReport.json file.';
+    uploadHint.textContent = 'ZIP file (recommended) or JSON file';
+  } else {
+    hint.style.display = 'none';
+    uploadHint.textContent = 'JSON or CSV file';
+  }
+  // Reset file selection
+  selectedFile = null;
+  document.getElementById('imp-file-name').textContent = '';
+  document.getElementById('imp-btn').disabled = true;
+}
+
+async function loadZtReports(tenantName) {
+  const el = document.getElementById('zt-reports-section');
+  if(!el) return;
+  const reports = await api.get(`/api/tenants/${tenantName}/zt-reports`);
+  if(!reports.length) { el.innerHTML = ''; return; }
+
+  const rows = reports.map(r => {
+    const date = r.imported_at ? new Date(r.imported_at).toLocaleString() : '';
+    const execDate = r.executed_at ? new Date(r.executed_at).toLocaleString() : '';
+    const pct = r.total_tests > 0 ? Math.round(r.passed_tests / r.total_tests * 100) : 0;
+    const pctColor = pct >= 60 ? 'var(--success)' : pct >= 30 ? 'var(--warning)' : 'var(--danger)';
+    const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/zt-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+    const summary = r.test_result_summary || {};
+    const summaryParts = [];
+    if(summary.IdentityTotal) summaryParts.push(`Identity: ${summary.IdentityPassed}/${summary.IdentityTotal}`);
+    if(summary.DevicesTotal) summaryParts.push(`Devices: ${summary.DevicesPassed}/${summary.DevicesTotal}`);
+    if(summary.DataTotal) summaryParts.push(`Data: ${summary.DataPassed}/${summary.DataTotal}`);
+    const summaryText = summaryParts.join(' | ') || '';
+    return `<tr>
+      <td>${date}</td>
+      <td>${execDate}</td>
+      <td>${r.report_domain || r.report_tenant_name || ''}</td>
+      <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
+      <td style="font-size:12px">${summaryText}</td>
+      <td>${r.tool_version || ''}</td>
+      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">Zero Trust Assessment Reports</div>
+      <table class="data-table">
+        <thead><tr><th>Imported</th><th>Executed</th><th>Domain</th><th>Pass Rate</th><th>Summary</th><th>Version</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function showZtReportDetail(reportId) {
+  const r = await api.get(`/api/zt-reports/${reportId}`);
+  if(r.error) return toast(r.error, 'error');
+
+  const summary = r.test_result_summary || {};
+  const ti = r.tenant_info || {};
+
+  // Build tenant overview
+  const tenantOverview = ti.TenantOverview || {};
+  let overviewHtml = '';
+  if(Object.keys(tenantOverview).length) {
+    overviewHtml = '<div class="grid grid-4" style="margin:12px 0">' +
+      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k.replace(/([A-Z])/g,' $1').trim()}</div></div>`).join('') +
+      '</div>';
+  }
+
+  // Build summary stats
+  let summaryHtml = '<div class="grid grid-3" style="margin:12px 0">';
+  if(summary.IdentityTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.IdentityPassed}/${summary.IdentityTotal}</div><div class="label">Identity</div></div>`;
+  if(summary.DevicesTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.DevicesPassed}/${summary.DevicesTotal}</div><div class="label">Devices</div></div>`;
+  if(summary.DataTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.DataPassed}/${summary.DataTotal}</div><div class="label">Data</div></div>`;
+  summaryHtml += '</div>';
+
+  const htmlBtn = r.html_path ? `<button class="btn btn-primary" onclick="window.open('/api/zt-reports/${r.id}/html','_blank')">Open Full HTML Report</button>` : '';
+
+  showModal('Zero Trust Report Details', `
+    <div style="margin-bottom:16px">
+      <div class="grid grid-2" style="gap:8px;font-size:13px">
+        <div><strong>Domain:</strong> ${r.report_domain||'—'}</div>
+        <div><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
+        <div><strong>Account:</strong> ${r.report_account||'—'}</div>
+        <div><strong>Tool Version:</strong> ${r.tool_version||'—'}</div>
+        <div><strong>Executed:</strong> ${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</div>
+        <div><strong>Imported:</strong> ${new Date(r.imported_at).toLocaleString()}</div>
+      </div>
+    </div>
+    <div class="field-label">Test Results</div>
+    ${summaryHtml}
+    <div style="font-size:13px;margin:8px 0">Total: <strong>${r.total_tests}</strong> tests | Passed: <strong style="color:var(--success)">${r.passed_tests}</strong> | Failed: <strong style="color:var(--danger)">${r.failed_tests}</strong></div>
+    ${overviewHtml ? '<div class="field-label" style="margin-top:16px">Tenant Overview</div>' + overviewHtml : ''}
+    <div style="margin-top:16px">${htmlBtn}</div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
 }
 
 // ── Plans ──

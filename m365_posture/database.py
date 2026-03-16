@@ -243,6 +243,28 @@ class Database:
                     updated_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_ssc_title ON secure_score_controls(title);
+
+                -- Zero Trust Report storage (HTML reports + metadata)
+                CREATE TABLE IF NOT EXISTS zt_reports (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    imported_at TEXT NOT NULL,
+                    executed_at TEXT DEFAULT '',
+                    report_tenant_id TEXT DEFAULT '',
+                    report_tenant_name TEXT DEFAULT '',
+                    report_domain TEXT DEFAULT '',
+                    report_account TEXT DEFAULT '',
+                    tool_version TEXT DEFAULT '',
+                    test_result_summary TEXT DEFAULT '{}',
+                    tenant_info TEXT DEFAULT '{}',
+                    html_path TEXT DEFAULT '',
+                    data_dir TEXT DEFAULT '',
+                    total_tests INTEGER DEFAULT 0,
+                    passed_tests INTEGER DEFAULT 0,
+                    failed_tests INTEGER DEFAULT 0,
+                    source_file TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_zt_reports_tenant ON zt_reports(tenant_name);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -279,6 +301,64 @@ class Database:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+    # ── Zero Trust Reports ──
+
+    def store_zt_report(self, tenant_name: str, report_data: dict) -> str:
+        """Store a Zero Trust Report record. Returns the report ID."""
+        report_id = report_data.get("id") or str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO zt_reports
+                   (id, tenant_name, imported_at, executed_at, report_tenant_id,
+                    report_tenant_name, report_domain, report_account, tool_version,
+                    test_result_summary, tenant_info, html_path, data_dir,
+                    total_tests, passed_tests, failed_tests, source_file)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (report_id, tenant_name,
+                 report_data.get("imported_at", datetime.utcnow().isoformat()),
+                 report_data.get("executed_at", ""),
+                 report_data.get("report_tenant_id", ""),
+                 report_data.get("report_tenant_name", ""),
+                 report_data.get("report_domain", ""),
+                 report_data.get("report_account", ""),
+                 report_data.get("tool_version", ""),
+                 json.dumps(report_data.get("test_result_summary", {})),
+                 json.dumps(report_data.get("tenant_info", {})),
+                 report_data.get("html_path", ""),
+                 report_data.get("data_dir", ""),
+                 report_data.get("total_tests", 0),
+                 report_data.get("passed_tests", 0),
+                 report_data.get("failed_tests", 0),
+                 report_data.get("source_file", "")),
+            )
+        return report_id
+
+    def get_zt_reports(self, tenant_name: str) -> list[dict]:
+        """Get all Zero Trust Reports for a tenant."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM zt_reports WHERE tenant_name=? ORDER BY imported_at DESC",
+                (tenant_name,),
+            ).fetchall()
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
+                d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
+                results.append(d)
+            return results
+
+    def get_zt_report(self, report_id: str) -> dict | None:
+        """Get a single ZT report by ID."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM zt_reports WHERE id=?", (report_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
+            d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
+            return d
 
     # ── Graph API overall scores ──
 

@@ -66,6 +66,7 @@ class SourceTool(str, Enum):
     SECURE_SCORE = "Microsoft Secure Score"
     SCUBA = "SCuBA (CISA)"
     ZERO_TRUST = "Zero Trust Assessment"
+    ZERO_TRUST_REPORT = "Zero Trust Report"
     SCT = "Security Compliance Toolkit"
     M365_ASSESS = "M365-Assess"
     MANUAL = "Manual"
