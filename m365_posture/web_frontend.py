@@ -402,6 +402,24 @@ function pctColor(p) {
   return 'var(--danger)';
 }
 
+function mdToHtml(text) {
+  // Convert markdown links [text](url) to clickable HTML, bold **text**, and headings
+  if(!text) return '';
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Markdown links: [label](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  // Bare URLs not already in an <a> tag
+  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"&]+)/g, '<a href="$1" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  // Bold **text**
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Headings
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:8px 0 4px">$1</h4>');
+  s = s.replace(/^## (.+)$/gm, '<h3 style="margin:10px 0 6px">$1</h3>');
+  // List items
+  s = s.replace(/^- (.+)$/gm, '&bull; $1');
+  return s;
+}
+
 function gauge(pct, size=120, label='') {
   const r=45, c=2*Math.PI*r, off=c-(pct/100)*c;
   return `<div class="gauge" style="width:${size}px;height:${size}px">
@@ -1235,10 +1253,10 @@ function actionDetailHtml(a) {
     const parts = remText.split('Next steps:');
     const prereq = parts[0].replace('Prerequisites:', '').trim();
     const steps = parts[1]?.trim() || '';
-    prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${prereq}</div></div>` : '';
-    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${steps}</div></div>` : '';
+    prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${isZTR?mdToHtml(prereq):prereq}</div></div>` : '';
+    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
   } else if(remText) {
-    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${remText}</div></div>`;
+    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${isZTR?mdToHtml(remText):remText}</div></div>`;
   }
 
   const uid = a.id.replace(/[^a-zA-Z0-9]/g,'');
@@ -1265,8 +1283,8 @@ function actionDetailHtml(a) {
       <div class="action-detail-layout">
         <div>
           ${isZTR ? `
-          ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${a.description}</div></div>`:''}
-          ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><pre>${a.current_value}</pre></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
           ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
           ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
@@ -1962,14 +1980,30 @@ async function deletePlan(id) {
 }
 
 // ── Correlations ──
+let _corrTab = 'results';
+
 async function renderCorrelations() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
   document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="runCorrelation()">Re-correlate</button>';
+
+  const tabClass = tab => `atab${_corrTab===tab?' active':''}`;
+
+  const tabBar = `<div class="card mb-16" style="padding:0">
+    <div class="action-tabs" style="margin:0">
+      <div class="${tabClass('results')}" onclick="_corrTab='results';renderCorrelations()">Correlation Results</div>
+      <div class="${tabClass('families')}" onclick="_corrTab='families';renderCorrelations()">Manage Control Families</div>
+    </div></div>`;
+
+  if(_corrTab === 'families') {
+    await renderControlFamilies(tabBar);
+    return;
+  }
+
   const corr = await api.get(`/api/tenants/${t}/correlations`);
 
   if(!corr.length) {
-    document.getElementById('content').innerHTML = '<div class="card text-center" style="padding:60px"><h3>No correlated actions</h3><p style="color:var(--text-light);margin:12px 0">Import data from multiple tools, then correlations will be detected automatically</p><button class="btn btn-primary" onclick="runCorrelation()">Run Correlation</button></div>';
+    document.getElementById('content').innerHTML = tabBar + '<div class="card text-center" style="padding:60px"><h3>No correlated actions</h3><p style="color:var(--text-light);margin:12px 0">Import data from multiple tools, then correlations will be detected automatically</p><button class="btn btn-primary" onclick="runCorrelation()">Run Correlation</button></div>';
     return;
   }
 
@@ -1983,12 +2017,104 @@ async function renderCorrelations() {
       </tbody></table></div>
     </div>`).join('');
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('content').innerHTML = `${tabBar}
     <div class="card mb-16"><div class="grid grid-3">
       <div class="stat-card"><div class="value">${corr.length}</div><div class="label">Control Families</div></div>
       <div class="stat-card"><div class="value">${corr.reduce((s,g)=>s+g.action_count,0)}</div><div class="label">Linked Actions</div></div>
       <div class="stat-card"><div class="value">${corr.filter(g=>g.source_count>1).length}</div><div class="label">Cross-tool Links</div></div>
     </div></div>${html}`;
+}
+
+async function renderControlFamilies(tabBar) {
+  const groups = await api.get('/api/correlation-groups');
+
+  let rows = groups.map(g => {
+    const kw = (g.keywords||[]).join(', ');
+    return `<tr>
+      <td style="font-weight:600">${g.canonical_name}</td>
+      <td style="font-size:12px;max-width:200px">${g.description||''}</td>
+      <td style="font-size:11px;max-width:400px;word-break:break-word">${kw}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="editControlFamily('${g.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteControlFamily('${g.id}','${g.canonical_name.replace(/'/g,"\\'")}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-16">
+        <div class="card-header" style="margin:0">Control Families (${groups.length})</div>
+        <div class="flex gap-8">
+          <button class="btn btn-sm" onclick="seedDefaultFamilies()">Seed Defaults</button>
+          <button class="btn btn-sm btn-primary" onclick="showAddFamily()">+ Add Family</button>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Control families define keyword patterns used to automatically group related actions across tools. Edit keywords to improve matching accuracy.</p>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Keywords</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="4" class="text-center">No families defined. Click "Seed Defaults" to load built-in families.</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+async function seedDefaultFamilies() {
+  const r = await api.post('/api/correlation-groups/seed-defaults');
+  toast(`Seeded ${r.seeded} default families`, 'success');
+  renderCorrelations();
+}
+
+function showAddFamily() {
+  showModal('Add Control Family', `
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" placeholder="e.g. MFA Enforcement"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" placeholder="Short description"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated)</label><textarea id="cf-kw" class="form-control" rows="4" placeholder="mfa, multi-factor, authenticator, ..."></textarea></div>
+    <div class="flex gap-8 mt-16">
+      <button class="btn btn-primary" onclick="submitAddFamily()">Save</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+
+async function submitAddFamily() {
+  const name = document.getElementById('cf-name').value.trim();
+  const desc = document.getElementById('cf-desc').value.trim();
+  const kw = document.getElementById('cf-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  if(!name) return toast('Name is required','error');
+  if(!kw.length) return toast('Add at least one keyword','error');
+  await api.post('/api/correlation-groups', {canonical_name:name, description:desc, keywords:kw});
+  closeModal();
+  toast('Family created','success');
+  renderCorrelations();
+}
+
+async function editControlFamily(id) {
+  const groups = await api.get('/api/correlation-groups');
+  const g = groups.find(x=>x.id===id);
+  if(!g) return toast('Family not found','error');
+  showModal('Edit Control Family', `
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${g.canonical_name}"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${g.description||''}"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>
+    <div class="flex gap-8 mt-16">
+      <button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+
+async function submitEditFamily(id) {
+  const name = document.getElementById('cf-name').value.trim();
+  const desc = document.getElementById('cf-desc').value.trim();
+  const kw = document.getElementById('cf-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  if(!name) return toast('Name is required','error');
+  await api.put(`/api/correlation-groups/${id}`, {canonical_name:name, description:desc, keywords:kw});
+  closeModal();
+  toast('Family updated','success');
+  renderCorrelations();
+}
+
+async function deleteControlFamily(id, name) {
+  if(!confirm(`Delete "${name}"? This will unlink all associated actions.`)) return;
+  await api.del(`/api/correlation-groups/${id}`);
+  toast('Family deleted','success');
+  renderCorrelations();
 }
 
 async function runCorrelation() {

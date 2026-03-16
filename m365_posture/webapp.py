@@ -462,6 +462,37 @@ def create_app(db_path: str = None) -> Flask:
         )
         return jsonify(group), 201
 
+    @app.route("/api/correlation-groups/<group_id>", methods=["PUT"])
+    def api_update_correlation_group(group_id):
+        data = request.get_json() or {}
+        if not data.get("canonical_name"):
+            return _json_error("canonical_name is required")
+        group = db.update_correlation_group(
+            group_id,
+            data["canonical_name"],
+            data.get("description", ""),
+            data.get("keywords", []),
+        )
+        return jsonify(group)
+
+    @app.route("/api/correlation-groups/<group_id>", methods=["DELETE"])
+    def api_delete_correlation_group(group_id):
+        db.delete_correlation_group(group_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/correlation-groups/seed-defaults", methods=["POST"])
+    def api_seed_default_families():
+        """Seed the default control families from CONTROL_FAMILIES if DB is empty."""
+        from .correlation import CONTROL_FAMILIES
+        existing = db.get_correlation_groups()
+        existing_names = {g["canonical_name"] for g in existing}
+        created = 0
+        for canonical_name, description, keywords in CONTROL_FAMILIES:
+            if canonical_name not in existing_names:
+                db.create_correlation_group(canonical_name, description, keywords)
+                created += 1
+        return jsonify({"seeded": created})
+
     @app.route("/api/actions/<action_id>/link", methods=["POST"])
     def api_link_action(action_id):
         data = request.get_json() or {}

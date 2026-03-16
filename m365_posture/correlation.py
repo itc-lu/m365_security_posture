@@ -177,14 +177,31 @@ def auto_correlate(db: Database, tenant_name: str, threshold: float = 0.05):
 
     Groups actions that likely represent the same security control.
     Only processes uncorrelated actions (correlation_group_id IS NULL).
+    Uses DB-stored control families (editable via UI). Falls back to
+    hardcoded CONTROL_FAMILIES if DB has no families yet.
     """
     actions = db.get_actions(tenant_name)
     uncorrelated = [a for a in actions if not a.get("correlation_group_id")]
     if not uncorrelated:
         return {"groups_created": 0, "actions_linked": 0}
 
-    # Get or create correlation groups
+    # Load families from DB; seed defaults if empty
     existing_groups = {g["canonical_name"]: g for g in db.get_correlation_groups()}
+
+    # Build the family list from DB-stored groups + any missing defaults
+    families = []
+    for g in existing_groups.values():
+        kw = g.get("keywords", [])
+        if kw:
+            families.append((g["canonical_name"], g.get("description", ""), kw))
+
+    # If DB has no families, seed from hardcoded defaults
+    if not families:
+        for canonical_name, description, keywords in CONTROL_FAMILIES:
+            if canonical_name not in existing_groups:
+                group = db.create_correlation_group(canonical_name, description, keywords)
+                existing_groups[canonical_name] = group
+            families.append((canonical_name, description, keywords))
 
     groups_created = 0
     actions_linked = 0
@@ -195,7 +212,7 @@ def auto_correlate(db: Database, tenant_name: str, threshold: float = 0.05):
         best_family = None
         best_score = 0
 
-        for canonical_name, description, keywords in CONTROL_FAMILIES:
+        for canonical_name, description, keywords in families:
             score = _match_family(text, keywords)
             if score > best_score and score >= threshold:
                 best_score = score

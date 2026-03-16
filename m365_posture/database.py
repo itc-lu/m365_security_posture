@@ -1028,6 +1028,24 @@ class Database:
                 (group_id, action_id),
             )
 
+    def update_correlation_group(self, group_id: str, canonical_name: str,
+                                  description: str = "", keywords: list[str] = None) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE correlation_groups SET canonical_name=?, description=?, keywords=?
+                   WHERE id=?""",
+                (canonical_name, description, json.dumps(keywords or []), group_id),
+            )
+        return {"id": group_id, "canonical_name": canonical_name,
+                "description": description, "keywords": keywords or []}
+
+    def delete_correlation_group(self, group_id: str):
+        with self._conn() as conn:
+            # Unlink all actions first
+            conn.execute("UPDATE actions SET correlation_group_id=NULL WHERE correlation_group_id=?",
+                         (group_id,))
+            conn.execute("DELETE FROM correlation_groups WHERE id=?", (group_id,))
+
     def unlink_action(self, action_id: str):
         with self._conn() as conn:
             conn.execute(
@@ -1591,7 +1609,7 @@ class Database:
         action_total_max = sum(a.get("max_score") or 0 for a in actions)
         completed = sum(1 for a in actions if a["status"] == ActionStatus.COMPLETED.value)
 
-        # Check for authoritative Graph API scores
+        # Check for authoritative Graph API scores (used for Secure Score tool breakdown only)
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT graph_current_score, graph_max_score, graph_score_date FROM tenants WHERE name=?",
@@ -1604,13 +1622,10 @@ class Database:
             graph_score = row["graph_current_score"] if "graph_current_score" in row.keys() else None
             graph_max = row["graph_max_score"] if "graph_max_score" in row.keys() else None
 
-        # Use Graph API authoritative scores for overall percentage when available
-        if graph_max and graph_max > 0:
-            total_score = graph_score or 0
-            total_max = graph_max
-        else:
-            total_score = action_total_score
-            total_max = action_total_max
+        # Overall score always combines ALL sources.
+        # Graph API scores adjust the Secure Score tool's contribution but don't replace the total.
+        total_score = action_total_score
+        total_max = action_total_max
 
         by_tool = {}
         by_workload = {}
@@ -1635,27 +1650,23 @@ class Database:
             by_status[st] = by_status.get(st, 0) + 1
             by_priority[pr] = by_priority.get(pr, 0) + 1
 
-        # For tool/workload breakdowns, use Graph max if available for Secure Score
+        # Use Graph API authoritative scores for Secure Score tool breakdown only
         if graph_max and graph_max > 0:
             ss_key = "Microsoft Secure Score"
             if ss_key in by_tool:
-                by_tool[ss_key]["score"] = total_score
-                by_tool[ss_key]["max_score"] = total_max
+                # Replace action-summed scores with Graph API authoritative scores
+                ss_old_score = by_tool[ss_key]["score"]
+                ss_old_max = by_tool[ss_key]["max_score"]
+                by_tool[ss_key]["score"] = graph_score or 0
+                by_tool[ss_key]["max_score"] = graph_max
+                # Adjust overall totals to reflect Graph API correction for Secure Score
+                total_score = total_score - ss_old_score + (graph_score or 0)
+                total_max = total_max - ss_old_max + graph_max
 
         for group in [by_tool, by_workload]:
             for data in group.values():
                 m = data["max_score"]
                 data["percentage"] = round((data["score"] / m) * 100, 2) if m > 0 else 0
-
-        # Per-workload: distribute Graph scores proportionally if available
-        if graph_max and graph_max > 0:
-            for wl_data in by_workload.values():
-                wl_action_max = wl_data["max_score"]
-                if wl_action_max > 0 and action_total_max > 0:
-                    # Scale the workload's share proportionally to the Graph total
-                    proportion = wl_action_max / action_total_max
-                    wl_data["max_score"] = round(total_max * proportion, 2)
-                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 2) if wl_data["max_score"] > 0 else 0
 
         return {
             "total_score": round(total_score, 2),
