@@ -2343,12 +2343,24 @@ async function renderE8() {
       labels += `<text x="${lx}" y="${ly}" font-size="11" fill="var(--text)" text-anchor="${anchor}" dominant-baseline="middle" font-weight="500">${shortName}</text>`;
     });
 
-    // Achieved polygon
+    // Compute continuous progress score (0-3) from per-ML completion percentages
+    // e.g. ML1=100% + ML2=50% + ML3=0% → 1.5
+    function progressScore(d) {
+      const mls = d.maturity_levels || {};
+      let score = 0;
+      for (const ml of ['Maturity Level 1','Maturity Level 2','Maturity Level 3']) {
+        const md = mls[ml] || {};
+        if (md.total > 0) score += Math.min(md.percentage || 0, 100) / 100;
+        else break; // no actions at this level, stop accumulating
+      }
+      return score;
+    }
+
+    // Achieved polygon (continuous progress)
     let achievedPts = names.map((name, i) => {
       const d = controls[name];
       const angle = -Math.PI/2 + i*angleStep;
-      const level = d.achieved_maturity_num || 0;
-      const pr = r*(level/3);
+      const pr = r*(progressScore(d)/3);
       return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
     }).join(' ');
 
@@ -2546,7 +2558,7 @@ async function renderE8() {
       <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:16px">
         ${radarChart}
         <div style="margin-top:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;justify-content:center">
-          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border:2px solid var(--success);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Achieved</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border:2px solid var(--success);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Progress</span>
           <span><span style="display:inline-block;width:12px;height:12px;background:rgba(59,130,246,0.08);border:2px dashed var(--primary);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Target</span>
         </div>
       </div>
