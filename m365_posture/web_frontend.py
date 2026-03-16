@@ -386,6 +386,14 @@ function priorityBadge(p) {
   return `<span class="badge badge-${m[p]||'gray'}">${p}</span>`;
 }
 
+function ztStatusBadge(a) {
+  // Show the original ZT test status from tags
+  const ztTag = (a.tags||[]).find(t => t.startsWith('ZT: '));
+  const ztStatus = ztTag ? ztTag.replace('ZT: ', '') : '';
+  const m = {'Passed':'success','Failed':'danger','Investigate':'warning','Planned':'purple','Skipped':'gray'};
+  return ztStatus ? `<span class="badge badge-${m[ztStatus]||'gray'}">${ztStatus}</span>` : '';
+}
+
 function pctColor(p) {
   if(p>=80) return 'var(--success)';
   if(p>=60) return '#84cc16';
@@ -934,6 +942,11 @@ async function renderActions() {
       <select id="f-source" onchange="filterActions()"><option value="">All Sources</option>${selectOptions(state.enums.source_tools)}</select>
       <select id="f-priority" onchange="filterActions()"><option value="">All Priorities</option>${selectOptions(state.enums.priorities)}</select>
     </div>
+    <div class="filter-bar" id="zt-filters" style="display:none;margin-top:-8px;padding-top:0">
+      <select id="f-pillar" onchange="applyZtFilters()"><option value="">All Pillars</option><option value="Identity">Identity</option><option value="Devices">Devices</option></select>
+      <select id="f-zt-status" onchange="applyZtFilters()"><option value="">All ZT Statuses</option><option value="Failed">Failed</option><option value="Passed">Passed</option><option value="Investigate">Investigate</option><option value="Planned">Planned</option><option value="Skipped">Skipped</option></select>
+      <select id="f-sfi" onchange="applyZtFilters()"><option value="">All SFI Pillars</option></select>
+    </div>
     <div class="card"><div class="table-wrap" id="actions-table"></div></div>`;
   await filterActions();
 }
@@ -948,6 +961,36 @@ async function filterActions() {
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
   const actions = await api.get(`/api/tenants/${t}/actions?${params}`);
+
+  // Show ZT filter row if ZT Report actions exist
+  const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
+  const ztFilters = document.getElementById('zt-filters');
+  if(ztFilters) {
+    ztFilters.style.display = hasZT ? 'flex' : 'none';
+    if(hasZT) {
+      // Populate SFI pillar options dynamically
+      const sfiEl = document.getElementById('f-sfi');
+      const currentSfi = sfiEl?.value || '';
+      const sfiValues = [...new Set(actions.filter(a=>a.subcategory).map(a=>a.subcategory))].sort();
+      sfiEl.innerHTML = '<option value="">All SFI Pillars</option>' + sfiValues.map(v => `<option value="${v}"${v===currentSfi?' selected':''}>${v}</option>`).join('');
+    }
+  }
+
+  _allFetchedActions = actions;
+  applyZtFilters();
+}
+
+let _allFetchedActions = [];
+function applyZtFilters() {
+  let actions = _allFetchedActions;
+  const pillar = document.getElementById('f-pillar')?.value;
+  const ztStatus = document.getElementById('f-zt-status')?.value;
+  const sfi = document.getElementById('f-sfi')?.value;
+
+  if(pillar) actions = actions.filter(a => (a.tags||[]).some(t => t === 'Pillar: '+pillar));
+  if(ztStatus) actions = actions.filter(a => (a.tags||[]).some(t => t === 'ZT: '+ztStatus));
+  if(sfi) actions = actions.filter(a => a.subcategory === sfi);
+
   renderActionsTable(actions);
 }
 
@@ -1180,6 +1223,7 @@ function actionDetailHtml(a) {
   const scoreDisplay = a.score != null ? `${a.score} / ${a.max_score}` : 'N/A';
 
   // Source badge color
+  const isZTR = a.source_tool === 'Zero Trust Report';
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
 
@@ -1220,22 +1264,34 @@ function actionDetailHtml(a) {
     <div class="action-tab-content active" id="atab-${uid}-general">
       <div class="action-detail-layout">
         <div>
+          ${isZTR ? `
+          ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${a.description}</div></div>`:''}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><pre>${a.current_value}</pre></div>`:''}
+          ` : `
           ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
           ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+t+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
+          `}
           <div id="deps-${a.id}" class="mb-8"></div>
         </div>
         <div>
           <div class="action-sidebar-card">
+            ${isZTR ? `
+            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${a.reference_id||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
+            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${(a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            ` : `
             <div class="sidebar-field">
               <div class="field-label">Score</div>
               <div class="score-label">${scoreDisplay}</div>
               <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
             </div>
+            `}
             <div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            ${!isZTR?`<div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>`:''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
@@ -1564,6 +1620,7 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
+      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
   // Reload ZT reports after import

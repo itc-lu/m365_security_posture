@@ -5,12 +5,18 @@ Parses the ZeroTrustAssessmentReport.json file which contains:
 - TestResultSummary (pass/total counts per pillar)
 - Tests array with full recommendation details
 - TenantInfo with configuration snapshots (auth methods, devices, policies, etc.)
+
+The ZT report has its own methodology distinct from Secure Score:
+- Tests have a TestStatus: Passed, Failed, Investigate, Planned, Skipped
+- Each test has a TestPillar (Identity, Devices), SFI Pillar, and Category
+- Tests include TestResult (what was found), TestDescription (what was checked + remediation)
+- Each test has a unique TestId for cross-referencing with the HTML report
 """
 
 from __future__ import annotations
 
 import json
-import os
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -48,12 +54,14 @@ CATEGORY_WORKLOAD_MAP = {
 }
 
 # Map TestStatus to our ActionStatus
+# "Planned" in ZT means the test is under construction by Microsoft - NOT a user plan
+# "Investigate" means manual review is needed
 STATUS_MAP = {
     "passed": ActionStatus.COMPLETED.value,
     "failed": ActionStatus.TODO.value,
     "investigate": ActionStatus.TODO.value,
     "skipped": ActionStatus.NOT_APPLICABLE.value,
-    "planned": ActionStatus.IN_PLANNING.value,
+    "planned": ActionStatus.NOT_APPLICABLE.value,
 }
 
 # Map TestRisk to Priority
@@ -85,9 +93,8 @@ EFFORT_MAP = {
 }
 
 
-def _extract_urls_from_description(text: str) -> list[str]:
-    """Extract markdown URLs from test description text."""
-    import re
+def _extract_urls(text: str) -> list[str]:
+    """Extract URLs from text."""
     return re.findall(r'https?://[^\s\)>"]+', text)
 
 
@@ -95,6 +102,8 @@ def _score_for_status(status: str) -> tuple[float, float]:
     """Return (score, max_score) based on test status."""
     if status == ActionStatus.COMPLETED.value:
         return 1.0, 1.0
+    if status == ActionStatus.NOT_APPLICABLE.value:
+        return 0.0, 0.0  # N/A tests don't count towards score
     return 0.0, 1.0
 
 
@@ -130,7 +139,6 @@ class ZeroTrustReportParser:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
 
-            # Find the report JSON - could be at root or in a subdirectory
             json_file = self._find_report_json(Path(extract_dir))
             if not json_file:
                 raise ValueError(
@@ -138,7 +146,6 @@ class ZeroTrustReportParser:
                     "Ensure the ZIP contains the report directory."
                 )
             actions = self._parse_json(json_file)
-            # Store the extract dir path so webapp can access it for HTML/data storage
             self._extract_dir = extract_dir
             return actions
         except zipfile.BadZipFile:
@@ -147,11 +154,7 @@ class ZeroTrustReportParser:
 
     def _find_report_json(self, root: Path) -> Optional[Path]:
         """Find ZeroTrustAssessmentReport.json in extracted directory."""
-        # Check common locations
         for candidate in root.rglob("ZeroTrustAssessmentReport.json"):
-            return candidate
-        # Also check inside zt-export subdirectory
-        for candidate in root.rglob("zt-export/ZeroTrustAssessmentReport.json"):
             return candidate
         return None
 
@@ -160,7 +163,6 @@ class ZeroTrustReportParser:
         with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
 
-        # Store metadata for later use by webapp
         self.report_metadata = {
             "executed_at": data.get("ExecutedAt", ""),
             "tenant_id": data.get("TenantId", ""),
@@ -188,18 +190,19 @@ class ZeroTrustReportParser:
         """Convert a single Test entry to an Action."""
         title = test.get("TestTitle", "").strip()
         test_id = str(test.get("TestId", ""))
-        status_raw = (test.get("TestStatus") or "").lower()
+        status_raw = (test.get("TestStatus") or "").strip()
+        status_lower = status_raw.lower()
         risk_raw = (test.get("TestRisk") or "").lower()
         impact_raw = (test.get("TestImpact") or "").lower()
         effort_raw = (test.get("TestImplementationCost") or "").lower()
-        pillar = (test.get("TestPillar") or "").lower()
-        category = test.get("TestCategory", "")
-        sfi_pillar = test.get("TestSfiPillar", "")
+        pillar = test.get("TestPillar", "") or ""
+        category = test.get("TestCategory", "") or ""
+        sfi_pillar = test.get("TestSfiPillar", "") or ""
 
         # Map status
-        status = STATUS_MAP.get(status_raw, ActionStatus.TODO.value)
+        status = STATUS_MAP.get(status_lower, ActionStatus.TODO.value)
 
-        # Score: binary pass/fail
+        # Score: pass/fail binary, N/A tests get 0/0
         score, max_score = _score_for_status(status)
 
         # Map workload: prefer category, fall back to pillar
@@ -207,60 +210,82 @@ class ZeroTrustReportParser:
         cat_lower = category.lower()
         if cat_lower in CATEGORY_WORKLOAD_MAP:
             workload = CATEGORY_WORKLOAD_MAP[cat_lower]
-        elif pillar in PILLAR_WORKLOAD_MAP:
-            workload = PILLAR_WORKLOAD_MAP[pillar]
+        elif pillar.lower() in PILLAR_WORKLOAD_MAP:
+            workload = PILLAR_WORKLOAD_MAP[pillar.lower()]
 
         # Priority from risk
         priority = RISK_PRIORITY_MAP.get(risk_raw, Priority.MEDIUM.value)
-        # Boost investigate items to high
-        if status_raw == "investigate" and priority != Priority.HIGH.value:
+        # Boost investigate items
+        if status_lower == "investigate" and priority != Priority.HIGH.value:
             priority = Priority.HIGH.value
 
-        # Build rich description from TestDescription
-        description = test.get("TestDescription", "").strip()
+        # --- ZT-specific field mapping ---
+        # TestDescription = "What was checked" + remediation action
+        full_description = test.get("TestDescription", "").strip()
 
-        # TestResult contains the actual findings/evidence
+        # TestResult = the actual findings/evidence from the test
         test_result = test.get("TestResult", "").strip()
 
-        # Extract remediation from description (after "**Remediation action**")
+        # Split description into "What was checked" and "Remediation action"
+        what_was_checked = full_description
         remediation = ""
-        if "**Remediation action**" in description:
-            parts = description.split("**Remediation action**", 1)
+        if "**Remediation action**" in full_description:
+            parts = full_description.split("**Remediation action**", 1)
+            what_was_checked = parts[0].strip()
             remediation = parts[1].strip() if len(parts) > 1 else ""
-            # Keep only the explanation part in description
-            description = parts[0].strip()
 
-        # Extract reference URLs
-        all_text = f"{description} {remediation} {test_result}"
-        urls = _extract_urls_from_description(all_text)
+        # For Planned tests with "UnderConstruction", mark clearly
+        skipped_reason = test.get("SkippedReason", "") or ""
+        if status_lower == "planned":
+            if test_result == "Planned for future release.":
+                # This test doesn't have real results yet
+                test_result = f"[Planned] {skipped_reason or 'Test under construction by Microsoft — not yet available.'}"
+            else:
+                # This test ran but is marked as planned (partial implementation)
+                test_result = f"[Planned - partial] {test_result}"
+        elif status_lower == "skipped" and skipped_reason:
+            test_result = test_result or f"Skipped: {skipped_reason}"
+
+        # Extract reference URLs from remediation
+        urls = _extract_urls(f"{remediation} {what_was_checked}")
         reference_url = urls[0] if urls else ""
 
         # Handle licence
         licence = test.get("TestMinimumLicense", "") or ""
         if isinstance(licence, list):
             licence = ", ".join(str(l) for l in licence)
+        if licence == "None":
+            licence = "Free"
 
-        # Skipped reason
-        skipped_reason = test.get("SkippedReason", "") or ""
-        if skipped_reason and status == ActionStatus.NOT_APPLICABLE.value:
-            if not test_result:
-                test_result = f"Skipped: {skipped_reason}"
-
-        # Tags from TestTags + TestAppliesTo + pillar
+        # Tags: preserve original ZT status, pillar, SFI pillar
         tags = []
-        if test.get("TestTags"):
-            tags.extend(t for t in test["TestTags"] if isinstance(t, str))
-        if test.get("TestAppliesTo"):
-            tags.extend(t for t in test["TestAppliesTo"] if isinstance(t, str) and t not in tags)
+        # Original ZT test status (Passed/Failed/Investigate/Planned/Skipped)
+        if status_raw:
+            tags.append(f"ZT: {status_raw}")
+        # Pillar
+        if pillar:
+            tags.append(f"Pillar: {pillar}")
+        # SFI Pillar
         if sfi_pillar:
             tags.append(f"SFI: {sfi_pillar}")
-        tags = list(dict.fromkeys(tags))  # dedupe preserving order
+        # TestTags
+        if test.get("TestTags"):
+            for t in test["TestTags"]:
+                if isinstance(t, str) and t not in tags:
+                    tags.append(t)
+        # TestAppliesTo
+        if test.get("TestAppliesTo"):
+            for t in test["TestAppliesTo"]:
+                if isinstance(t, str) and t not in tags:
+                    tags.append(t)
+        tags = list(dict.fromkeys(tags))  # dedupe
 
         return Action(
             title=title,
-            description=description,
+            description=what_was_checked,
             source_tool=self.source_tool,
             source_id=f"ztr_{test_id}",
+            reference_id=test_id,  # Preserve TestId for cross-reference
             workload=workload,
             status=status,
             priority=priority,
@@ -271,9 +296,10 @@ class ZeroTrustReportParser:
             max_score=max_score,
             score_percentage=round((score / max_score * 100), 1) if max_score > 0 else 0,
             remediation_steps=remediation,
-            current_value=test_result,
-            category=category,
-            subcategory=sfi_pillar,
+            current_value=test_result,  # "Test Result" — what was found
+            recommended_value="",  # ZT doesn't have this concept
+            category=category,  # TestCategory (e.g. "Access control")
+            subcategory=sfi_pillar,  # SFI Pillar
             required_licence=licence,
             reference_url=reference_url,
             tags=tags,

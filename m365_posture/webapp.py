@@ -302,7 +302,7 @@ def create_app(db_path: str = None) -> Flask:
             if source == "secure-score":
                 actions = enrich_actions_from_controls(db, actions)
 
-            new_count, updated_count = db.merge_actions(name, actions, source_tool, file.filename)
+            new_count, updated_count, updated_details = db.merge_actions(name, actions, source_tool, file.filename)
 
             # For Zero Trust Report: store HTML report and metadata
             zt_report_id = None
@@ -331,6 +331,7 @@ def create_app(db_path: str = None) -> Flask:
                 "total_parsed": len(actions),
                 "new_actions": new_count,
                 "updated_actions": updated_count,
+                "updated_details": updated_details,
                 "correlation": corr,
                 "compliance": compliance,
                 "drift": drift,
@@ -959,7 +960,7 @@ def create_app(db_path: str = None) -> Flask:
             actions = enrich_actions_from_controls(db, actions)
 
             source_tool = SourceTool.SECURE_SCORE.value
-            new_count, updated_count = db.merge_actions(name, actions, source_tool, "graph_api")
+            new_count, updated_count, _ = db.merge_actions(name, actions, source_tool, "graph_api")
 
             # Remove any duplicates from previous imports with different source_id formats
             dedup = db.deduplicate_actions(name, source_tool)

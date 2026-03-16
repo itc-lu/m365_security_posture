@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, Workload
+from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, SourceTool, Workload
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
@@ -709,15 +709,23 @@ class Database:
             conn.execute("DELETE FROM actions WHERE id=?", (action_id,))
 
     def merge_actions(self, tenant_name: str, new_actions: list[Action],
-                      source_tool: str, source_file: str) -> tuple[int, int]:
-        """Smart merge: update existing actions, add new ones. Returns (new, updated)."""
+                      source_tool: str, source_file: str) -> tuple[int, int, list[dict]]:
+        """Smart merge: update existing actions, add new ones.
+
+        Returns (new_count, updated_count, updated_details).
+        updated_details is a list of {id, title, source_id, matched_by} for transparency.
+        """
         new_count = 0
         updated_count = 0
+        updated_details = []
+        # Secure Score legacy fallbacks only apply to Secure Score imports
+        is_secure_score = (source_tool == SourceTool.SECURE_SCORE.value)
 
         with self._conn() as conn:
             for action in new_actions:
-                # Look for existing by source_tool + source_id
+                # Look for existing by source_tool + source_id (primary match)
                 existing = None
+                matched_by = ""
                 if action.source_id:
                     row = conn.execute(
                         "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
@@ -725,8 +733,10 @@ class Database:
                     ).fetchone()
                     if row:
                         existing = dict(row)
-                    # Fallback: match by old-style source_id (ss_<name>) for backwards compat
-                    if not existing:
+                        matched_by = "source_id"
+
+                    # Fallback: old-style source_id (ss_<name>) — Secure Score only
+                    if not existing and is_secure_score:
                         old_style_id = f"ss_{action.source_id.replace(' ', '_').lower()[:40]}"
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
@@ -734,22 +744,27 @@ class Database:
                         ).fetchone()
                         if row:
                             existing = dict(row)
-                    # Fallback: match by controlName as old title (old imports used controlName as title)
-                    if not existing and action.source_id:
+                            matched_by = "old_style_source_id"
+
+                    # Fallback: controlName as old title — Secure Score only
+                    if not existing and is_secure_score and action.source_id:
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
                             (tenant_name, action.source_tool, action.source_id),
                         ).fetchone()
                         if row:
                             existing = dict(row)
-                    # Fallback: match by new title
-                    if not existing and action.title:
+                            matched_by = "source_id_as_title"
+
+                    # Fallback: title match — Secure Score only
+                    if not existing and is_secure_score and action.title:
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
                             (tenant_name, action.source_tool, action.title),
                         ).fetchone()
                         if row:
                             existing = dict(row)
+                            matched_by = "title"
 
                 if existing:
                     # Update existing action with all current data
@@ -849,6 +864,13 @@ class Database:
                     vals = list(changes.values()) + [existing["id"]]
                     conn.execute(f"UPDATE actions SET {sets} WHERE id=?", vals)
                     updated_count += 1
+                    updated_details.append({
+                        "id": existing["id"],
+                        "title": action.title,
+                        "source_id": action.source_id,
+                        "existing_source_id": existing.get("source_id", ""),
+                        "matched_by": matched_by,
+                    })
                 else:
                     # Insert new action
                     now = datetime.utcnow().isoformat()
@@ -895,7 +917,7 @@ class Database:
                  source_file, len(new_actions), new_count, updated_count),
             )
 
-        return new_count, updated_count
+        return new_count, updated_count, updated_details
 
     def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
         """Remove duplicate actions, keeping the most recently updated one.
