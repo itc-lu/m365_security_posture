@@ -13,6 +13,7 @@ class ActionStatus(str, Enum):
     TODO = "ToDo"
     IN_PROGRESS = "In Progress"
     IN_PLANNING = "In Planning"
+    WARNING = "Warning"
     RISK_ACCEPTED = "Risk Accepted"
     COMPLETED = "Completed"
     NOT_APPLICABLE = "Not Applicable"

@@ -46,7 +46,7 @@ def _scuba_result_to_status(result: str) -> str:
     if r in ("fail", "failed"):
         return ActionStatus.TODO.value
     if r in ("warning", "warn"):
-        return ActionStatus.IN_PLANNING.value
+        return ActionStatus.WARNING.value
     if r in ("n/a", "not applicable"):
         return ActionStatus.NOT_APPLICABLE.value
     if r in ("manual", "manual check"):

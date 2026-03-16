@@ -382,7 +382,7 @@ function toast(msg, type='info') {
 }
 
 function statusBadge(s) {
-  const m = {'Completed':'success','In Progress':'info','In Planning':'purple','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
+  const m = {'Completed':'success','In Progress':'info','In Planning':'purple','Warning':'warning','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
   return `<span class="badge badge-${m[s]||'gray'}">${s}</span>`;
 }
 
@@ -1054,8 +1054,8 @@ function sortActionsBy(colIdx) {
       aVal = a.score != null ? a.score : -1;
       bVal = b.score != null ? b.score : -1;
     } else if(key === 'reference_id') {
-      aVal = parseInt(a[key]) || 0;
-      bVal = parseInt(b[key]) || 0;
+      aVal = (a[key]||'').toString().toLowerCase();
+      bVal = (b[key]||'').toString().toLowerCase();
     } else {
       aVal = (a[key]||'').toString().toLowerCase();
       bVal = (b[key]||'').toString().toLowerCase();
