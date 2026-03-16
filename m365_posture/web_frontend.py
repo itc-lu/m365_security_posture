@@ -1426,13 +1426,15 @@ async function showEditAction(id) {
     <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${a.responsible||''}"></div>
     <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${a.planned_date||''}"></div></div>
+    <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
+    <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
     <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
     <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
 }
 
 async function updateAction(id) {
-  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
+  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, essential_eight_control:document.getElementById('ae-e8ctrl').value||null, essential_eight_maturity:document.getElementById('ae-e8ml').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
   await api.put(`/api/actions/${id}`, data);
   closeModal(); toast('Action updated','success'); filterActions();
 }
@@ -2441,6 +2443,18 @@ async function renderE8() {
       </div>`;
     }
 
+    // Source tool coverage breakdown
+    const sourceBreakdown = {};
+    (d.actions||[]).forEach(a => {
+      const s = a.source_tool || 'Unknown';
+      if(!sourceBreakdown[s]) sourceBreakdown[s] = {total:0,completed:0};
+      sourceBreakdown[s].total++;
+      if(a.status === 'Completed') sourceBreakdown[s].completed++;
+    });
+    const sourceBadges = Object.entries(sourceBreakdown).map(([s,c]) =>
+      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${s} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
+    ).join(' ');
+
     // Action table
     let actionRows = (d.actions||[]).map(a => `<tr>
       <td style="font-size:11px;font-family:monospace">${a.reference_id||''}</td>
@@ -2507,7 +2521,16 @@ async function renderE8() {
             panels+licHtml+'</div>';
         })()}
         ${gapSection}
-        ${actionRows ? `<div style="margin-top:12px"><div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div></div>` : '<div style="color:var(--text-light);padding:8px">No actions mapped to this control</div>'}
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+          <div class="flex justify-between items-center mb-8">
+            <div>
+              <span style="font-size:13px;font-weight:600">Mapped Actions</span>
+              ${sourceBadges ? `<span style="margin-left:8px">${sourceBadges}</span>` : ''}
+            </div>
+            <button class="btn btn-sm" onclick="showE8AddAction('${ctrl.replace(/'/g,"\\'")}', '${d.control_id||''}')">+ Add Action</button>
+          </div>
+          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -2571,6 +2594,26 @@ async function renderE8() {
       </div>
     </div>
 
+    <div class="card mb-16">
+      <div class="card-header" style="font-size:14px">Tool Coverage</div>
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:8px">Shows which data sources provide actions for each E8 control. Empty cells indicate no actions from that tool.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Control</th><th>Secure Score</th><th>SCuBA</th><th>Zero Trust</th><th>Manual</th><th>Total</th></tr></thead>
+        <tbody>${entries.map(([ctrl,d]) => {
+          const src = {};
+          (d.actions||[]).forEach(a => { const s = a.source_tool||'?'; src[s] = (src[s]||0)+1; });
+          const total = d.total_actions || 0;
+          const _tb = (tool) => {
+            const c = src[tool] || 0;
+            return c > 0 ? '<td style="text-align:center"><span class="badge badge-success" style="min-width:28px">'+c+'</span></td>'
+                         : '<td style="text-align:center;color:var(--text-light)">—</td>';
+          };
+          return '<tr><td style="font-size:12px">'+ctrl+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
+            +'<td style="text-align:center;font-weight:600">'+(total||'<span style="color:var(--danger)">0</span>')+'</td></tr>';
+        }).join('')}</tbody>
+      </table></div>
+    </div>
+
     ${cards}
 
     <div class="card" style="margin-top:16px">
@@ -2584,6 +2627,47 @@ async function renderE8() {
         <a href="https://learn.microsoft.com/en-us/compliance/anz/e8-overview" target="_blank">Microsoft E8 Overview</a>
       </div>
     </div>`;
+}
+
+// ── E8 action management ──
+function showE8AddAction(controlName, controlId) {
+  openModal('Add Action to ' + controlName, `
+    <div class="form-group"><label>Title</label><input id="e8a-title" placeholder="e.g. Enable AppLocker on workstations"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Maturity Level</label>
+        <select id="e8a-ml">
+          <option value="Maturity Level 1">Maturity Level 1</option>
+          <option value="Maturity Level 2">Maturity Level 2</option>
+          <option value="Maturity Level 3">Maturity Level 3</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Status</label><select id="e8a-status">${selectOptions(state.enums.statuses,'ToDo')}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Priority</label><select id="e8a-priority">${selectOptions(state.enums.priorities,'Medium')}</select></div>
+      <div class="form-group"><label>Workload</label><select id="e8a-workload">${selectOptions(state.enums.workloads,'General')}</select></div>
+    </div>
+    <div class="form-group"><label>Description</label><textarea id="e8a-desc" rows="2"></textarea></div>
+    <div class="form-group"><label>Remediation Steps</label><textarea id="e8a-remed" rows="2"></textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="e8AddAction('${controlName.replace(/'/g,"\\'")}')">Create</button>`);
+}
+
+async function e8AddAction(controlName) {
+  const data = {
+    title: document.getElementById('e8a-title').value,
+    essential_eight_control: controlName,
+    essential_eight_maturity: document.getElementById('e8a-ml').value,
+    status: document.getElementById('e8a-status').value,
+    priority: document.getElementById('e8a-priority').value,
+    workload: document.getElementById('e8a-workload').value,
+    description: document.getElementById('e8a-desc').value,
+    remediation_steps: document.getElementById('e8a-remed').value,
+    source_tool: 'Manual'
+  };
+  if(!data.title) return toast('Title required','error');
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/actions`, data);
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Action created','success'); renderE8();
 }
 
 // ── SCuBA ──
