@@ -2301,8 +2301,20 @@ async function renderE8() {
   }
 
   // ── Spider/Radar chart (SVG) ──
+  // Short names for radar chart labels
+  const _e8Short = {
+    'Application Control':'App Control',
+    'Patch Applications':'Patch Apps',
+    'Configure Microsoft Office Macro Settings':'Office Macros',
+    'User Application Hardening':'App Hardening',
+    'Restrict Administrative Privileges':'Admin Privileges',
+    'Patch Operating Systems':'Patch OS',
+    'Multi-Factor Authentication':'MFA',
+    'Regular Backups':'Backups'
+  };
+
   function renderRadarChart(controls) {
-    const cx=150,cy=150,r=120;
+    const cx=200,cy=200,r=130;
     const names = Object.keys(controls);
     const n = names.length;
     if(n===0) return '';
@@ -2313,7 +2325,6 @@ async function renderE8() {
     for(let lv=1;lv<=3;lv++){
       const cr = r*(lv/3);
       grid += `<circle cx="${cx}" cy="${cy}" r="${cr}" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>`;
-      // Level labels on top axis
       grid += `<text x="${cx+3}" y="${cy-cr+4}" font-size="9" fill="var(--text-light)">ML${lv}</text>`;
     }
 
@@ -2325,12 +2336,11 @@ async function renderE8() {
       const x2 = cx + r*Math.cos(angle);
       const y2 = cy + r*Math.sin(angle);
       axes += `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="var(--border)" stroke-width="0.5"/>`;
-      // Label
-      const lx = cx + (r+20)*Math.cos(angle);
-      const ly = cy + (r+20)*Math.sin(angle);
-      const anchor = Math.abs(Math.cos(angle))<0.1?'middle':Math.cos(angle)>0?'start':'end';
-      const shortName = name.length>20 ? name.substring(0,18)+'...' : name;
-      labels += `<text x="${lx}" y="${ly}" font-size="10" fill="var(--text)" text-anchor="${anchor}" dominant-baseline="middle">${shortName}</text>`;
+      const lx = cx + (r+45)*Math.cos(angle);
+      const ly = cy + (r+45)*Math.sin(angle);
+      const anchor = Math.abs(Math.cos(angle))<0.15?'middle':Math.cos(angle)>0?'start':'end';
+      const shortName = _e8Short[name] || name.substring(0,16);
+      labels += `<text x="${lx}" y="${ly}" font-size="11" fill="var(--text)" text-anchor="${anchor}" dominant-baseline="middle" font-weight="500">${shortName}</text>`;
     });
 
     // Achieved polygon
@@ -2350,9 +2360,9 @@ async function renderE8() {
       return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
     }).join(' ');
 
-    return `<svg viewBox="0 0 300 300" style="width:300px;height:300px">
+    return `<svg viewBox="0 0 400 400" style="width:100%;max-width:420px;height:auto">
       ${grid}${axes}
-      <polygon points="${targetPts}" fill="rgba(59,130,246,0.08)" stroke="var(--primary)" stroke-width="1" stroke-dasharray="5,3"/>
+      <polygon points="${targetPts}" fill="rgba(59,130,246,0.08)" stroke="var(--primary)" stroke-width="1.5" stroke-dasharray="5,3"/>
       <polygon points="${achievedPts}" fill="rgba(34,197,94,0.2)" stroke="var(--success)" stroke-width="2"/>
       ${labels}
     </svg>`;
@@ -2533,11 +2543,11 @@ async function renderE8() {
     </div></div>
 
     <div class="grid grid-2 mb-16" style="gap:16px">
-      <div class="card" style="display:flex;justify-content:center;align-items:center;padding:16px">
+      <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:16px">
         ${radarChart}
-        <div style="margin-top:8px;font-size:11px;color:var(--text-light);text-align:center">
-          <span style="color:var(--success)">■</span> Achieved &nbsp;
-          <span style="color:var(--primary)">- -</span> Target
+        <div style="margin-top:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;justify-content:center">
+          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border:2px solid var(--success);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Achieved</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(59,130,246,0.08);border:2px dashed var(--primary);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Target</span>
         </div>
       </div>
       <div class="card">

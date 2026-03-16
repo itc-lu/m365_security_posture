@@ -50,6 +50,7 @@ PARSER_MAP = {
 def create_app(db_path: str = None) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB (ZT reports with data can be large)
+    app.json.sort_keys = False  # Preserve dict insertion order (E8 controls, etc.)
     db = Database(db_path)
 
     def _json_error(msg, code=400):
