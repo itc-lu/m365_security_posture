@@ -287,6 +287,10 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       Essential Eight
     </a>
+    <a href="#scuba" data-page="scuba">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+      SCuBA
+    </a>
     <a href="#compliance" data-page="compliance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
       Compliance
@@ -521,12 +525,12 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',compare:'Compare Tenants',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',compare:'Compare Tenants',export:'Export',history:'Import History'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
+  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
@@ -2306,6 +2310,139 @@ async function renderE8() {
       <div class="stat-card"><div class="value">${mapped}/8</div><div class="label">Controls Mapped</div></div>
     </div></div>
     ${cards}`;
+}
+
+// ── SCuBA ──
+async function renderScuba() {
+  if(!requireTenant()) return;
+  const data = await api.get(`/api/tenants/${state.activeTenant.name}/scuba`);
+  const reports = await api.get(`/api/tenants/${state.activeTenant.name}/scuba-reports`);
+
+  if(data.total_controls === 0) {
+    document.getElementById('content').innerHTML = `<div class="card text-center" style="padding:60px">
+      <h3>No SCuBA Data</h3><p style="color:var(--text-light);margin-top:8px">Import a ScubaGear report (ScubaResults JSON or CSV) from the Import page.</p>
+      <button class="btn btn-primary" style="margin-top:16px" onclick="navigate('import')">Go to Import</button></div>`;
+    return;
+  }
+
+  const passRate = data.pass_rate;
+  const prColor = passRate >= 80 ? 'var(--success)' : passRate >= 50 ? 'var(--warning)' : 'var(--danger)';
+
+  // Product cards
+  let productCards = Object.entries(data.products).map(([prod, pd], idx) => {
+    const prodTotal = pd.total;
+    const prodPct = prodTotal > 0 ? Math.round(pd.pass / prodTotal * 100) : 0;
+
+    // Status breakdown bars
+    let statusBar = `<div class="flex gap-8 mb-8" style="font-size:12px">
+      <span class="badge badge-success">Pass: ${pd.pass}</span>
+      <span class="badge badge-danger">Fail: ${pd.fail}</span>
+      <span class="badge badge-warning">Warning: ${pd.warning}</span>
+      <span class="badge badge-gray">N/A: ${pd.na}</span>
+    </div>`;
+
+    // Actions table
+    let actionRows = (pd.actions || []).map(a => {
+      const critBadge = a.subcategory ? (a.subcategory.toLowerCase().includes('shall') ? '<span class="badge badge-danger">Shall</span>' : a.subcategory.toLowerCase().includes('should') ? '<span class="badge badge-warning">Should</span>' : `<span class="badge badge-gray">${a.subcategory}</span>`) : '';
+      return `<tr>
+        <td style="font-size:12px;font-family:monospace">${a.source_id?.replace('scuba_','') || ''}</td>
+        <td>${(a.title||'').substring(0,80)}</td>
+        <td>${statusBadge(a.status)}</td>
+        <td>${critBadge}</td>
+        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-detail-${idx}').classList.toggle('hidden')">
+        <div>
+          <div class="card-header" style="margin:0;font-size:15px">${prod}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">${pd.pass}/${prodTotal} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings</div>
+        </div>
+        <div style="flex-shrink:0">${gauge(prodPct, 80)}</div>
+      </div>
+      <div id="scuba-detail-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${statusBar}
+        ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Control ID</th><th>Requirement</th><th>Result</th><th>Criticality</th><th>Details</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px">No controls</div>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Reports history
+  let reportsHtml = '';
+  if(reports && reports.length > 0) {
+    let rptRows = reports.map(r => {
+      const products = (r.products_assessed || []).join(', ');
+      const passRate = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
+      return `<tr>
+        <td>${r.imported_at?.substring(0,19) || ''}</td>
+        <td>${r.executed_at?.substring(0,19) || ''}</td>
+        <td>${r.report_tenant_name || ''}</td>
+        <td>${r.report_domain || ''}</td>
+        <td>${products}</td>
+        <td>${r.tool_version || ''}</td>
+        <td>${gauge(passRate, 60)}</td>
+        <td>${r.passed_controls}/${r.total_controls}</td>
+        <td><button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
+      </tr>`;
+    }).join('');
+    reportsHtml = `<div class="card mb-16"><div class="card-header">Import History</div>
+      <div class="table-wrap"><table><thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Domain</th><th>Products</th><th>Version</th><th>Pass Rate</th><th>Results</th><th></th></tr></thead>
+      <tbody>${rptRows}</tbody></table></div></div>`;
+  }
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16"><div class="grid grid-4">
+      <div class="stat-card">${gauge(passRate, 100)}<div class="label">Pass Rate</div></div>
+      <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--success)">${data.passed}</div><div class="label">Passed</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--danger)">${data.failed}</div><div class="label">Failed</div></div>
+    </div></div>
+    ${reportsHtml}
+    <div class="card-header" style="margin-bottom:12px">Results by Product</div>
+    ${productCards}`;
+}
+
+async function showScubaReportDetail(reportId) {
+  const r = await api.get(`/api/scuba-reports/${reportId}`);
+  if(!r) return;
+
+  let summaryRows = Object.entries(r.product_summary || {}).map(([prod, s]) => {
+    const total = (s.Passes||0) + (s.Failures||0) + (s.Warnings||0) + (s.Manual||0) + (s.Errors||0) + (s.Omits||0);
+    return `<tr>
+      <td><strong>${prod}</strong></td>
+      <td style="color:var(--success)">${s.Passes||0}</td>
+      <td style="color:var(--danger)">${s.Failures||0}</td>
+      <td style="color:var(--warning)">${s.Warnings||0}</td>
+      <td>${s.Manual||0}</td>
+      <td>${s.Errors||0}</td>
+      <td>${total}</td>
+    </tr>`;
+  }).join('');
+
+  const products = (r.products_assessed || []).join(', ');
+
+  openModal('SCuBA Report Details', `
+    <div class="grid grid-2 mb-16" style="gap:16px;font-size:13px">
+      <div>
+        <div class="mb-8"><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
+        <div class="mb-8"><strong>Domain:</strong> ${r.report_domain||'—'}</div>
+        <div class="mb-8"><strong>Tenant ID:</strong> <span style="font-family:monospace;font-size:11px">${r.report_tenant_id||'—'}</span></div>
+      </div>
+      <div>
+        <div class="mb-8"><strong>ScubaGear Version:</strong> ${r.tool_version||'—'}</div>
+        <div class="mb-8"><strong>Executed:</strong> ${r.executed_at||'—'}</div>
+        <div class="mb-8"><strong>Products:</strong> ${products||'—'}</div>
+        <div class="mb-8"><strong>Report UUID:</strong> <span style="font-family:monospace;font-size:11px">${r.report_uuid||'—'}</span></div>
+      </div>
+    </div>
+    <div class="card-header" style="margin-bottom:8px">Product Summary</div>
+    <table><thead><tr><th>Product</th><th>Passes</th><th>Failures</th><th>Warnings</th><th>Manual</th><th>Errors</th><th>Total</th></tr></thead>
+    <tbody>${summaryRows || '<tr><td colspan="7" style="text-align:center;color:var(--text-light)">No summary data</td></tr>'}</tbody></table>
+    <div style="margin-top:16px;font-size:12px;color:var(--text-light)">
+      <strong>Results:</strong> ${r.passed_controls} passed, ${r.failed_controls} failed, ${r.warning_controls} warnings out of ${r.total_controls} total controls
+    </div>
+  `);
 }
 
 // ── Compare ──

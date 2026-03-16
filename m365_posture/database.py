@@ -266,6 +266,29 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_zt_reports_tenant ON zt_reports(tenant_name);
 
+                -- SCuBA (ScubaGear) Report storage
+                CREATE TABLE IF NOT EXISTS scuba_reports (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    imported_at TEXT NOT NULL,
+                    executed_at TEXT DEFAULT '',
+                    report_tenant_id TEXT DEFAULT '',
+                    report_tenant_name TEXT DEFAULT '',
+                    report_domain TEXT DEFAULT '',
+                    tool_version TEXT DEFAULT '',
+                    report_uuid TEXT DEFAULT '',
+                    products_assessed TEXT DEFAULT '[]',
+                    product_summary TEXT DEFAULT '{}',
+                    total_controls INTEGER DEFAULT 0,
+                    passed_controls INTEGER DEFAULT 0,
+                    failed_controls INTEGER DEFAULT 0,
+                    warning_controls INTEGER DEFAULT 0,
+                    manual_controls INTEGER DEFAULT 0,
+                    source_file TEXT DEFAULT '',
+                    html_path TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_scuba_reports_tenant ON scuba_reports(tenant_name);
+
                 CREATE TABLE IF NOT EXISTS gitlab_templates (
                     id TEXT PRIMARY KEY,
                     tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
@@ -371,6 +394,65 @@ class Database:
             d = dict(row)
             d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
             d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
+            return d
+
+    # ── SCuBA Reports ──
+
+    def store_scuba_report(self, tenant_name: str, report_data: dict) -> str:
+        """Store a SCuBA Report record. Returns the report ID."""
+        report_id = report_data.get("id") or str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO scuba_reports
+                   (id, tenant_name, imported_at, executed_at, report_tenant_id,
+                    report_tenant_name, report_domain, tool_version, report_uuid,
+                    products_assessed, product_summary, total_controls, passed_controls,
+                    failed_controls, warning_controls, manual_controls, source_file, html_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (report_id, tenant_name,
+                 report_data.get("imported_at", datetime.utcnow().isoformat()),
+                 report_data.get("executed_at", ""),
+                 report_data.get("report_tenant_id", ""),
+                 report_data.get("report_tenant_name", ""),
+                 report_data.get("report_domain", ""),
+                 report_data.get("tool_version", ""),
+                 report_data.get("report_uuid", ""),
+                 json.dumps(report_data.get("products_assessed", [])),
+                 json.dumps(report_data.get("product_summary", {})),
+                 report_data.get("total_controls", 0),
+                 report_data.get("passed_controls", 0),
+                 report_data.get("failed_controls", 0),
+                 report_data.get("warning_controls", 0),
+                 report_data.get("manual_controls", 0),
+                 report_data.get("source_file", ""),
+                 report_data.get("html_path", "")),
+            )
+        return report_id
+
+    def get_scuba_reports(self, tenant_name: str) -> list[dict]:
+        """Get all SCuBA Reports for a tenant."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM scuba_reports WHERE tenant_name=? ORDER BY imported_at DESC",
+                (tenant_name,),
+            ).fetchall()
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["products_assessed"] = json.loads(d.get("products_assessed") or "[]")
+                d["product_summary"] = json.loads(d.get("product_summary") or "{}")
+                results.append(d)
+            return results
+
+    def get_scuba_report(self, report_id: str) -> dict | None:
+        """Get a single SCuBA report by ID."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM scuba_reports WHERE id=?", (report_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["products_assessed"] = json.loads(d.get("products_assessed") or "[]")
+            d["product_summary"] = json.loads(d.get("product_summary") or "{}")
             return d
 
     # ── GitLab Templates ──

@@ -274,6 +274,47 @@ def create_app(db_path: str = None) -> Flask:
         }
         return db.store_zt_report(tenant_name, report_data)
 
+    def _store_scuba_report(db, tenant_name, filename, tmp_path, parser, actions):
+        """Store SCuBA report metadata to DB."""
+        import uuid as _uuid
+        report_id = str(_uuid.uuid4())[:8]
+
+        # Store HTML report if present in the same directory as the JSON
+        html_path = ""
+        source_dir = Path(tmp_path).parent
+        # The original uploaded file won't have siblings, but look for BaselineReports.html
+        for candidate in source_dir.glob("BaselineReports.html"):
+            html_path = str(candidate)
+            break
+
+        # Count statuses
+        from collections import Counter
+        status_counts = Counter(a.status for a in actions)
+
+        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
+        product_summary = parser.product_summary if hasattr(parser, "product_summary") else {}
+
+        report_data = {
+            "id": report_id,
+            "imported_at": datetime.utcnow().isoformat(),
+            "executed_at": metadata.get("timestamp", ""),
+            "report_tenant_id": metadata.get("tenant_id", ""),
+            "report_tenant_name": metadata.get("tenant_name", ""),
+            "report_domain": metadata.get("domain", ""),
+            "tool_version": metadata.get("tool_version", ""),
+            "report_uuid": metadata.get("report_uuid", ""),
+            "products_assessed": metadata.get("products_assessed", []),
+            "product_summary": product_summary,
+            "total_controls": len(actions),
+            "passed_controls": status_counts.get("Completed", 0),
+            "failed_controls": status_counts.get("ToDo", 0),
+            "warning_controls": status_counts.get("In Planning", 0),
+            "manual_controls": status_counts.get("Not Applicable", 0),
+            "source_file": filename,
+            "html_path": html_path,
+        }
+        return db.store_scuba_report(tenant_name, report_data)
+
     @app.route("/api/tenants/<name>/import", methods=["POST"])
     def api_import(name):
         if not db.get_tenant(name):
@@ -309,6 +350,11 @@ def create_app(db_path: str = None) -> Flask:
             if source == "zero-trust-report":
                 zt_report_id = _store_zt_report(db, name, file.filename, tmp_path, parser, actions)
 
+            # For SCuBA: store report metadata
+            scuba_report_id = None
+            if source == "scuba":
+                scuba_report_id = _store_scuba_report(db, name, file.filename, tmp_path, parser, actions)
+
             # Auto-correlate after import
             corr = auto_correlate(db, name)
 
@@ -340,6 +386,8 @@ def create_app(db_path: str = None) -> Flask:
             }
             if zt_report_id:
                 result["zt_report_id"] = zt_report_id
+            if scuba_report_id:
+                result["scuba_report_id"] = scuba_report_id
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
@@ -417,6 +465,66 @@ def create_app(db_path: str = None) -> Flask:
         action_objects = apply_e8_mapping(action_objects)
         summary = get_e8_summary(action_objects)
         return jsonify(summary)
+
+    # ── SCuBA endpoints ──
+
+    @app.route("/api/tenants/<name>/scuba", methods=["GET"])
+    def api_scuba_summary(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        actions = db.get_actions(name)
+        scuba_actions = [a for a in actions if a.get("source_tool") == SourceTool.SCUBA.value]
+
+        # Group by product (category field)
+        products = {}
+        for a in scuba_actions:
+            prod = a.get("category", "") or "Unknown"
+            if prod not in products:
+                products[prod] = {"total": 0, "pass": 0, "fail": 0, "warning": 0, "na": 0, "actions": []}
+            products[prod]["total"] += 1
+            status = a.get("status", "")
+            if status == ActionStatus.COMPLETED.value:
+                products[prod]["pass"] += 1
+            elif status == ActionStatus.TODO.value:
+                products[prod]["fail"] += 1
+            elif status == ActionStatus.IN_PLANNING.value:
+                products[prod]["warning"] += 1
+            elif status == ActionStatus.NOT_APPLICABLE.value:
+                products[prod]["na"] += 1
+            products[prod]["actions"].append({
+                "id": a.get("id"), "title": a.get("title"), "status": status,
+                "priority": a.get("priority"), "source_id": a.get("source_id"),
+                "current_value": a.get("current_value", ""),
+                "subcategory": a.get("subcategory", ""),
+                "reference_url": a.get("reference_url", ""),
+            })
+
+        total = len(scuba_actions)
+        passed = sum(p["pass"] for p in products.values())
+        failed = sum(p["fail"] for p in products.values())
+        warnings = sum(p["warning"] for p in products.values())
+
+        return jsonify({
+            "total_controls": total,
+            "passed": passed,
+            "failed": failed,
+            "warnings": warnings,
+            "pass_rate": round(passed / total * 100, 1) if total else 0,
+            "products": products,
+        })
+
+    @app.route("/api/tenants/<name>/scuba-reports", methods=["GET"])
+    def api_scuba_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_scuba_reports(name))
+
+    @app.route("/api/scuba-reports/<report_id>", methods=["GET"])
+    def api_scuba_report_detail(report_id):
+        report = db.get_scuba_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        return jsonify(report)
 
     # ── Import history ──
 
