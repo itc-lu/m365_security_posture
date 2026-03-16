@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import json
 import re
+import shutil
+import zipfile
 from pathlib import Path
 
 from ..models import (
@@ -66,12 +68,50 @@ class ScubaParser:
         path = Path(file_path)
         suffix = path.suffix.lower()
 
-        if suffix == ".json":
+        if suffix == ".zip":
+            return self._parse_zip(path)
+        elif suffix == ".json":
             return self._parse_json(path)
         elif suffix == ".csv":
             return self._parse_csv(path)
         else:
-            raise ValueError(f"Unsupported SCuBA file format: {suffix}. Use .json or .csv")
+            raise ValueError(
+                f"Unsupported SCuBA file format: {suffix}. "
+                "Upload the ScubaGear report directory as a ZIP, or a ScubaResults JSON/CSV file."
+            )
+
+    def _parse_zip(self, zip_path: Path) -> list[Action]:
+        """Extract ZIP and find the ScubaResults JSON inside."""
+        import tempfile
+        extract_dir = tempfile.mkdtemp(prefix="scuba_report_")
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+
+            json_file = self._find_scuba_json(Path(extract_dir))
+            if not json_file:
+                raise ValueError(
+                    "Could not find ScubaResults JSON in the ZIP. "
+                    "Ensure the ZIP contains the ScubaGear report directory "
+                    "(with ScubaResults*.json or TestResults.json)."
+                )
+            actions = self._parse_json(json_file)
+            # Keep extract_dir for the webapp to copy HTML files from
+            self._extract_dir = extract_dir
+            return actions
+        except zipfile.BadZipFile:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            raise ValueError("Invalid ZIP file")
+
+    def _find_scuba_json(self, root: Path) -> Path | None:
+        """Find the best ScubaResults JSON in extracted directory."""
+        # Prefer ScubaResults_*.json (rich format with MetaData)
+        for candidate in root.rglob("ScubaResults*.json"):
+            return candidate
+        # Fall back to TestResults.json
+        for candidate in root.rglob("TestResults.json"):
+            return candidate
+        return None
 
     def _parse_json(self, path: Path) -> list[Action]:
         with open(path) as f:

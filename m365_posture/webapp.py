@@ -275,17 +275,41 @@ def create_app(db_path: str = None) -> Flask:
         return db.store_zt_report(tenant_name, report_data)
 
     def _store_scuba_report(db, tenant_name, filename, tmp_path, parser, actions):
-        """Store SCuBA report metadata to DB."""
+        """Store SCuBA report HTML and data files, save metadata to DB."""
+        reports_dir = Path(db.db_path).parent / "scuba_reports" / tenant_name
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
         import uuid as _uuid
         report_id = str(_uuid.uuid4())[:8]
+        report_dir = reports_dir / report_id
+        report_dir.mkdir(exist_ok=True)
 
-        # Store HTML report if present in the same directory as the JSON
         html_path = ""
-        source_dir = Path(tmp_path).parent
-        # The original uploaded file won't have siblings, but look for BaselineReports.html
-        for candidate in source_dir.glob("BaselineReports.html"):
-            html_path = str(candidate)
-            break
+
+        if Path(tmp_path).suffix.lower() == ".zip":
+            # Extract ZIP contents to report directory
+            extract_dir = getattr(parser, "_extract_dir", None)
+            if extract_dir and Path(extract_dir).exists():
+                for item in Path(extract_dir).iterdir():
+                    dest = report_dir / item.name
+                    if item.is_dir():
+                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(str(item), str(dest))
+                shutil.rmtree(extract_dir, ignore_errors=True)
+
+            # Find BaselineReports.html (main ScubaGear report)
+            for html_file in report_dir.rglob("BaselineReports.html"):
+                html_path = str(html_file)
+                break
+            # Fall back to any HTML
+            if not html_path:
+                for html_file in report_dir.rglob("*.html"):
+                    html_path = str(html_file)
+                    break
+        else:
+            # Single JSON/CSV file - copy it
+            shutil.copy2(tmp_path, str(report_dir / filename))
 
         # Count statuses
         from collections import Counter
@@ -525,6 +549,37 @@ def create_app(db_path: str = None) -> Flask:
         if not report:
             return _json_error("Report not found", 404)
         return jsonify(report)
+
+    @app.route("/api/scuba-reports/<report_id>/html", methods=["GET"])
+    def api_scuba_report_html(report_id):
+        report = db.get_scuba_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path or not Path(html_path).exists():
+            return _json_error("HTML report file not found", 404)
+        return send_file(html_path, mimetype="text/html")
+
+    @app.route("/api/scuba-reports/<report_id>/files/<path:filepath>", methods=["GET"])
+    def api_scuba_report_files(report_id, filepath):
+        """Serve static files (images, CSS) from the SCuBA report directory."""
+        report = db.get_scuba_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path:
+            return _json_error("No report directory", 404)
+        report_dir = Path(html_path).parent
+        full_path = report_dir / filepath
+        try:
+            full_path.resolve().relative_to(report_dir.resolve())
+        except ValueError:
+            return _json_error("Invalid path", 400)
+        if not full_path.exists():
+            return _json_error("File not found", 404)
+        import mimetypes
+        mime = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
+        return send_file(str(full_path), mimetype=mime)
 
     # ── Import history ──
 

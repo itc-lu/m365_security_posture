@@ -1668,6 +1668,10 @@ function onSourceChange() {
     hint.style.display = 'block';
     hint.innerHTML = 'Upload the full report directory as a <strong>ZIP file</strong> (containing ZeroTrustAssessmentReport.html and zt-export/), or just the ZeroTrustAssessmentReport.json file.';
     uploadHint.textContent = 'ZIP file (recommended) or JSON file';
+  } else if(src === 'scuba') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the ScubaGear report directory as a <strong>ZIP file</strong> (containing BaselineReports.html, ScubaResults JSON, etc.), or just the ScubaResults JSON/CSV file.';
+    uploadHint.textContent = 'ZIP file (recommended), JSON, or CSV file';
   } else {
     hint.style.display = 'none';
     uploadHint.textContent = 'JSON or CSV file';
@@ -2374,6 +2378,7 @@ async function renderScuba() {
     let rptRows = reports.map(r => {
       const products = (r.products_assessed || []).join(', ');
       const passRate = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
+      const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/scuba-reports/${r.id}/html','_blank')">Open Report</button>` : '';
       return `<tr>
         <td>${r.imported_at?.substring(0,19) || ''}</td>
         <td>${r.executed_at?.substring(0,19) || ''}</td>
@@ -2383,11 +2388,11 @@ async function renderScuba() {
         <td>${r.tool_version || ''}</td>
         <td>${gauge(passRate, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
-        <td><button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
+        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
       </tr>`;
     }).join('');
     reportsHtml = `<div class="card mb-16"><div class="card-header">Import History</div>
-      <div class="table-wrap"><table><thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Domain</th><th>Products</th><th>Version</th><th>Pass Rate</th><th>Results</th><th></th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Domain</th><th>Products</th><th>Version</th><th>Pass Rate</th><th>Results</th><th>Actions</th></tr></thead>
       <tbody>${rptRows}</tbody></table></div></div>`;
   }
 
