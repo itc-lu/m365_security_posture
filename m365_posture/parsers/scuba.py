@@ -174,6 +174,9 @@ class ScubaParser:
         # Store per-product summary
         self.product_summary = data.get("Summary", {})
 
+        # Index annotated failed policies for enrichment
+        annotated = data.get("AnnotatedFailedPolicies", {})
+
         actions = []
         results = data.get("Results", {})
         for product_abbrev, groups in results.items():
@@ -185,7 +188,8 @@ class ScubaParser:
                 group_url = group.get("GroupReferenceURL", "")
                 for control in group.get("Controls", []):
                     action = self._control_to_action(
-                        control, product_abbrev, group_name, group_number, group_url
+                        control, product_abbrev, group_name, group_number,
+                        group_url, annotated,
                     )
                     if action:
                         actions.append(action)
@@ -243,6 +247,7 @@ class ScubaParser:
     def _control_to_action(
         self, control: dict, product: str, group_name: str,
         group_number: str, group_url: str,
+        annotated: dict | None = None,
     ) -> Action | None:
         """Convert a control from the rich Results structure to an Action."""
         control_id = control.get("Control ID", "")
@@ -250,6 +255,14 @@ class ScubaParser:
         result = control.get("Result", "")
         criticality = control.get("Criticality", "")
         details = control.get("Details", "")
+        original_result = control.get("OriginalResult", "")
+        original_details = control.get("OriginalDetails", "")
+        omitted_result = control.get("OmittedEvaluationResult", "")
+        omitted_details = control.get("OmittedEvaluationDetails", "")
+        incorrect_result = control.get("IncorrectResult", "")
+        incorrect_details = control.get("IncorrectResultDetails", "")
+        comments = control.get("Comments", [])
+        resolution_date = control.get("ResolutionDate")
 
         if not control_id:
             return None
@@ -265,19 +278,60 @@ class ScubaParser:
         if product and not title.lower().startswith(product_lower):
             title = f"[{product}] {title}"
 
-        # Build a richer description with group context
+        # Build rich description
         desc_parts = []
         if group_name:
-            desc_parts.append(f"**Group:** {group_number}. {group_name}")
+            desc_parts.append(f"**Group {group_number}:** {group_name}")
         if details:
             desc_parts.append(f"**Details:** {details}")
+        if original_details and original_details != details and original_details != "N/A":
+            # Strip HTML tags from original details
+            clean = re.sub(r"<[^>]+>", "", original_details)
+            if clean != details:
+                desc_parts.append(f"**Original Details:** {clean}")
         description = "\n\n".join(desc_parts) if desc_parts else details or ""
+
+        # Build recommended_value from omitted/incorrect evaluation info
+        rec_parts = []
+        if omitted_result and omitted_result != "N/A":
+            rec_parts.append(f"Omitted Evaluation: {omitted_result} — {omitted_details}")
+        if incorrect_result and incorrect_result != "N/A":
+            rec_parts.append(f"Incorrect Result Override: {incorrect_result} — {incorrect_details}")
+        recommended_value = "\n".join(rec_parts) if rec_parts else ""
+
+        # Build notes from comments, resolution date, and annotated failed policy info
+        notes_parts = []
+        if isinstance(comments, list) and comments and comments != ["System.Object[]"]:
+            notes_parts.append(f"Comments: {', '.join(str(c) for c in comments)}")
+        if resolution_date:
+            notes_parts.append(f"Resolution Date: {resolution_date}")
+
+        # Enrich from AnnotatedFailedPolicies
+        annotation = (annotated or {}).get(control_id, {})
+        if annotation:
+            if annotation.get("Comment"):
+                notes_parts.append(f"Annotation: {annotation['Comment']}")
+            if annotation.get("RemediationDate"):
+                notes_parts.append(f"Remediation Date: {annotation['RemediationDate']}")
+            if annotation.get("IncorrectResult"):
+                notes_parts.append("Marked as incorrect result")
+        notes = "\n".join(notes_parts) if notes_parts else ""
+
+        # Tags for filtering and display
+        tags = [f"Product:{product}"]
+        if group_name:
+            tags.append(f"Group:{group_number}. {group_name}")
+        if criticality:
+            tags.append(f"Criticality:{criticality}")
+        if result:
+            tags.append(f"SCuBA Result:{result}")
 
         return Action(
             title=title,
             description=description,
             source_tool=self.source_tool,
             source_id=f"scuba_{control_id}",
+            reference_id=control_id,
             workload=workload,
             status=_scuba_result_to_status(result),
             priority=_map_criticality_to_priority(criticality),
@@ -288,9 +342,12 @@ class ScubaParser:
             max_score=1.0,
             score_percentage=100.0 if (result or "").lower() in ("pass", "passed") else 0.0,
             current_value=details or "",
+            recommended_value=recommended_value,
             category=product or "",
             subcategory=criticality or "",
             reference_url=group_url or "",
+            tags=tags,
+            notes=notes,
             raw_data=control,
         )
 
@@ -338,11 +395,45 @@ class ScubaParser:
         if product and not title.lower().startswith(product_lower):
             title = f"[{product.upper()}] {title}"
 
+        # Collect extra CSV fields
+        notes_parts = []
+        comments = item.get("Comments", "")
+        if comments and comments not in ("", "System.Object[]"):
+            notes_parts.append(f"Comments: {comments}")
+        resolution = item.get("ResolutionDate", "")
+        if resolution and resolution.strip():
+            notes_parts.append(f"Resolution Date: {resolution.strip()}")
+        justification = item.get("Justification", "")
+        if justification and justification.strip():
+            notes_parts.append(f"Justification: {justification.strip()}")
+        nc_reason = item.get("Non-Compliance Reason", "")
+        if nc_reason and nc_reason.strip():
+            notes_parts.append(f"Non-Compliance Reason: {nc_reason.strip()}")
+        remediation_date = item.get("Remediation Completion Date", "")
+        if remediation_date and remediation_date.strip():
+            notes_parts.append(f"Remediation Completion Date: {remediation_date.strip()}")
+
+        # Recommended value from omitted/incorrect evaluation
+        rec_parts = []
+        omitted_result = item.get("OmittedEvaluationResult", "")
+        if omitted_result and omitted_result != "N/A":
+            rec_parts.append(f"Omitted: {omitted_result} — {item.get('OmittedEvaluationDetails', '')}")
+        incorrect = item.get("IncorrectResult", "")
+        if incorrect and incorrect != "N/A":
+            rec_parts.append(f"Incorrect: {incorrect} — {item.get('IncorrectResultDetails', '')}")
+
+        tags = [f"Product:{product}"] if product else []
+        if criticality:
+            tags.append(f"Criticality:{criticality}")
+        if result:
+            tags.append(f"SCuBA Result:{result}")
+
         return Action(
             title=title,
             description=description or details or "",
             source_tool=self.source_tool,
             source_id=f"scuba_{control_id}",
+            reference_id=control_id,
             workload=workload,
             status=_scuba_result_to_status(result),
             priority=_map_criticality_to_priority(criticality),
@@ -353,9 +444,12 @@ class ScubaParser:
             max_score=1.0,
             score_percentage=100.0 if (result or "").lower() in ("pass", "passed") else 0.0,
             current_value=details or "",
+            recommended_value="\n".join(rec_parts) if rec_parts else "",
             category=product or "",
             subcategory=criticality or "",
             reference_url=item.get("ReferenceUrl", item.get("reference_url", "")),
+            tags=tags,
+            notes="\n".join(notes_parts) if notes_parts else "",
             raw_data=item,
         )
 

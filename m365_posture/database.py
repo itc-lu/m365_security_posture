@@ -1744,22 +1744,34 @@ class Database:
 
     # ── Scoring helpers ──
 
-    def get_scores(self, tenant_name: str) -> dict:
+    def get_scores(self, tenant_name: str, exclude_na: bool = False) -> dict:
         """Calculate live scores from action data.
 
         Uses authoritative Graph API overall scores when available (stored
         by store_graph_scores). Falls back to summing per-action scores.
         Per-workload/tool breakdowns always use per-action data.
+
+        If exclude_na is True, actions with status 'Not Applicable' or
+        'Risk Accepted' are excluded from scoring (they don't count toward
+        totals or percentages).
         """
         actions = self.get_actions(tenant_name)
         if not actions:
             return {"percentage": 0, "total_actions": 0, "completed_actions": 0,
-                    "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {}}
+                    "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {},
+                    "excluded_count": 0}
+
+        excluded_statuses = set()
+        if exclude_na:
+            excluded_statuses = {ActionStatus.NOT_APPLICABLE.value, ActionStatus.RISK_ACCEPTED.value}
+
+        scored_actions = [a for a in actions if a["status"] not in excluded_statuses] if excluded_statuses else actions
+        excluded_count = len(actions) - len(scored_actions)
 
         # Sum per-action scores
-        action_total_score = sum(a.get("score") or 0 for a in actions)
-        action_total_max = sum(a.get("max_score") or 0 for a in actions)
-        completed = sum(1 for a in actions if a["status"] == ActionStatus.COMPLETED.value)
+        action_total_score = sum(a.get("score") or 0 for a in scored_actions)
+        action_total_max = sum(a.get("max_score") or 0 for a in scored_actions)
+        completed = sum(1 for a in scored_actions if a["status"] == ActionStatus.COMPLETED.value)
 
         # Check for authoritative Graph API scores (used for Secure Score tool breakdown only)
         with self._conn() as conn:
@@ -1784,7 +1796,7 @@ class Database:
         by_status = {}
         by_priority = {}
 
-        for a in actions:
+        for a in scored_actions:
             tool = a["source_tool"]
             wl = a["workload"]
             st = a["status"]
@@ -1824,11 +1836,13 @@ class Database:
             "total_score": round(total_score, 2),
             "total_max": round(total_max, 2),
             "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
-            "total_actions": len(actions),
+            "total_actions": len(scored_actions),
             "completed_actions": completed,
             "by_tool": by_tool,
             "by_workload": by_workload,
             "by_status": by_status,
             "by_priority": by_priority,
+            "excluded_count": excluded_count,
+            "exclude_na": exclude_na,
         }
 

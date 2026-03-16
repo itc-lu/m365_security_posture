@@ -476,7 +476,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_scores(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
-        return jsonify(db.get_scores(name))
+        exclude_na = request.args.get("exclude_na", "").lower() in ("1", "true", "yes")
+        return jsonify(db.get_scores(name, exclude_na=exclude_na))
 
     # ── Essential Eight endpoint ──
 
@@ -499,40 +500,71 @@ def create_app(db_path: str = None) -> Flask:
         actions = db.get_actions(name)
         scuba_actions = [a for a in actions if a.get("source_tool") == SourceTool.SCUBA.value]
 
-        # Group by product (category field)
+        def _count_status(status, counters):
+            if status == ActionStatus.COMPLETED.value:
+                counters["pass"] += 1
+            elif status == ActionStatus.TODO.value:
+                counters["fail"] += 1
+            elif status == ActionStatus.IN_PLANNING.value:
+                counters["warning"] += 1
+            elif status == ActionStatus.NOT_APPLICABLE.value:
+                counters["na"] += 1
+
+        def _action_summary(a):
+            tags = a.get("tags") or []
+            if isinstance(tags, str):
+                import json as _j
+                try:
+                    tags = _j.loads(tags)
+                except Exception:
+                    tags = []
+            group_tag = next((t.replace("Group:", "") for t in tags if t.startswith("Group:")), "")
+            return {
+                "id": a.get("id"), "title": a.get("title"),
+                "status": a.get("status"), "priority": a.get("priority"),
+                "source_id": a.get("source_id"), "reference_id": a.get("reference_id", ""),
+                "current_value": a.get("current_value", ""),
+                "subcategory": a.get("subcategory", ""),
+                "reference_url": a.get("reference_url", ""),
+                "notes": a.get("notes", ""),
+                "group": group_tag,
+            }
+
+        # Group by product → group
         products = {}
         for a in scuba_actions:
             prod = a.get("category", "") or "Unknown"
             if prod not in products:
-                products[prod] = {"total": 0, "pass": 0, "fail": 0, "warning": 0, "na": 0, "actions": []}
+                products[prod] = {"total": 0, "pass": 0, "fail": 0, "warning": 0, "na": 0, "groups": {}}
             products[prod]["total"] += 1
             status = a.get("status", "")
-            if status == ActionStatus.COMPLETED.value:
-                products[prod]["pass"] += 1
-            elif status == ActionStatus.TODO.value:
-                products[prod]["fail"] += 1
-            elif status == ActionStatus.IN_PLANNING.value:
-                products[prod]["warning"] += 1
-            elif status == ActionStatus.NOT_APPLICABLE.value:
-                products[prod]["na"] += 1
-            products[prod]["actions"].append({
-                "id": a.get("id"), "title": a.get("title"), "status": status,
-                "priority": a.get("priority"), "source_id": a.get("source_id"),
-                "current_value": a.get("current_value", ""),
-                "subcategory": a.get("subcategory", ""),
-                "reference_url": a.get("reference_url", ""),
-            })
+            _count_status(status, products[prod])
+
+            summary = _action_summary(a)
+            group_name = summary["group"] or "Ungrouped"
+            if group_name not in products[prod]["groups"]:
+                products[prod]["groups"][group_name] = {
+                    "total": 0, "pass": 0, "fail": 0, "warning": 0, "na": 0,
+                    "reference_url": a.get("reference_url", ""),
+                    "actions": [],
+                }
+            grp = products[prod]["groups"][group_name]
+            grp["total"] += 1
+            _count_status(status, grp)
+            grp["actions"].append(summary)
 
         total = len(scuba_actions)
         passed = sum(p["pass"] for p in products.values())
         failed = sum(p["fail"] for p in products.values())
         warnings = sum(p["warning"] for p in products.values())
+        na_count = sum(p["na"] for p in products.values())
 
         return jsonify({
             "total_controls": total,
             "passed": passed,
             "failed": failed,
             "warnings": warnings,
+            "na": na_count,
             "pass_rate": round(passed / total * 100, 1) if total else 0,
             "products": products,
         })
@@ -551,14 +583,50 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(report)
 
     @app.route("/api/scuba-reports/<report_id>/html", methods=["GET"])
-    def api_scuba_report_html(report_id):
+    @app.route("/api/scuba-reports/<report_id>/html/<path:subpath>", methods=["GET"])
+    def api_scuba_report_html(report_id, subpath=None):
         report = db.get_scuba_report(report_id)
         if not report:
             return _json_error("Report not found", 404)
         html_path = report.get("html_path", "")
         if not html_path or not Path(html_path).exists():
             return _json_error("HTML report file not found", 404)
-        return send_file(html_path, mimetype="text/html")
+        report_root = Path(html_path).parent
+
+        if subpath:
+            # Serve sub-pages (e.g. IndividualReports/AADReport.html)
+            target = report_root / subpath
+            try:
+                target.resolve().relative_to(report_root.resolve())
+            except ValueError:
+                return _json_error("Invalid path", 400)
+            if not target.exists():
+                return _json_error("File not found", 404)
+            # For non-HTML files, serve directly
+            if target.suffix.lower() not in (".html", ".htm"):
+                import mimetypes
+                mime = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return send_file(str(target), mimetype=mime)
+            serve_path = str(target)
+            # Compute base href relative to this sub-page
+            rel = Path(subpath).parent
+            depth = len(rel.parts) if str(rel) != "." else 0
+            base_href = f"/api/scuba-reports/{report_id}/html/" + ("../" * depth if depth else "")
+        else:
+            serve_path = html_path
+            base_href = f"/api/scuba-reports/{report_id}/html/"
+
+        # Inject <base> tag so relative links (images, sub-pages) resolve correctly
+        with open(serve_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        base_tag = f'<base href="{base_href}">'
+        if "<head>" in content:
+            content = content.replace("<head>", f"<head>{base_tag}", 1)
+        elif "<HEAD>" in content:
+            content = content.replace("<HEAD>", f"<HEAD>{base_tag}", 1)
+        else:
+            content = base_tag + content
+        return Response(content, mimetype="text/html")
 
     @app.route("/api/scuba-reports/<report_id>/files/<path:filepath>", methods=["GET"])
     def api_scuba_report_files(report_id, filepath):

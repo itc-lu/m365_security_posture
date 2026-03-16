@@ -287,10 +287,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       Essential Eight
     </a>
-    <a href="#scuba" data-page="scuba">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
-      SCuBA
-    </a>
     <a href="#compliance" data-page="compliance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
       Compliance
@@ -593,6 +589,7 @@ function requireTenant() {
 // ── Dashboard ──
 // Store dashboard data for source filter switching
 let _dashData = {};
+let _dashExcludeNA = false;
 
 async function renderDashboard(sourceFilter) {
   const c = document.getElementById('content');
@@ -611,9 +608,11 @@ async function renderDashboard(sourceFilter) {
 
   // Fetch data on first load or full refresh; reuse when just switching source filter
   const isFilterSwitch = (sourceFilter !== undefined) && Object.keys(_dashData).length > 0;
-  if(!isFilterSwitch) {
+  const excludeParam = _dashExcludeNA ? '?exclude_na=1' : '';
+  const needsRefresh = !isFilterSwitch || (_dashData.scores && _dashData.scores.exclude_na !== _dashExcludeNA);
+  if(!isFilterSwitch || needsRefresh) {
     const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
-      api.get(`/api/tenants/${t}/scores`),
+      api.get(`/api/tenants/${t}/scores${excludeParam}`),
       api.get(`/api/tenants/${t}/prioritized?limit=10`),
       api.get(`/api/tenants/${t}/snapshots?limit=20`),
       api.get(`/api/tenants/${t}/risk-summary`),
@@ -742,6 +741,12 @@ async function renderDashboard(sourceFilter) {
       <label style="font-size:13px;font-weight:600;margin:0;width:auto">Score Source:</label>
       <select id="dash-source-filter" onchange="renderDashboard(this.value)" style="max-width:280px">${sourceOpts}</select>
       ${sf?`<button class="btn btn-sm" onclick="renderDashboard('')">Show All</button>`:''}
+      ${sf==='SCuBA (CISA)'?`<button class="btn btn-sm" onclick="navigate('scuba')" style="margin-left:4px">SCuBA Dashboard</button>`:''}
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:auto;cursor:pointer" title="Exclude Not Applicable and Risk Accepted actions from score calculations">
+        <input type="checkbox" id="dash-exclude-na" ${_dashExcludeNA?'checked':''} onchange="_dashExcludeNA=this.checked;_dashData={};renderDashboard(document.getElementById('dash-source-filter')?.value||'')">
+        Exclude N/A &amp; Risk Accepted
+      </label>
+      ${scores.excluded_count?`<span style="font-size:11px;color:var(--text-light)">(${scores.excluded_count} excluded)</span>`:''}
     </div>
     <div id="dashboard-report">
     <div class="grid grid-4 mb-16">
@@ -1257,6 +1262,7 @@ function actionDetailHtml(a) {
 
   // Source badge color
   const isZTR = a.source_tool === 'Zero Trust Report';
+  const isSCuBA = a.source_tool === 'SCuBA (CISA)';
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
 
@@ -1316,6 +1322,15 @@ function actionDetailHtml(a) {
             <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
             <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${(a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A'}</div></div>
             <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            ` : isSCuBA ? `
+            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${a.reference_id||a.source_id?.replace('scuba_','')||'N/A'}</div></div>
+            <div class="sidebar-field">
+              <div class="field-label">Result</div>
+              <div class="field-value">${statusBadge(a.status)}</div>
+            </div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Criticality</div><div class="field-value">${_scubaCritBadge(a.subcategory)}</div></div>
+            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+g+'</div></div>':'';})()}
             ` : `
             <div class="sidebar-field">
               <div class="field-label">Score</div>
@@ -1323,8 +1338,8 @@ function actionDetailHtml(a) {
               <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
             </div>
             `}
-            <div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
-            ${!isZTR?`<div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>`:''}
+            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>` : ''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
@@ -1337,6 +1352,7 @@ function actionDetailHtml(a) {
             ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
             ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
             ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity}</div></div>`:''}
+            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${a.notes}</div></div>`:''}
           </div>
         </div>
       </div>
@@ -2317,6 +2333,16 @@ async function renderE8() {
 }
 
 // ── SCuBA ──
+function _scubaCritBadge(crit) {
+  if(!crit) return '';
+  const cl = crit.toLowerCase();
+  if(cl.includes('shall') && !cl.includes('not-implemented') && !cl.includes('3rd')) return `<span class="badge badge-danger">Shall</span>`;
+  if(cl.includes('should')) return `<span class="badge badge-warning">Should</span>`;
+  if(cl.includes('3rd')) return `<span class="badge badge-info">3rd Party</span>`;
+  if(cl.includes('not-implemented')) return `<span class="badge badge-gray">Not Implemented</span>`;
+  return `<span class="badge badge-gray">${crit}</span>`;
+}
+
 async function renderScuba() {
   if(!requireTenant()) return;
   const data = await api.get(`/api/tenants/${state.activeTenant.name}/scuba`);
@@ -2330,44 +2356,64 @@ async function renderScuba() {
   }
 
   const passRate = data.pass_rate;
-  const prColor = passRate >= 80 ? 'var(--success)' : passRate >= 50 ? 'var(--warning)' : 'var(--danger)';
 
-  // Product cards
-  let productCards = Object.entries(data.products).map(([prod, pd], idx) => {
-    const prodTotal = pd.total;
-    const prodPct = prodTotal > 0 ? Math.round(pd.pass / prodTotal * 100) : 0;
+  // Product sections with groups
+  let pidx = 0;
+  let productSections = Object.entries(data.products).map(([prod, pd]) => {
+    const prodPct = pd.total > 0 ? Math.round(pd.pass / pd.total * 100) : 0;
 
-    // Status breakdown bars
-    let statusBar = `<div class="flex gap-8 mb-8" style="font-size:12px">
-      <span class="badge badge-success">Pass: ${pd.pass}</span>
-      <span class="badge badge-danger">Fail: ${pd.fail}</span>
-      <span class="badge badge-warning">Warning: ${pd.warning}</span>
-      <span class="badge badge-gray">N/A: ${pd.na}</span>
-    </div>`;
+    // Group cards within product
+    let groupCards = Object.entries(pd.groups || {}).map(([grpName, grp]) => {
+      const gi = pidx++;
+      const grpPct = grp.total > 0 ? Math.round(grp.pass / grp.total * 100) : 0;
 
-    // Actions table
-    let actionRows = (pd.actions || []).map(a => {
-      const critBadge = a.subcategory ? (a.subcategory.toLowerCase().includes('shall') ? '<span class="badge badge-danger">Shall</span>' : a.subcategory.toLowerCase().includes('should') ? '<span class="badge badge-warning">Should</span>' : `<span class="badge badge-gray">${a.subcategory}</span>`) : '';
-      return `<tr>
-        <td style="font-size:12px;font-family:monospace">${a.source_id?.replace('scuba_','') || ''}</td>
-        <td>${(a.title||'').substring(0,80)}</td>
-        <td>${statusBadge(a.status)}</td>
-        <td>${critBadge}</td>
-        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
-      </tr>`;
+      let rows = (grp.actions || []).map(a => {
+        const cid = a.reference_id || a.source_id?.replace('scuba_','') || '';
+        return `<tr>
+          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${cid}</td>
+          <td style="font-size:12px">${(a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90)}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td>${_scubaCritBadge(a.subcategory)}</td>
+          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
+        </tr>`;
+      }).join('');
+
+      const refLink = grp.reference_url ? `<a href="${grp.reference_url}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary)">Baseline</a>` : '';
+
+      return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px">
+        <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-grp-${gi}').classList.toggle('hidden')">
+          <div>
+            <div style="font-size:13px;font-weight:600">${grpName}</div>
+            <div style="font-size:11px;color:var(--text-light);margin-top:2px">
+              <span class="badge badge-success" style="font-size:10px">Pass ${grp.pass}</span>
+              <span class="badge badge-danger" style="font-size:10px">Fail ${grp.fail}</span>
+              ${grp.warning?`<span class="badge badge-warning" style="font-size:10px">Warn ${grp.warning}</span>`:''}
+              ${grp.na?`<span class="badge badge-gray" style="font-size:10px">N/A ${grp.na}</span>`:''}
+              ${refLink}
+            </div>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:${pctColor(grpPct)}">${grpPct}%</div>
+        </div>
+        <div id="scuba-grp-${gi}" class="hidden" style="margin-top:8px">
+          <div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Control ID</th><th>Requirement</th><th>Result</th><th>Criticality</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div>
+        </div>
+      </div>`;
     }).join('');
 
+    const pi = pidx++;
     return `<div class="card mb-16">
-      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-detail-${idx}').classList.toggle('hidden')">
+      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-prod-${pi}').classList.toggle('hidden')">
         <div>
-          <div class="card-header" style="margin:0;font-size:15px">${prod}</div>
-          <div style="font-size:12px;color:var(--text-light);margin-top:4px">${pd.pass}/${prodTotal} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings</div>
+          <div class="card-header" style="margin:0;font-size:16px">${prod}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">
+            ${pd.pass}/${pd.total} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings &middot; ${pd.na} N/A
+            &middot; ${Object.keys(pd.groups||{}).length} groups
+          </div>
         </div>
         <div style="flex-shrink:0">${gauge(prodPct, 80)}</div>
       </div>
-      <div id="scuba-detail-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
-        ${statusBar}
-        ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Control ID</th><th>Requirement</th><th>Result</th><th>Criticality</th><th>Details</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px">No controls</div>'}
+      <div id="scuba-prod-${pi}" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${groupCards}
       </div>
     </div>`;
   }).join('');
@@ -2377,7 +2423,7 @@ async function renderScuba() {
   if(reports && reports.length > 0) {
     let rptRows = reports.map(r => {
       const products = (r.products_assessed || []).join(', ');
-      const passRate = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
+      const pr = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
       const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/scuba-reports/${r.id}/html','_blank')">Open Report</button>` : '';
       return `<tr>
         <td>${r.imported_at?.substring(0,19) || ''}</td>
@@ -2386,7 +2432,7 @@ async function renderScuba() {
         <td>${r.report_domain || ''}</td>
         <td>${products}</td>
         <td>${r.tool_version || ''}</td>
-        <td>${gauge(passRate, 60)}</td>
+        <td>${gauge(pr, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
         <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
       </tr>`;
@@ -2397,15 +2443,15 @@ async function renderScuba() {
   }
 
   document.getElementById('content').innerHTML = `
-    <div class="card mb-16"><div class="grid grid-4">
+    <div class="card mb-16"><div class="grid grid-4" style="grid-template-columns: auto 1fr 1fr 1fr 1fr">
       <div class="stat-card">${gauge(passRate, 100)}<div class="label">Pass Rate</div></div>
       <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
       <div class="stat-card"><div class="value" style="color:var(--success)">${data.passed}</div><div class="label">Passed</div></div>
       <div class="stat-card"><div class="value" style="color:var(--danger)">${data.failed}</div><div class="label">Failed</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--warning)">${data.warnings}</div><div class="label">Warnings</div></div>
     </div></div>
     ${reportsHtml}
-    <div class="card-header" style="margin-bottom:12px">Results by Product</div>
-    ${productCards}`;
+    ${productSections}`;
 }
 
 async function showScubaReportDetail(reportId) {
