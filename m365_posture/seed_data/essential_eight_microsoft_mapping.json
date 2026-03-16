@@ -1,0 +1,658 @@
+{
+  "_metadata": {
+    "source": "https://learn.microsoft.com/en-us/compliance/anz/e8-overview",
+    "last_updated": "2025-10-08",
+    "ism_baseline": "ISM Mar 2025",
+    "description": "Comprehensive mapping of Microsoft 365 capabilities to ACSC Essential Eight controls and maturity levels, sourced from official Microsoft compliance documentation.",
+    "contact": "Essential-8@Microsoft.com",
+    "compliance_tools": {
+      "purview_compliance_manager": {
+        "description": "Premium templates for Essential Eight at all three maturity levels for automated monitoring, continuous assessment, and configuration drift detection.",
+        "template_location": "Purview Compliance Manager > Templates > Asia Pacific > Essential Eight",
+        "levels_available": ["ML1", "ML2", "ML3"],
+        "additional_templates": ["IRAP Official", "IRAP Protected"]
+      },
+      "m365_license_maps": {
+        "interactive_url": "https://m365maps.com/australia.htm",
+        "downloadable_url": "https://m365maps.com/files/Essential-8.htm",
+        "note": "Community project by Microsoft employees, not official Microsoft documents"
+      },
+      "irap_assessment_reports": {
+        "url": "https://servicetrust.microsoft.com/Viewpage/AustraliaIRAP"
+      }
+    },
+    "copilot_note": "Copilot for Microsoft 365 inherits existing Essential Eight controls and posture. Currently will not operate on Macro-enabled Office documents."
+  },
+  "controls": [
+    {
+      "control_id": "E8-1",
+      "control_name": "Application Control",
+      "description": "Ensures only approved code such as executables, software libraries, scripts, installers, and drivers is authorized to execute.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-app-control",
+      "primary_m365_products": [
+        "Windows Defender Application Control (WDAC)",
+        "Microsoft AppLocker",
+        "Microsoft Intune",
+        "Microsoft Defender for Endpoint P2",
+        "Microsoft Sentinel"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "primary_tool": "Microsoft AppLocker",
+          "description": "Application control on workstations using AppLocker with path-based rules.",
+          "key_configurations": [
+            "Deploy AppLocker policies via Intune or Group Policy",
+            "Block execution from C:\\Windows\\Temp\\*.*",
+            "Block execution from %USERPROFILE%\\AppData\\Local\\*.* (with exception for WindowsApps)",
+            "Block execution from %USERPROFILE%\\AppData\\Roaming\\*.*",
+            "Use AaronLocker (Microsoft open-source) for policy creation",
+            "Enable Application Identity service"
+          ],
+          "ism_controls": ["ISM-0843", "ISM-1657", "ISM-1870", "ISM-1704", "ISM-1807", "ISM-1808"]
+        },
+        "ML2": {
+          "primary_tool": "Windows Defender Application Control (WDAC)",
+          "description": "WDAC on workstations and internet-facing servers with recommended block rules, centralized logging.",
+          "key_configurations": [
+            "Deploy WDAC policies via Intune in multiple policy format",
+            "Implement Microsoft recommended application blocklist (ISM-1544)",
+            "Configure managed installer for Intune",
+            "Enable WDAC script enforcement",
+            "Configure centralized logging via Defender for Endpoint P2 and Sentinel",
+            "Implement WDAC audit mode first, then enforcement mode",
+            "Use WDAC Wizard for policy creation",
+            "Validate application control rulesets annually (ISM-1582)"
+          ],
+          "ism_controls": ["ISM-0843", "ISM-1490", "ISM-1544", "ISM-1657", "ISM-1582", "ISM-1660", "ISM-1815", "ISM-1870", "ISM-1871", "ISM-1228", "ISM-1906", "ISM-0140", "ISM-0123", "ISM-1819"]
+        },
+        "ML3": {
+          "primary_tool": "Windows Defender Application Control (WDAC)",
+          "description": "WDAC on all workstations, internet-facing and non-internet-facing servers, with driver restrictions and full logging.",
+          "key_configurations": [
+            "Extend WDAC to non-internet-facing servers (ISM-1656)",
+            "Restrict driver execution to organization-approved set (ISM-1658)",
+            "Enable Hypervisor-protected code integrity (default on Windows 11 2022+)",
+            "Implement Microsoft vulnerable driver blocklist (ISM-1659)",
+            "Event logs from workstations analyzed in timely manner (ISM-0109)",
+            "Event logs from non-internet-facing servers analyzed (ISM-1907)"
+          ],
+          "ism_controls": ["ISM-0843", "ISM-1490", "ISM-1656", "ISM-1544", "ISM-1657", "ISM-1658", "ISM-1582", "ISM-1659", "ISM-1660", "ISM-1815", "ISM-1870", "ISM-1871", "ISM-0109", "ISM-1228", "ISM-1906", "ISM-1907", "ISM-0140", "ISM-0123", "ISM-1819"]
+        }
+      },
+      "github_resources": [
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines"
+      ],
+      "licensing": "WDAC available on supported Windows 10/11 editions. Defender for Endpoint P2 for advanced hunting. Microsoft Sentinel for SIEM."
+    },
+    {
+      "control_id": "E8-2",
+      "control_name": "Patch Applications",
+      "description": "Ensuring applications are patched in a timely manner to reduce exposure to known vulnerabilities.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-patch-app",
+      "primary_m365_products": [
+        "Microsoft Defender Vulnerability Management (DVM)",
+        "Microsoft Intune",
+        "Windows Update for Business",
+        "Microsoft Defender for Endpoint",
+        "Microsoft Intune Enterprise Application Management",
+        "Microsoft Defender for Cloud"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "Vulnerability scanning and patching of productivity suites, browsers, email clients, PDF software, and security products within 2 weeks.",
+          "key_configurations": [
+            "Onboard devices to Defender for Endpoint for continuous vulnerability scanning (ISM-1698, ISM-1699)",
+            "Configure Windows Update for Business with update rings for 2-week patching (ISM-1691)",
+            "Use automated asset discovery at least fortnightly (ISM-1807)",
+            "Use vulnerability scanner with up-to-date database (ISM-1808)",
+            "Remove unsupported applications via Intune (ISM-1704)",
+            "Remove unsupported online services (ISM-1905)",
+            "Apply critical patches for online services within 48 hours (ISM-1876)"
+          ],
+          "patching_timelines": {
+            "online_services_noncritical": "2 weeks",
+            "online_services_critical": "48 hours",
+            "productivity_suites_browsers_email": "2 weeks"
+          },
+          "ism_controls": ["ISM-1690", "ISM-1691", "ISM-1698", "ISM-1699", "ISM-1704", "ISM-1807", "ISM-1808", "ISM-1876", "ISM-1905"]
+        },
+        "ML2": {
+          "description": "Extended patching to all other applications within 1 month, plus fortnightly scanning for non-core apps.",
+          "key_configurations": [
+            "All ML1 configurations plus:",
+            "Patch all other applications within 1 month (ISM-1693)",
+            "Fortnightly vulnerability scanning for non-core applications (ISM-1700)",
+            "Use Intune Enterprise Application Management for app lifecycle",
+            "Configure DVM-Intune integration for remediation workflows",
+            "Enable Microsoft Intune connection in Defender portal: Settings > Endpoints > General > Advanced features"
+          ],
+          "patching_timelines": {
+            "online_services_noncritical": "2 weeks",
+            "online_services_critical": "48 hours",
+            "productivity_suites_browsers_email": "2 weeks",
+            "other_applications": "1 month"
+          },
+          "ism_controls": ["ISM-1690", "ISM-1691", "ISM-1693", "ISM-1698", "ISM-1699", "ISM-1700", "ISM-1704", "ISM-1807", "ISM-1808", "ISM-1876", "ISM-1905"]
+        },
+        "ML3": {
+          "description": "Critical patches within 48 hours, removal of all unsupported applications, and extended vulnerability management.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Critical patches for productivity suites/browsers/email within 48 hours (ISM-1692)",
+            "Non-critical patches for productivity suites within 2 weeks (ISM-1901)",
+            "Remove all unsupported applications including non-core (ISM-0304)",
+            "Use Microsoft Defender vulnerability management for identification",
+            "Use Intune application deployment for rapid patch deployment"
+          ],
+          "patching_timelines": {
+            "online_services_noncritical": "2 weeks",
+            "online_services_critical": "48 hours",
+            "productivity_suites_critical": "48 hours",
+            "productivity_suites_noncritical": "2 weeks",
+            "other_applications": "1 month"
+          },
+          "ism_controls": ["ISM-0304", "ISM-1690", "ISM-1691", "ISM-1692", "ISM-1693", "ISM-1698", "ISM-1699", "ISM-1700", "ISM-1704", "ISM-1807", "ISM-1808", "ISM-1876", "ISM-1901", "ISM-1905"]
+        }
+      },
+      "licensing": "Microsoft Defender Vulnerability Management (standalone or Defender for Endpoint P2 with DVM add-on). Intune Enterprise Application Management requires Intune Suite license."
+    },
+    {
+      "control_id": "E8-3",
+      "control_name": "Configure Microsoft Office Macro Settings",
+      "description": "Controlling the execution of Microsoft Office macros to prevent malicious code execution.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-macro",
+      "primary_m365_products": [
+        "Microsoft Intune",
+        "Microsoft 365 Apps for Enterprise",
+        "Microsoft Defender for Endpoint",
+        "Attack Surface Reduction Rules"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "Block macros from internet, disable for non-business users, enable antivirus scanning of macros.",
+          "key_configurations": [
+            "Import and deploy ACSC Office Hardening Guidelines policy via Intune",
+            "Block macros from running in Office files from the internet (ISM-1488)",
+            "Disable macros for users without demonstrated business need (ISM-1671)",
+            "Deploy 'All Macros Disabled' policy to All Office Users",
+            "Ensure macro security settings cannot be changed by users (ISM-1489)",
+            "Enable macro antivirus scanning: Force Runtime AV Scan = Enabled (ISM-1672)",
+            "Deploy OLE package activation prevention script"
+          ],
+          "ism_controls": ["ISM-1488", "ISM-1671", "ISM-1489", "ISM-1672"]
+        },
+        "ML2": {
+          "description": "All ML1 controls plus trusted publisher enforcement and logging.",
+          "key_configurations": [
+            "All ML1 configurations plus:",
+            "Disable Trust Bar Notification for unsigned applications (ISM-1675)",
+            "Block Win32 API calls from Office macros via ASR rule 92E97FA1 (ISM-1673)",
+            "Deploy ASR rules in audit mode first, then enforce",
+            "Onboard devices to Defender for Endpoint for macro execution logging"
+          ],
+          "ism_controls": ["ISM-1488", "ISM-1671", "ISM-1489", "ISM-1672", "ISM-1675", "ISM-1673"]
+        },
+        "ML3": {
+          "description": "All ML2 controls plus Trusted Publisher enforcement, annual validation, and signed macros only.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Only allow macros signed by Trusted Publisher (ISM-1674)",
+            "Deploy 'Macros Enabled for Trusted Publishers' policy for exempted users",
+            "Add Trusted Publisher certificates via Intune",
+            "Validate Trusted Publisher list annually (ISM-1676)",
+            "Check macro code before signing (ISM-1890) on disconnected device with ACSC policies",
+            "Only privileged users can write to Trusted Locations (ISM-1487)",
+            "Use V3 signature scheme for signing macros"
+          ],
+          "ism_controls": ["ISM-1488", "ISM-1671", "ISM-1489", "ISM-1672", "ISM-1675", "ISM-1673", "ISM-1674", "ISM-1676", "ISM-1890", "ISM-1487"]
+        }
+      },
+      "github_resources": [
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/office/policies/ACSC%20Office%20Hardening%20Guidelines.json",
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/office/policies/All%20Macros%20Disabled.json",
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/office/policies/Macros%20Enabled%20for%20Trusted%20Publishers.json",
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/office/scripts/OfficeMacroHardening-PreventActivationofOLE.ps1"
+      ],
+      "asr_rules": {
+        "block_win32_api_calls_from_macro": "92E97FA1-2EDF-4476-BDD6-9DD0B4DDDC7B",
+        "block_office_child_processes": "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",
+        "block_office_executable_content": "3B576869-A4EC-4529-8536-B80A7769E899",
+        "block_office_code_injection": "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84"
+      }
+    },
+    {
+      "control_id": "E8-4",
+      "control_name": "User Application Hardening",
+      "description": "Hardening user-facing applications to reduce the attack surface against malicious websites, emails, and removable media.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-app-harden",
+      "primary_m365_products": [
+        "Microsoft Edge",
+        "Microsoft Intune",
+        "Attack Surface Reduction Rules",
+        "Microsoft Defender for Endpoint",
+        "Microsoft 365 Apps for Enterprise"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "Basic browser hardening, disable IE11, remove legacy components.",
+          "key_configurations": [
+            "Deploy Microsoft Edge Security Baseline via Intune Endpoint Security",
+            "Deploy ACSC Microsoft Edge Hardening Guidelines via Intune",
+            "Block web advertisements: 'Ads setting for sites with intrusive ads' = Enabled (ISM-1485)",
+            "Java not installed by default on Windows 10/11 (ISM-1486)",
+            "Disable or remove Internet Explorer 11 (ISM-1666)",
+            "Configure IE mode for legacy compatibility sites",
+            "Remove .NET Framework 3.5 via UserApplicationHardening-RemoveFeatures.ps1 (ISM-1655)",
+            "Remove Windows PowerShell 2.0 via script (ISM-1612)"
+          ],
+          "ism_controls": ["ISM-1485", "ISM-1486", "ISM-1666", "ISM-1655", "ISM-1612", "ISM-1412", "ISM-1860", "ISM-1859", "ISM-1585"]
+        },
+        "ML2": {
+          "description": "All ML1 plus ASR rules for Office, OLE prevention, security settings enforcement.",
+          "key_configurations": [
+            "All ML1 configurations plus:",
+            "Block Office from creating child processes via ASR rule D4F940AB (ISM-1667)",
+            "Block Office from creating executable content via ASR rule 3B576869 (ISM-1668)",
+            "Block Office from injecting code into other processes via ASR rule 75668C1F (ISM-1669)",
+            "Prevent activation of OLE packages via PowerShell script (ISM-1542)",
+            "Block Adobe Reader from creating child processes via ASR (ISM-1670)",
+            "Ensure web browser, Office and PDF security settings cannot be changed by users (ISM-1585)",
+            "Deploy ACSC Office Hardening Guidelines"
+          ],
+          "ism_controls": ["ISM-1485", "ISM-1486", "ISM-1666", "ISM-1655", "ISM-1612", "ISM-1412", "ISM-1860", "ISM-1859", "ISM-1585", "ISM-1667", "ISM-1668", "ISM-1669", "ISM-1542", "ISM-1670"]
+        },
+        "ML3": {
+          "description": "All ML2 plus constrained language mode, centralized logging, command line process creation logging.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Enable PowerShell Constrained Language Mode (via Application Control)",
+            "Centrally log blocked PowerShell script executions (ISM-1664, ISM-1665)",
+            "Log command line process creation events (ISM-1899)",
+            "Onboard devices to Defender for Endpoint for centralized logging",
+            "Application Control event IDs captured by Defender for Endpoint (ISM-1405)"
+          ],
+          "ism_controls": ["ISM-1485", "ISM-1486", "ISM-1666", "ISM-1655", "ISM-1612", "ISM-1412", "ISM-1860", "ISM-1859", "ISM-1585", "ISM-1667", "ISM-1668", "ISM-1669", "ISM-1542", "ISM-1670", "ISM-1664", "ISM-1665", "ISM-1405", "ISM-1899"]
+        }
+      },
+      "github_resources": [
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/edge/policies/ACSC%20Edge%20Hardening%20Guidelines.json",
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/scripts/UserApplicationHardening-RemoveFeatures.ps1",
+        "https://github.com/microsoft/Intune-ACSC-Windows-Hardening-Guidelines/blob/main/policies/ACSC%20Windows%20Hardening%20Guidelines-Attack%20Surface%20Reduction.json"
+      ]
+    },
+    {
+      "control_id": "E8-5",
+      "control_name": "Restrict Administrative Privileges",
+      "description": "Restricting privileged access using a multi-layered approach to increase the difficulty for adversaries.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-admin",
+      "primary_m365_products": [
+        "Microsoft Entra ID",
+        "Microsoft Entra Privileged Identity Management (PIM)",
+        "Microsoft Entra Entitlement Management",
+        "Microsoft Intune",
+        "Microsoft Intune Endpoint Privilege Management (EPM)",
+        "Microsoft Defender for Endpoint",
+        "Conditional Access",
+        "Microsoft LAPS",
+        "Azure Log Analytics"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "Separate privileged accounts, conditional access for admins, login restrictions, internet/email restrictions for privileged accounts.",
+          "key_configurations": [
+            "Assign dedicated privileged accounts for admin duties (ISM-0445)",
+            "Privileged accounts must be cloud-only, not synced from on-premises AD",
+            "Remove Microsoft 365 licenses from privileged accounts to block email/productivity tools (ISM-1175)",
+            "Configure Conditional Access requiring MFA for admin roles",
+            "Block access at High Sign-in Risk and High User Risk from Identity Protection",
+            "Require access from Intune-compliant Microsoft Entra joined device",
+            "Implement Microsoft Tiered Administration Model for login restrictions (ISM-1688, ISM-1689)",
+            "Validate requests for privileged access via Entra Entitlement Management (ISM-1507)",
+            "Separate privileged and unprivileged operating environments (ISM-1380)",
+            "Restrict privileged accounts from accessing internet from PAW via proxy configuration"
+          ],
+          "ism_controls": ["ISM-0445", "ISM-1175", "ISM-1507", "ISM-1380", "ISM-1688", "ISM-1689", "ISM-1883"]
+        },
+        "ML2": {
+          "description": "ML1 plus managed local admin passwords, service account management, inactive user management, SAW for admin activities, centralized logging.",
+          "key_configurations": [
+            "All ML1 configurations plus:",
+            "Deploy Microsoft LAPS for local administrator password management (ISM-1648)",
+            "Use Group Managed Service Accounts (gMSAs) for AD-joined systems",
+            "Use Azure Managed Identities for cloud-based service accounts",
+            "Disable privileged access after 45 days of inactivity using Microsoft Graph API lastSignInDateTime (ISM-1648)",
+            "Revalidate privileged access every 12 months via Entitlement Management (ISM-1647)",
+            "Centrally log privileged access events via Entra audit/sign-in logs to Log Analytics (ISM-1509, ISM-1650)",
+            "Use Secure Admin Workstations for administrative activities (ISM-1898)",
+            "Configure Intune EPM: deny all requests not defined in policy, require business justification and Windows authentication",
+            "Secure intermediaries using Azure Bastion and Entra application proxy"
+          ],
+          "ism_controls": ["ISM-0445", "ISM-1175", "ISM-1507", "ISM-1380", "ISM-1688", "ISM-1689", "ISM-1883", "ISM-1647", "ISM-1648", "ISM-1650", "ISM-1509", "ISM-1898"]
+        },
+        "ML3": {
+          "description": "ML2 plus JIT access via PIM, access reviews, Credential Guard, Remote Credential Guard, full SAW deployment.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Configure Microsoft Entra PIM for just-in-time access with approval workflow (ISM-1508)",
+            "Require PIM elevation for: Global Admin, Privileged Auth Admin, Privileged Role Admin, CA Admin, Intune Admin",
+            "Require PIM for Azure RBAC: Owner and Contributor roles",
+            "Configure break glass accounts with strong passwords, cloud-only, monitored sign-ins",
+            "Conduct regular Microsoft Entra access reviews",
+            "Enable Credential Guard (default Windows 11 22H2+) (ISM-1686)",
+            "Enable Remote Credential Guard via Intune settings catalog (ISM-1897)",
+            "Deploy full Secure Admin Workstations with Defender for Endpoint, Windows Hello, Entra ID",
+            "Monitor privileged access events for signs of compromise",
+            "Protect event logs from unauthorized modification using RBAC and immutable storage"
+          ],
+          "ism_controls": ["ISM-0445", "ISM-1175", "ISM-1507", "ISM-1508", "ISM-1509", "ISM-1380", "ISM-1688", "ISM-1689", "ISM-1883", "ISM-1647", "ISM-1648", "ISM-1650", "ISM-1686", "ISM-1897", "ISM-1898"]
+        }
+      },
+      "epm_settings": {
+        "default_elevation_response": "Deny all requests",
+        "validation_options": ["Business Justification", "Windows Authentication"],
+        "send_elevation_data_for_reporting": true,
+        "reporting_scope": "Diagnostic data and all endpoint elevations",
+        "elevation_type": "User confirmed",
+        "note": "EPM requires Intune Suite add-on license"
+      },
+      "monitoring_events": [
+        "Sign-in failure at bad password threshold",
+        "Failure due to Conditional Access requirements",
+        "Accounts not following naming policy",
+        "MFA fraud alerts",
+        "Sign-ins outside normal times",
+        "Identity Protection risk events",
+        "Password changes on admin accounts",
+        "Changes in authentication protocols",
+        "New devices or locations for admin sign-ins"
+      ]
+    },
+    {
+      "control_id": "E8-6",
+      "control_name": "Patch Operating Systems",
+      "description": "Patching operating systems in a timely manner to reduce exposure to known vulnerabilities.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-patch-os",
+      "primary_m365_products": [
+        "Windows Update for Business (WUfB)",
+        "Microsoft Intune",
+        "Windows Autopatch",
+        "Microsoft Defender Vulnerability Management (DVM)",
+        "Microsoft Defender for Endpoint",
+        "Microsoft Configuration Manager"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "OS patches for internet-facing servers within 2 weeks (noncritical) and 48 hours (critical). Workstation patches within 1 month.",
+          "key_configurations": [
+            "Configure Windows Update for Business with 5-ring deployment model",
+            "Ring 0 (Test): 0-day deferral for dedicated test devices",
+            "Ring 1 (Pilot): 2-day deferral, 1% of devices",
+            "Ring 2 (Fast): 4-day deferral, 9% of devices",
+            "Ring 3 (Broad): 7-day deferral, 90% of devices",
+            "Ring 4 (Critical): 10-14 day deferral for executive/critical devices",
+            "Use WUfB expedited quality updates for critical/zero-day patches (ISM-1877)",
+            "Daily vulnerability scanning for internet-facing servers (ISM-1701)",
+            "Fortnightly vulnerability scanning for workstations (ISM-1702)",
+            "Replace unsupported operating systems (ISM-1501)"
+          ],
+          "patching_timelines": {
+            "internet_facing_noncritical": "2 weeks",
+            "internet_facing_critical": "48 hours",
+            "workstations_noncritical": "1 month"
+          },
+          "ism_controls": ["ISM-1694", "ISM-1695", "ISM-1701", "ISM-1702", "ISM-1877", "ISM-1501", "ISM-1704", "ISM-1807", "ISM-1808"]
+        },
+        "ML2": {
+          "description": "Same as ML1 with additional scanning requirements.",
+          "key_configurations": [
+            "All ML1 configurations",
+            "Enroll devices in Windows Autopatch for automated update management",
+            "Autopatch deployment rings: Test, First, Fast, Broad",
+            "Configure Delivery Optimization for bandwidth management"
+          ],
+          "patching_timelines": {
+            "internet_facing_noncritical": "2 weeks",
+            "internet_facing_critical": "48 hours",
+            "workstations_noncritical": "1 month"
+          },
+          "ism_controls": ["ISM-1694", "ISM-1695", "ISM-1701", "ISM-1702", "ISM-1877", "ISM-1501", "ISM-1704", "ISM-1807", "ISM-1808"]
+        },
+        "ML3": {
+          "description": "ML2 plus 48-hour patching for critical workstation OS, driver and firmware patching.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Critical workstation OS patches within 48 hours (ISM-1696)",
+            "Non-critical workstation patches within 1 month (ISM-1902)",
+            "Driver patches within 48 hours for critical (ISM-1879), 1 month for noncritical (ISM-1697)",
+            "Firmware patches within 48 hours for critical (ISM-1903), 1 month for noncritical (ISM-1904)",
+            "Use Intune Drivers and Firmware update management",
+            "Configure automatic or manual driver approval in Intune",
+            "Fortnightly firmware vulnerability scanning (ISM-1900)",
+            "Fortnightly driver vulnerability scanning (ISM-1703)"
+          ],
+          "patching_timelines": {
+            "internet_facing_noncritical": "2 weeks",
+            "internet_facing_critical": "48 hours",
+            "workstations_critical": "48 hours",
+            "workstations_noncritical": "1 month",
+            "drivers_critical": "48 hours",
+            "drivers_noncritical": "1 month",
+            "firmware_critical": "48 hours",
+            "firmware_noncritical": "1 month"
+          },
+          "ism_controls": ["ISM-1694", "ISM-1695", "ISM-1696", "ISM-1697", "ISM-1701", "ISM-1702", "ISM-1703", "ISM-1877", "ISM-1879", "ISM-1900", "ISM-1901", "ISM-1902", "ISM-1903", "ISM-1904", "ISM-1501", "ISM-1704", "ISM-1807", "ISM-1808"]
+        }
+      },
+      "wufb_ring_config": {
+        "ring_0_test": {"quality_deferral": 0, "feature_deferral": 0, "deadline": 0, "grace_period": 0},
+        "ring_1_pilot": {"quality_deferral": 2, "feature_deferral": 10, "deadline": 2, "grace_period": 2},
+        "ring_2_fast": {"quality_deferral": 4, "feature_deferral": 30, "deadline": 2, "grace_period": 2},
+        "ring_3_broad": {"quality_deferral": 7, "feature_deferral": 60, "deadline": 2, "grace_period": 2},
+        "ring_4_critical": {"quality_deferral": 10, "feature_deferral": 90, "deadline": 2, "grace_period": 2}
+      },
+      "autopatch": {
+        "included_with": "Windows 10/11 Enterprise E3 or higher",
+        "managed_products": ["Windows Updates", "Microsoft 365 Apps", "Microsoft Edge", "Microsoft Teams", "Surface Driver/Firmware"],
+        "deployment_rings": ["Test", "First", "Fast", "Broad"]
+      },
+      "licensing": "Windows Update for Business included with Windows 10/11. Windows Autopatch requires E3+. Intune Drivers/Firmware management requires Intune license."
+    },
+    {
+      "control_id": "E8-7",
+      "control_name": "Multi-Factor Authentication",
+      "description": "Implementing MFA to make it more difficult for adversaries to steal credentials and gain access.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-mfa",
+      "primary_m365_products": [
+        "Microsoft Entra ID",
+        "Microsoft Authenticator",
+        "Windows Hello for Business",
+        "FIDO2 Security Keys",
+        "Conditional Access",
+        "Microsoft Entra Verified ID"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "MFA for all users using any supported authenticator type.",
+          "key_configurations": [
+            "Enable MFA for all users via Conditional Access policies",
+            "Supported authenticator types include: Microsoft Authenticator (push), phone-based OTP, software tokens",
+            "Block legacy authentication protocols that cannot enforce MFA",
+            "Configure Security Defaults as minimum baseline (free tier)"
+          ],
+          "permitted_authenticators": [
+            "Microsoft Authenticator (push notification)",
+            "Software OTP tokens",
+            "SMS-based verification",
+            "Phone call verification"
+          ],
+          "ism_controls": []
+        },
+        "ML2": {
+          "description": "Phishing-resistant MFA using cryptographic authenticators that bind output to session.",
+          "key_configurations": [
+            "Deploy phishing-resistant MFA methods that cryptographically verify the sign-in server",
+            "Configure Windows Hello for Business with biometrics or PIN + TPM-bound key",
+            "Deploy FIDO2 security keys",
+            "Microsoft Authenticator with number matching and additional context",
+            "Disable manual-entry authenticator methods (OTP, SMS) for phishing resistance",
+            "Configure Conditional Access to require phishing-resistant MFA"
+          ],
+          "permitted_authenticators": [
+            "Windows Hello for Business (biometrics/PIN + TPM)",
+            "FIDO2 security keys",
+            "Certificate-based authentication",
+            "Microsoft Authenticator (passkey)"
+          ],
+          "phishing_resistance_note": "Authenticators involving manual entry of output (OTP, SMS) are NOT considered verifier impersonation-resistant per NIST SP800-63B.",
+          "ism_controls": []
+        },
+        "ML3": {
+          "description": "Phishing-resistant MFA for all users with identity verification for credential issuance.",
+          "key_configurations": [
+            "All ML2 configurations enforced for all users",
+            "Use Microsoft Entra Verified ID for high-assurance identity verification during credential issuance",
+            "Partner with identity verification provider (IDV) for government-issued ID verification",
+            "Use Face Check with Microsoft Entra Verified ID for real-time facial matching",
+            "Enforce phishing-resistant methods only via Conditional Access authentication strength policies"
+          ],
+          "permitted_authenticators": [
+            "Windows Hello for Business (biometrics/PIN + TPM)",
+            "FIDO2 security keys",
+            "Certificate-based authentication"
+          ],
+          "ism_controls": []
+        }
+      },
+      "nist_reference": "NIST Special Publication 800-63 B - Digital Identity Guidelines: Authentication and Lifecycle Management",
+      "entra_id_resources": [
+        "https://learn.microsoft.com/en-us/azure/active-directory/standards/nist-authentication-basics",
+        "https://learn.microsoft.com/en-us/azure/active-directory/standards/nist-authenticator-types"
+      ]
+    },
+    {
+      "control_id": "E8-8",
+      "control_name": "Regular Backups",
+      "description": "Ensuring important data is protected from loss through regular backups with appropriate retention and recovery testing.",
+      "microsoft_doc_url": "https://learn.microsoft.com/en-us/compliance/anz/e8-backups",
+      "primary_m365_products": [
+        "Microsoft Purview Retention Policies",
+        "Microsoft Purview Retention Labels",
+        "SharePoint Online (versioning, recycle bin)",
+        "OneDrive for Business (versioning, restore)",
+        "Exchange Online (in-place hold, litigation hold)",
+        "Azure Backup",
+        "Microsoft Azure Recovery Services (MARS)",
+        "Windows Autopilot",
+        "Microsoft Intune"
+      ],
+      "maturity_level_mapping": {
+        "ML1": {
+          "description": "Backups performed and retained per business criticality. Restoration tested as part of disaster recovery. Unprivileged users cannot access or modify others' backups.",
+          "key_configurations": [
+            "Configure Microsoft Purview retention policies for Exchange, SharePoint, OneDrive, Teams, Yammer (ISM-1511)",
+            "Test restoration of data, applications, settings from backups (ISM-1515)",
+            "Synchronize backups to enable common point-in-time restoration (ISM-1810)",
+            "Retain backups securely and resiliently (ISM-1811)",
+            "Configure RBAC so unprivileged users cannot access others' backups (ISM-1812)",
+            "Prevent unprivileged users from modifying/deleting backups (ISM-1814)",
+            "Use in-place retention as primary strategy for M365 data",
+            "Configure SharePoint/OneDrive versioning and recycle bin",
+            "Configure Exchange Online in-place hold or litigation hold",
+            "Use retention labels for granular item-level retention"
+          ],
+          "ism_controls": ["ISM-1511", "ISM-1515", "ISM-1810", "ISM-1811", "ISM-1812", "ISM-1814"]
+        },
+        "ML2": {
+          "description": "ML1 plus privileged user backup access restrictions.",
+          "key_configurations": [
+            "All ML1 configurations plus:",
+            "Prevent privileged accounts (except backup admins) from accessing others' backups (ISM-1705)",
+            "Prevent privileged accounts (except backup admins) from modifying/deleting backups (ISM-1707)",
+            "Prevent unprivileged users from accessing even their own backups (ISM-1813)",
+            "Configure Azure Backup with RBAC roles: Backup Contributor, Backup Operator, Backup Reader",
+            "Use Azure Backup Resource Guard for multi-user authorization on critical operations",
+            "Configure PIM for backup admin role elevation with approval workflow"
+          ],
+          "ism_controls": ["ISM-1511", "ISM-1515", "ISM-1810", "ISM-1811", "ISM-1812", "ISM-1814", "ISM-1705", "ISM-1707", "ISM-1813"]
+        },
+        "ML3": {
+          "description": "ML2 plus prevent privileged users from accessing own backups and immutable retention for backup admins.",
+          "key_configurations": [
+            "All ML2 configurations plus:",
+            "Prevent privileged accounts (except backup admins) from accessing their own backups (ISM-1706)",
+            "Prevent backup admins from modifying/deleting backups during retention period (ISM-1708)",
+            "Use Immutable Storage for Azure Blob Storage for tamper-proof backup retention",
+            "Use Azure Backup multi-user authorization with Resource Guard in separate subscription/tenant"
+          ],
+          "ism_controls": ["ISM-1511", "ISM-1515", "ISM-1810", "ISM-1811", "ISM-1812", "ISM-1814", "ISM-1705", "ISM-1707", "ISM-1813", "ISM-1706", "ISM-1708"]
+        }
+      },
+      "m365_storage_per_user_e3": {
+        "onedrive": "1 TB (expandable to 5 TB+)",
+        "exchange_primary_mailbox": "100 GB",
+        "exchange_archive": "Unlimited",
+        "sharepoint_pool": "1 TB base + 10 GB per user"
+      },
+      "backup_approaches": {
+        "in_place_retention": "Primary approach for M365 data using Purview retention policies and labels",
+        "azure_backup": "For on-premises and Azure-hosted workloads (VMs, SQL, files)",
+        "mars_agent": "For file/folder/system state backup from on-premises or VMs",
+        "infrastructure_as_code": "For cloud service configuration backup and disaster recovery",
+        "windows_autopilot": "For device configuration recovery without traditional backup"
+      },
+      "ransomware_considerations": "OneDrive for Business file restore and SharePoint versioning provide point-in-time recovery. Exchange Online supports item-level recovery from deleted items."
+    }
+  ],
+  "cross_cutting_tools": {
+    "microsoft_defender_for_endpoint_p2": {
+      "used_by_controls": ["E8-1", "E8-2", "E8-3", "E8-4", "E8-5", "E8-6"],
+      "capabilities": ["Vulnerability scanning", "Advanced hunting", "ASR rules", "Event log collection", "Endpoint behavioral sensors"]
+    },
+    "microsoft_intune": {
+      "used_by_controls": ["E8-1", "E8-2", "E8-3", "E8-4", "E8-5", "E8-6", "E8-8"],
+      "capabilities": ["Policy deployment", "Application management", "Device configuration", "Update rings", "Script deployment", "Endpoint Privilege Management"]
+    },
+    "microsoft_entra_id": {
+      "used_by_controls": ["E8-5", "E8-7"],
+      "capabilities": ["Conditional Access", "PIM", "Entitlement Management", "Access Reviews", "Identity Protection", "Verified ID"]
+    },
+    "microsoft_sentinel": {
+      "used_by_controls": ["E8-1", "E8-4", "E8-5"],
+      "capabilities": ["SIEM", "Centralized log collection", "Security event analysis", "Threat detection"]
+    },
+    "microsoft_purview": {
+      "used_by_controls": ["E8-8"],
+      "capabilities": ["Retention policies", "Retention labels", "Compliance Manager E8 templates", "Data lifecycle management"]
+    },
+    "windows_update_for_business": {
+      "used_by_controls": ["E8-2", "E8-6"],
+      "capabilities": ["Update rings", "Quality updates", "Feature updates", "Driver updates", "Expedited updates"]
+    },
+    "microsoft_defender_vulnerability_management": {
+      "used_by_controls": ["E8-2", "E8-6"],
+      "capabilities": ["Vulnerability scanning", "Asset discovery", "Software inventory", "Risk prioritization", "Remediation workflows"]
+    }
+  },
+  "secure_score_mappings": {
+    "note": "Microsoft Secure Score controls align to Essential Eight through keyword and functional mapping. The following shows which Secure Score control categories map to E8 controls.",
+    "identity_controls_map_to": ["E8-5", "E8-7"],
+    "device_controls_map_to": ["E8-1", "E8-2", "E8-4", "E8-6"],
+    "apps_controls_map_to": ["E8-3", "E8-4"],
+    "data_controls_map_to": ["E8-8"],
+    "key_secure_score_actions": {
+      "AdminMFAV2": {"e8_control": "E8-7", "maturity_level": "ML1"},
+      "MFARegistrationV2": {"e8_control": "E8-7", "maturity_level": "ML1"},
+      "BlockLegacyAuthentication": {"e8_control": "E8-7", "maturity_level": "ML1"},
+      "OneAdmin": {"e8_control": "E8-5", "maturity_level": "ML1"},
+      "RoleOverlap": {"e8_control": "E8-5", "maturity_level": "ML2"},
+      "PIMUsage": {"e8_control": "E8-5", "maturity_level": "ML3"},
+      "IntuneMDMAuthority": {"e8_control": "E8-6", "maturity_level": "ML1"},
+      "PasswordExpirationPolicy": {"e8_control": "E8-5", "maturity_level": "ML1"},
+      "DisableAnonymousJoinMeeting": {"e8_control": "E8-5", "maturity_level": "ML1"}
+    }
+  },
+  "mandatory_requirements": {
+    "pspf_section_14_2": "Essential Eight (Maturity Level 2) is mandatory for all Australian noncorporate Commonwealth entities subject to the PGPA Act.",
+    "target_maturity_level": "ML2"
+  }
+}
