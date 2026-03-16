@@ -22,6 +22,7 @@ from .models import (
 _E8_DATA: dict | None = None
 _MS_DATA: dict | None = None
 _ASD_DATA: dict | None = None
+_ISM_DATA: dict | None = None
 
 
 def _load_e8_data() -> dict:
@@ -94,6 +95,34 @@ def _get_asd_control(name: str) -> dict:
     controls = asd.get("controls", {})
     key = _ASD_KEY_MAP.get(name, "")
     return controls.get(key, {})
+
+
+def _load_ism_mapping() -> dict:
+    """Load the ISM control mapping data."""
+    global _ISM_DATA
+    if _ISM_DATA is not None:
+        return _ISM_DATA
+    seed_path = Path(__file__).parent / "seed_data" / "essential_eight_ism_mapping.json"
+    if seed_path.exists():
+        with open(seed_path, "r", encoding="utf-8") as f:
+            _ISM_DATA = json.load(f)
+    else:
+        _ISM_DATA = {"controls": {}}
+    return _ISM_DATA
+
+
+def _get_ism_control(name: str) -> dict:
+    """Get ISM mapping data for a control."""
+    ism = _load_ism_mapping()
+    controls = ism.get("controls", {})
+    key = _ASD_KEY_MAP.get(name, "")
+    return controls.get(key, {})
+
+
+def get_e8_assessment_methodology() -> dict:
+    """Return the E8 assessment methodology description."""
+    ism = _load_ism_mapping()
+    return ism.get("assessment_methodology", {})
 
 
 def get_e8_controls_data() -> list[dict]:
@@ -416,6 +445,11 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
         asd_technologies = asd_ctrl.get("m365_technologies", [])
         asd_implementation = asd_ctrl.get("implementation_details", {})
 
+        # ISM control mapping
+        ism_ctrl = _get_ism_control(control.value)
+        ism_controls = ism_ctrl.get("ism_controls", [])
+        ism_maturity_reqs = ism_ctrl.get("maturity_requirements", {})
+
         # Get maturity requirements from seed data
         maturity_requirements = {}
         for ml_key, ml_data_ref in ctrl_ref.get("maturity_levels", {}).items():
@@ -450,6 +484,8 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
             "asd_url": asd_url,
             "asd_technologies": asd_technologies,
             "asd_implementation": asd_implementation,
+            "ism_controls": ism_controls,
+            "ism_maturity_requirements": ism_maturity_reqs,
             "total_actions": total,
             "completed_actions": completed,
             "percentage": round((completed / total) * 100, 1) if total > 0 else 0,
@@ -484,6 +520,7 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
         "overall": _calc_overall(summary),
         "target_maturity": target_maturity,
         "maturity_descriptions": ml_descriptions,
+        "assessment_methodology": get_e8_assessment_methodology(),
     }
 
 
