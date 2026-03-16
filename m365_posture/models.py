@@ -124,6 +124,7 @@ class Action:
     description: str = ""
     source_tool: str = SourceTool.MANUAL.value
     source_id: str = ""  # Original ID from the source tool
+    reference_id: str = ""  # External reference ID (e.g. Rang from Secure Score)
     workload: str = Workload.GENERAL.value
     status: str = ActionStatus.TODO.value
     priority: str = Priority.MEDIUM.value
@@ -150,12 +151,20 @@ class Action:
     source_report_date: str = ""
     raw_data: dict = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
+    # Secure Score enrichment fields
+    threats: list[str] = field(default_factory=list)  # Threats mitigated (e.g. accountBreach, dataExfiltration)
+    tier: str = ""  # Control tier: Core, Defense in Depth, Advanced
+    action_type: str = ""  # Config, Review, Behavior
+    remediation_impact: str = ""  # Impact description of implementing remediation
+    deprecated: bool = False  # Whether the control is deprecated
     # Risk acceptance workflow
     risk_justification: str = ""
     risk_owner: str = ""
     risk_review_date: Optional[str] = None
     risk_expiry_date: Optional[str] = None
     risk_accepted_at: Optional[str] = None
+    # Link to reference control
+    control_id: Optional[str] = None
     # Dependencies
     depends_on: list[str] = field(default_factory=list)
     blocks: list[str] = field(default_factory=list)
@@ -197,8 +206,41 @@ class Action:
         if max_score is not None:
             self.max_score = max_score
         if self.max_score and self.max_score > 0:
-            self.score_percentage = round((new_score / self.max_score) * 100, 1)
+            self.score_percentage = round((new_score / self.max_score) * 100, 2)
         self.updated_at = datetime.utcnow().isoformat()
+
+
+@dataclass
+class SecureScoreControl:
+    """Reference data for a Microsoft Secure Score control.
+
+    This is the static/shared metadata that is identical across all tenants.
+    Per-tenant actions link to this via control_id.
+    """
+    id: str = ""  # Slug identifier, e.g. "AdminMFAV2"
+    title: str = ""  # English display title
+    description: str = ""
+    remediation_steps: str = ""
+    prerequisites: str = ""
+    user_impact_description: str = ""
+    implementation_cost: str = ""  # Easy / Moderate / Difficult
+    category: str = ""  # Identity / Data / Device / Apps / Infrastructure
+    product: str = ""
+    reference_url: str = ""
+    max_score: float = 0.0
+    rank: int = 0  # Microsoft's fixed Rang/reference ID
+    # Localized title variants for matching CSV imports in different languages
+    title_variants: list[str] = field(default_factory=list)
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> SecureScoreControl:
+        valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**valid_fields)
 
 
 @dataclass

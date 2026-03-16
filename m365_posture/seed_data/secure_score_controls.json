@@ -1,0 +1,522 @@
+[
+  {
+    "id": "AdminMFAV2",
+    "title": "Ensure multifactor authentication is enabled for all users in administrative roles",
+    "description": "Multifactor authentication (MFA) adds a layer of protection for sign-ins. Users are prompted for additional authentication, such as entering a code from their phone or a fingerprint scan.",
+    "remediation_steps": "1. Navigate to the Microsoft Entra admin center > Protection > Conditional Access.\n2. Create a new policy targeting the Directory roles (Global Administrator, Security Administrator, etc.).\n3. Under Grant, select 'Require multifactor authentication'.\n4. Enable the policy.",
+    "prerequisites": "Requires Microsoft Entra ID P1 or P2 license for Conditional Access policies. Alternatively, Security Defaults can be enabled at no additional cost.",
+    "user_impact_description": "Users will be required to register for and use MFA. They will be prompted for additional authentication during sign-in.",
+    "implementation_cost": "Easy",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/authentication/howto-mfa-getstarted",
+    "max_score": 10.0,
+    "title_variants": [
+      "Sicherstellen, dass die mehrstufige Authentifizierung für alle Benutzer in Administratorrollen aktiviert ist",
+      "Sicherstellen, dass MFA für alle Benutzer in Administrativen Rollen aktiviert ist",
+      "Vérifier que l'authentification multifacteur est activée pour tous les utilisateurs ayant des rôles d'administrateur"
+    ]
+  },
+  {
+    "id": "MFARegistrationV2",
+    "title": "Ensure multifactor authentication is enabled for all users",
+    "description": "Requiring all users to register for and use multifactor authentication significantly reduces the risk of account compromise.",
+    "remediation_steps": "1. Navigate to the Microsoft Entra admin center > Protection > Conditional Access.\n2. Create a new policy targeting 'All users'.\n3. Under Grant, select 'Require multifactor authentication'.\n4. Exclude break-glass/emergency accounts.\n5. Enable the policy.",
+    "prerequisites": "Requires Microsoft Entra ID P1 or P2 license for Conditional Access policies.",
+    "user_impact_description": "All users must register for and use MFA. They will need to set up an authenticator app, phone number, or security key.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/authentication/concept-mfa-howitworks",
+    "max_score": 9.0,
+    "title_variants": [
+      "Sicherstellen, dass die mehrstufige Authentifizierung für alle Benutzer aktiviert ist",
+      "Vérifier que l'authentification multifacteur est activée pour tous les utilisateurs"
+    ]
+  },
+  {
+    "id": "BlockLegacyAuthentication",
+    "title": "Block legacy authentication",
+    "description": "Legacy authentication protocols like POP, SMTP, IMAP, and MAPI cannot enforce MFA, making them preferred entry points for adversaries.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Protection > Conditional Access.\n2. Create a new policy targeting 'All users'.\n3. Under Conditions > Client apps, select 'Exchange ActiveSync clients' and 'Other clients'.\n4. Under Grant, select 'Block access'.\n5. Enable the policy.",
+    "prerequisites": "Requires Microsoft Entra ID P1 or P2 license. Ensure no business-critical applications rely on legacy authentication before blocking.",
+    "user_impact_description": "Users using older email clients that rely on legacy authentication protocols will no longer be able to connect.",
+    "implementation_cost": "Easy",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/conditional-access/block-legacy-authentication",
+    "max_score": 7.0,
+    "title_variants": [
+      "Legacyauthentifizierung blockieren",
+      "Ältere Authentifizierung blockieren",
+      "Bloquer l'authentification héritée"
+    ]
+  },
+  {
+    "id": "SigninRiskPolicy",
+    "title": "Enable sign-in risk policy",
+    "description": "Sign-in risk policy evaluates every sign-in and calculates a risk score. If a sign-in is determined to be risky, users are required to perform MFA to remediate.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Protection > Conditional Access.\n2. Create a new policy targeting 'All users'.\n3. Under Conditions > Sign-in risk, select 'Medium and above'.\n4. Under Grant, select 'Require multifactor authentication'.\n5. Enable the policy.",
+    "prerequisites": "Requires Microsoft Entra ID P2 license for Identity Protection risk-based policies.",
+    "user_impact_description": "Users may be prompted for additional verification when their sign-in is detected as risky.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-configure-risk-policies",
+    "max_score": 4.0,
+    "title_variants": [
+      "Anmelderisikorichtlinie aktivieren",
+      "Richtlinie für Anmelderisiko aktivieren",
+      "Activer la stratégie de risque de connexion"
+    ]
+  },
+  {
+    "id": "UserRiskPolicy",
+    "title": "Enable user risk policy",
+    "description": "User risk policy detects compromised user accounts by analyzing behavioral signals. When a user is flagged as at risk, they are required to change their password.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Protection > Conditional Access.\n2. Create a new policy targeting 'All users'.\n3. Under Conditions > User risk, select 'High'.\n4. Under Grant, select 'Require password change'.\n5. Enable the policy.",
+    "prerequisites": "Requires Microsoft Entra ID P2 license. Users must be registered for self-service password reset (SSPR).",
+    "user_impact_description": "Users identified as at risk will be required to change their password at next sign-in.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-configure-risk-policies",
+    "max_score": 4.0,
+    "title_variants": [
+      "Benutzerrisikorichtlinie aktivieren",
+      "Richtlinie für Benutzerrisiko aktivieren",
+      "Activer la stratégie de risque utilisateur"
+    ]
+  },
+  {
+    "id": "OneAdmin",
+    "title": "Designate more than one global admin",
+    "description": "Having more than one global administrator ensures that admin functions can be performed if one admin is unavailable. At least two but no more than four global admins is recommended.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Roles and administrators.\n2. Select 'Global administrator'.\n3. Ensure at least 2 users are assigned this role.\n4. Consider using Privileged Identity Management (PIM) for just-in-time access.",
+    "prerequisites": "None. This is a best practice configuration.",
+    "user_impact_description": "No direct impact on end users. Additional administrators gain elevated privileges.",
+    "implementation_cost": "Easy",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices",
+    "max_score": 3.0,
+    "title_variants": [
+      "Mehr als einen globalen Administrator festlegen",
+      "Désigner plus d'un administrateur général"
+    ]
+  },
+  {
+    "id": "RoleOverlap",
+    "title": "Use limited administrative roles",
+    "description": "Assigning least-privilege roles reduces the number of global admins and gives admins only the permissions they need to do their job.",
+    "remediation_steps": "1. Review current global administrator assignments.\n2. Identify which specific role each admin actually needs (User Admin, Exchange Admin, etc.).\n3. Reassign from Global Administrator to the appropriate limited role.\n4. Use Privileged Identity Management for just-in-time elevation.",
+    "prerequisites": "None for basic role assignment. PIM requires Microsoft Entra ID P2.",
+    "user_impact_description": "Administrators may need to request role activation through PIM for elevated tasks.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/delegate-by-task",
+    "max_score": 3.0,
+    "title_variants": [
+      "Eingeschränkte Administratorrollen verwenden",
+      "Utiliser des rôles d'administration limités"
+    ]
+  },
+  {
+    "id": "PasswordExpiry",
+    "title": "Set passwords to never expire",
+    "description": "NIST guidelines recommend against periodic password changes as they lead to weaker passwords. Instead, enforce strong passwords with MFA.",
+    "remediation_steps": "1. Navigate to Microsoft 365 admin center > Settings > Org settings > Security & privacy.\n2. Select 'Password expiration policy'.\n3. Check 'Set passwords to never expire'.\n4. Ensure MFA is enabled to compensate.",
+    "prerequisites": "MFA should be enforced before disabling password expiration.",
+    "user_impact_description": "Users will no longer be prompted to change passwords periodically. Must be combined with MFA enforcement.",
+    "implementation_cost": "Easy",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/microsoft-365/admin/manage/set-password-expiration-policy",
+    "max_score": 3.0,
+    "title_variants": [
+      "Kennwörter so festlegen, dass sie nie ablaufen",
+      "Définir les mots de passe pour qu'ils n'expirent jamais"
+    ]
+  },
+  {
+    "id": "SelfServicePasswordReset",
+    "title": "Enable self-service password reset",
+    "description": "Self-service password reset (SSPR) allows users to reset their passwords without contacting an admin, reducing helpdesk calls and improving security.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Protection > Password reset.\n2. Under Properties, set 'Self service password reset enabled' to 'All'.\n3. Configure authentication methods (at least two methods recommended).\n4. Enable registration enforcement.",
+    "prerequisites": "Requires Microsoft Entra ID P1 or P2 license for full SSPR functionality.",
+    "user_impact_description": "Users must register authentication methods for password reset. They can then reset passwords without IT assistance.",
+    "implementation_cost": "Easy",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/authentication/howto-sspr-deployment",
+    "max_score": 4.0,
+    "title_variants": [
+      "Self-Service-Kennwortzurücksetzung aktivieren",
+      "Activer la réinitialisation du mot de passe en libre-service"
+    ]
+  },
+  {
+    "id": "SafeLinksPolicy",
+    "title": "Use Safe Links in Office apps and Teams",
+    "description": "Safe Links provides URL scanning and rewriting of inbound email messages in mail flow, and time-of-click verification of URLs and links in email messages, Teams, and Office apps.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Policies & rules > Threat policies > Safe Links.\n2. Create or edit the default policy.\n3. Enable Safe Links for Office 365 apps.\n4. Enable 'Do not allow users to click through to original URL'.\n5. Apply to all users.",
+    "prerequisites": "Requires Microsoft Defender for Office 365 Plan 1 or Plan 2.",
+    "user_impact_description": "URLs in emails and documents will be scanned. Users may see a brief delay when clicking links as they are checked.",
+    "implementation_cost": "Moderate",
+    "category": "Apps",
+    "product": "Microsoft Defender for Office 365",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/safe-links-about",
+    "max_score": 5.0,
+    "title_variants": [
+      "Sichere Links in Office-Apps und Teams verwenden",
+      "Sichere Links in Office-Anwendungen verwenden",
+      "Utiliser les liens fiables dans les applications Office et Teams"
+    ]
+  },
+  {
+    "id": "SafeAttachmentPolicy",
+    "title": "Create Safe Attachments policies for email messages",
+    "description": "Safe Attachments opens email attachments in a virtual environment to check for malicious content before delivering them to recipients.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Policies & rules > Threat policies > Safe Attachments.\n2. Create a new policy or edit the default.\n3. Set action to 'Dynamic Delivery' (recommended) or 'Block'.\n4. Enable redirect to send detected attachments to a security admin.\n5. Apply to all recipients.",
+    "prerequisites": "Requires Microsoft Defender for Office 365 Plan 1 or Plan 2.",
+    "user_impact_description": "With Dynamic Delivery, users receive emails immediately with placeholder attachments while scanning completes. Malicious attachments are quarantined.",
+    "implementation_cost": "Moderate",
+    "category": "Apps",
+    "product": "Microsoft Defender for Office 365",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/safe-attachments-about",
+    "max_score": 5.0,
+    "title_variants": [
+      "Richtlinien für sichere Anlagen für E-Mail-Nachrichten erstellen",
+      "Richtlinien für sichere Anhänge für E-Mail erstellen",
+      "Créer des stratégies de pièces jointes fiables pour les messages électroniques"
+    ]
+  },
+  {
+    "id": "AntiPhishingPolicy",
+    "title": "Create anti-phishing policies",
+    "description": "Anti-phishing policies in Microsoft Defender for Office 365 provide impersonation protection for users and domains, and mailbox intelligence.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Policies & rules > Threat policies > Anti-phishing.\n2. Create or edit the default policy.\n3. Enable impersonation protection for key users and domains.\n4. Enable mailbox intelligence.\n5. Set actions for detected impersonation (quarantine recommended).",
+    "prerequisites": "Basic anti-phishing is included with Exchange Online. Advanced features require Defender for Office 365.",
+    "user_impact_description": "Suspected phishing messages may be quarantined. Users may see safety tips in emails from external senders.",
+    "implementation_cost": "Moderate",
+    "category": "Apps",
+    "product": "Microsoft Defender for Office 365",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/anti-phishing-policies-about",
+    "max_score": 5.0,
+    "title_variants": [
+      "Antiphishing-Richtlinien erstellen",
+      "Erstellen von Anti-Phishing-Richtlinien",
+      "Créer des stratégies anti-hameçonnage"
+    ]
+  },
+  {
+    "id": "DLPPolicies",
+    "title": "Create data loss prevention (DLP) policies",
+    "description": "DLP policies identify, monitor, and automatically protect sensitive information across Microsoft 365 services including Exchange, SharePoint, OneDrive, and Teams.",
+    "remediation_steps": "1. Navigate to Microsoft Purview compliance portal > Data loss prevention > Policies.\n2. Create a new policy using a template or custom configuration.\n3. Select the locations to apply (Exchange, SharePoint, OneDrive, Teams).\n4. Define conditions for sensitive information types.\n5. Configure actions (block, notify, override with justification).\n6. Test in simulation mode before enforcing.",
+    "prerequisites": "Requires Microsoft 365 E3/E5 or Microsoft 365 Business Premium. Advanced DLP features require E5 Compliance.",
+    "user_impact_description": "Users may be blocked from sharing content containing sensitive data. They will see policy tips explaining why actions are restricted.",
+    "implementation_cost": "Difficult",
+    "category": "Data",
+    "product": "Microsoft Purview",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp",
+    "max_score": 5.0,
+    "title_variants": [
+      "Richtlinien zur Verhinderung von Datenverlust (DLP) erstellen",
+      "DLP-Richtlinien erstellen",
+      "Créer des stratégies de protection contre la perte de données (DLP)"
+    ]
+  },
+  {
+    "id": "AuditLog",
+    "title": "Turn on audit log search",
+    "description": "Audit logging records user and admin activity in your organization. Audit log search allows security admins to search for specific activities.",
+    "remediation_steps": "1. Navigate to Microsoft Purview compliance portal > Audit.\n2. If auditing is not enabled, click 'Start recording user and admin activity'.\n3. Note: Unified audit logging is now enabled by default for most organizations.",
+    "prerequisites": "Included with all Microsoft 365 subscriptions. Advanced audit features require E5.",
+    "user_impact_description": "No impact on users. Audit data is only accessible to administrators and compliance officers.",
+    "implementation_cost": "Easy",
+    "category": "Data",
+    "product": "Microsoft Purview",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/audit-log-enable-disable",
+    "max_score": 3.0,
+    "title_variants": [
+      "Überwachungsprotokollsuche aktivieren",
+      "Aktiver la recherche du journal d'audit"
+    ]
+  },
+  {
+    "id": "MailboxAuditing",
+    "title": "Enable mailbox auditing for all users",
+    "description": "Mailbox auditing logs mailbox actions performed by mailbox owners, delegates, and admins. This is critical for investigating mailbox compromise.",
+    "remediation_steps": "1. Mailbox auditing is enabled by default for all organizations since January 2019.\n2. Verify with PowerShell: Get-OrganizationConfig | Format-List AuditDisabled\n3. If AuditDisabled is True, run: Set-OrganizationConfig -AuditDisabled $false",
+    "prerequisites": "Included with Exchange Online. No additional licensing required.",
+    "user_impact_description": "No impact on users. Audit data is only accessible to administrators.",
+    "implementation_cost": "Easy",
+    "category": "Data",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/audit-mailboxes",
+    "max_score": 3.0,
+    "title_variants": [
+      "Postfachüberwachung für alle Benutzer aktivieren",
+      "Activer l'audit de boîte aux lettres pour tous les utilisateurs"
+    ]
+  },
+  {
+    "id": "SPFRecord",
+    "title": "Ensure all sending domains have SPF records",
+    "description": "SPF (Sender Policy Framework) helps prevent email spoofing by specifying which mail servers are authorized to send email on behalf of your domain.",
+    "remediation_steps": "1. Identify all domains used for sending email.\n2. For each domain, add a TXT record in DNS: v=spf1 include:spf.protection.outlook.com -all\n3. Ensure the SPF record covers all legitimate sending sources.\n4. Use SPF validation tools to verify the record.",
+    "prerequisites": "Access to DNS management for your domains.",
+    "user_impact_description": "No direct user impact. Properly configured SPF improves email deliverability and reduces spoofing.",
+    "implementation_cost": "Easy",
+    "category": "Apps",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-spf-configure",
+    "max_score": 3.0,
+    "title_variants": [
+      "Sicherstellen, dass alle sendenden Domänen SPF-Einträge haben",
+      "S'assurer que tous les domaines d'envoi ont des enregistrements SPF"
+    ]
+  },
+  {
+    "id": "DKIMEnabled",
+    "title": "Enable DKIM for all sending domains",
+    "description": "DKIM (DomainKeys Identified Mail) adds a digital signature to outbound email messages, allowing the receiving system to verify that the message was not altered in transit.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Policies & rules > Threat policies > Email authentication settings > DKIM.\n2. Select each domain.\n3. Toggle 'Sign messages for this domain with DKIM signatures' to enabled.\n4. Add the required CNAME records to DNS if prompted.",
+    "prerequisites": "Access to DNS management for your domains.",
+    "user_impact_description": "No impact on users. DKIM is transparent and improves email deliverability.",
+    "implementation_cost": "Easy",
+    "category": "Apps",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure",
+    "max_score": 3.0,
+    "title_variants": [
+      "DKIM für alle sendenden Domänen aktivieren",
+      "Activer DKIM pour tous les domaines d'envoi"
+    ]
+  },
+  {
+    "id": "DMARCPolicy",
+    "title": "Publish DMARC records for all domains",
+    "description": "DMARC (Domain-based Message Authentication, Reporting, and Conformance) builds on SPF and DKIM to provide a way for domain owners to publish a policy for handling unauthenticated messages.",
+    "remediation_steps": "1. Ensure SPF and DKIM are configured for all domains.\n2. Add a DMARC TXT record in DNS: _dmarc.yourdomain.com -> v=DMARC1; p=reject; rua=mailto:dmarc-reports@yourdomain.com\n3. Start with p=none to monitor, then progress to p=quarantine and finally p=reject.\n4. Monitor DMARC reports to identify legitimate sending sources.",
+    "prerequisites": "SPF and DKIM must be configured first. Access to DNS management.",
+    "user_impact_description": "No direct user impact. Emails failing authentication may be rejected by receiving systems.",
+    "implementation_cost": "Moderate",
+    "category": "Apps",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dmarc-configure",
+    "max_score": 3.0,
+    "title_variants": [
+      "DMARC-Einträge für alle Domänen veröffentlichen",
+      "Publier des enregistrements DMARC pour tous les domaines"
+    ]
+  },
+  {
+    "id": "IntuneDeviceCompliance",
+    "title": "Require devices to be compliant with Intune policies",
+    "description": "Device compliance policies define the rules and settings that devices must comply with to be considered compliant. Combined with Conditional Access, this ensures only compliant devices can access resources.",
+    "remediation_steps": "1. Navigate to Microsoft Intune admin center > Devices > Compliance policies.\n2. Create compliance policies for each platform (Windows, iOS, Android).\n3. Define compliance requirements (encryption, OS version, etc.).\n4. Create a Conditional Access policy requiring device compliance.\n5. Enable the policy.",
+    "prerequisites": "Requires Microsoft Intune (included in Microsoft 365 E3/E5). Devices must be enrolled in Intune.",
+    "user_impact_description": "Users must enroll their devices in Intune. Non-compliant devices will be blocked from accessing organizational resources.",
+    "implementation_cost": "Difficult",
+    "category": "Device",
+    "product": "Microsoft Intune",
+    "reference_url": "https://learn.microsoft.com/en-us/mem/intune/protect/device-compliance-get-started",
+    "max_score": 5.0,
+    "title_variants": [
+      "Gerätekonformität mit Intune-Richtlinien erfordern",
+      "Erfordern, dass Geräte mit Intune-Richtlinien konform sind",
+      "Exiger que les appareils soient conformes aux stratégies Intune"
+    ]
+  },
+  {
+    "id": "WindowsDefenderATP",
+    "title": "Turn on Microsoft Defender for Endpoint",
+    "description": "Microsoft Defender for Endpoint provides enterprise endpoint protection including next-generation antimalware, endpoint detection and response, and automated investigation and remediation.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Settings > Endpoints.\n2. Enable Defender for Endpoint features.\n3. Deploy the Defender sensor to all endpoints via Intune, SCCM, or Group Policy.\n4. Configure alert notification settings.",
+    "prerequisites": "Requires Microsoft Defender for Endpoint Plan 1 or Plan 2 license (included in Microsoft 365 E5).",
+    "user_impact_description": "Defender for Endpoint runs in the background. Users may see occasional scan notifications.",
+    "implementation_cost": "Moderate",
+    "category": "Device",
+    "product": "Microsoft Defender for Endpoint",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-endpoint/onboarding",
+    "max_score": 7.0,
+    "title_variants": [
+      "Microsoft Defender für Endpunkt aktivieren",
+      "Activer Microsoft Defender pour point de terminaison"
+    ]
+  },
+  {
+    "id": "CloudAppSecurity",
+    "title": "Enable Microsoft Defender for Cloud Apps",
+    "description": "Defender for Cloud Apps is a Cloud Access Security Broker (CASB) that provides visibility, data control, and threat protection across cloud apps.",
+    "remediation_steps": "1. Navigate to the Microsoft Defender portal > Cloud apps.\n2. Connect Microsoft 365 as a connected app.\n3. Enable app discovery to identify shadow IT.\n4. Configure policies for anomaly detection, activity, and file monitoring.\n5. Set up alerts for suspicious activities.",
+    "prerequisites": "Requires Microsoft Defender for Cloud Apps license (included in Microsoft 365 E5).",
+    "user_impact_description": "Users may receive notifications when accessing non-sanctioned cloud apps. Some file sharing actions may be blocked by policies.",
+    "implementation_cost": "Moderate",
+    "category": "Apps",
+    "product": "Microsoft Defender for Cloud Apps",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-cloud-apps/get-started",
+    "max_score": 5.0,
+    "title_variants": [
+      "Microsoft Defender for Cloud Apps aktivieren",
+      "Microsoft Defender für Cloud-Apps aktivieren",
+      "Activer Microsoft Defender pour les applications cloud"
+    ]
+  },
+  {
+    "id": "ExchangeOnlineSPAM",
+    "title": "Set up anti-spam policies",
+    "description": "Anti-spam policies help protect your organization from spam and bulk email messages. Policies can be customized for different groups of users.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Policies & rules > Threat policies > Anti-spam.\n2. Review and customize the default policy.\n3. Set spam and high-confidence spam actions to 'Quarantine message'.\n4. Configure allowed/blocked senders lists as needed.\n5. Enable zero-hour auto purge (ZAP).",
+    "prerequisites": "Included with Exchange Online Protection (all Microsoft 365 plans with Exchange Online).",
+    "user_impact_description": "Legitimate emails may occasionally be quarantined. Users can review and release quarantined messages.",
+    "implementation_cost": "Easy",
+    "category": "Apps",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-office-365/anti-spam-policies-configure",
+    "max_score": 3.0,
+    "title_variants": [
+      "Antispam-Richtlinien einrichten",
+      "Configurer des stratégies anti-courrier indésirable"
+    ]
+  },
+  {
+    "id": "EmailForwardingRule",
+    "title": "Do not allow users to forward email to external domains",
+    "description": "Preventing automatic email forwarding to external domains stops data exfiltration via compromised accounts that set up forwarding rules.",
+    "remediation_steps": "1. Navigate to Exchange admin center > Mail flow > Remote domains.\n2. Edit the default remote domain (*).\n3. Set 'Allow automatic forwarding' to 'Off'.\n4. Alternatively, create a transport rule to block auto-forwarding to external recipients.",
+    "prerequisites": "Included with Exchange Online.",
+    "user_impact_description": "Users will not be able to set up automatic forwarding to external email addresses. They can still manually forward individual messages.",
+    "implementation_cost": "Easy",
+    "category": "Data",
+    "product": "Exchange Online",
+    "reference_url": "https://learn.microsoft.com/en-us/exchange/mail-flow-best-practices/remote-domains/remote-domains",
+    "max_score": 3.0,
+    "title_variants": [
+      "Benutzern nicht erlauben, E-Mails an externe Domänen weiterzuleiten",
+      "Ne pas autoriser les utilisateurs à transférer des e-mails vers des domaines externes"
+    ]
+  },
+  {
+    "id": "SharePointExternalSharing",
+    "title": "Review SharePoint external sharing settings",
+    "description": "External sharing settings control how users can share SharePoint and OneDrive content with people outside your organization.",
+    "remediation_steps": "1. Navigate to SharePoint admin center > Policies > Sharing.\n2. Set the external sharing level appropriate for your organization.\n3. Recommended: 'New and existing guests' (requires sign-in).\n4. Enable additional restrictions like verification codes and expiration.\n5. Review and restrict sharing for sensitive sites individually.",
+    "prerequisites": "SharePoint Online is included in most Microsoft 365 plans.",
+    "user_impact_description": "External sharing may be more restricted. Users may need to use guest invitations instead of anonymous links.",
+    "implementation_cost": "Easy",
+    "category": "Data",
+    "product": "SharePoint Online",
+    "reference_url": "https://learn.microsoft.com/en-us/sharepoint/turn-external-sharing-on-or-off",
+    "max_score": 3.0,
+    "title_variants": [
+      "Einstellungen für externe SharePoint-Freigabe überprüfen",
+      "Vérifier les paramètres de partage externe de SharePoint"
+    ]
+  },
+  {
+    "id": "InformationBarriers",
+    "title": "Set up information barriers",
+    "description": "Information barriers are policies that can prevent certain segments of users from communicating with each other, or allow specific segments to communicate only with certain other segments.",
+    "remediation_steps": "1. Navigate to Microsoft Purview compliance portal > Information barriers.\n2. Define user segments based on attributes (department, group membership).\n3. Create information barrier policies to restrict or allow communication.\n4. Apply the policies.\n5. Test to verify correct behavior.",
+    "prerequisites": "Requires Microsoft 365 E5 or Microsoft 365 E5 Compliance.",
+    "user_impact_description": "Users in restricted segments will not be able to communicate with users in other restricted segments via Teams, SharePoint, or OneDrive.",
+    "implementation_cost": "Difficult",
+    "category": "Data",
+    "product": "Microsoft Purview",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/information-barriers",
+    "max_score": 3.0,
+    "title_variants": [
+      "Informationsbarrieren einrichten",
+      "Configurer des obstacles à l'information"
+    ]
+  },
+  {
+    "id": "SensitivityLabels",
+    "title": "Apply sensitivity labels to Microsoft 365 data",
+    "description": "Sensitivity labels from Microsoft Purview Information Protection let you classify and protect your organization's data, while making sure that user productivity and collaboration are not hindered.",
+    "remediation_steps": "1. Navigate to Microsoft Purview compliance portal > Information protection > Labels.\n2. Create sensitivity labels (e.g., Public, Internal, Confidential, Highly Confidential).\n3. Configure protection settings (encryption, content marking, auto-labeling).\n4. Publish labels via label policies to users.\n5. Consider enabling default labels and mandatory labeling.",
+    "prerequisites": "Requires Microsoft 365 E3 or E5. Advanced features (auto-labeling) require E5.",
+    "user_impact_description": "Users will see a sensitivity label selector in Office apps. With mandatory labeling, they must classify all documents and emails.",
+    "implementation_cost": "Moderate",
+    "category": "Data",
+    "product": "Microsoft Purview",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/sensitivity-labels",
+    "max_score": 5.0,
+    "title_variants": [
+      "Vertraulichkeitsbezeichnungen auf Microsoft 365-Daten anwenden",
+      "Appliquer des étiquettes de confidentialité aux données Microsoft 365"
+    ]
+  },
+  {
+    "id": "DefenderForIdentity",
+    "title": "Turn on Microsoft Defender for Identity",
+    "description": "Microsoft Defender for Identity monitors your on-premises Active Directory signals to identify, detect, and investigate advanced threats, compromised identities, and malicious insider actions.",
+    "remediation_steps": "1. Navigate to Microsoft 365 Defender portal > Settings > Identities.\n2. Create a Defender for Identity instance.\n3. Download and install the sensor on your domain controllers.\n4. Configure the directory service account.\n5. Verify sensor health and data collection.",
+    "prerequisites": "Requires Microsoft Defender for Identity license (included in Microsoft 365 E5). Requires on-premises AD domain controllers.",
+    "user_impact_description": "No direct impact on users. The sensor monitors domain controller traffic transparently.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Microsoft Defender for Identity",
+    "reference_url": "https://learn.microsoft.com/en-us/defender-for-identity/deploy/quick-installation-guide",
+    "max_score": 5.0,
+    "title_variants": [
+      "Microsoft Defender für Identität aktivieren",
+      "Activer Microsoft Defender pour Identity"
+    ]
+  },
+  {
+    "id": "ApplicationConsent",
+    "title": "Do not allow users to grant consent to unmanaged applications",
+    "description": "Restricting user consent to applications prevents users from granting access to potentially malicious third-party apps that could access organizational data.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Applications > Consent and permissions.\n2. Set 'User consent for applications' to 'Do not allow user consent'.\n3. Configure the admin consent workflow so users can request consent.\n4. Review existing application consents for overprivileged or suspicious apps.",
+    "prerequisites": "Requires Microsoft Entra ID (any tier).",
+    "user_impact_description": "Users will not be able to grant consent to new apps. They will need to request admin approval through the consent workflow.",
+    "implementation_cost": "Easy",
+    "category": "Apps",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent",
+    "max_score": 3.0,
+    "title_variants": [
+      "Benutzern nicht erlauben, nicht verwalteten Anwendungen die Zustimmung zu erteilen",
+      "Ne pas autoriser les utilisateurs à accorder le consentement aux applications non gérées"
+    ]
+  },
+  {
+    "id": "PrivilegedAccessManagement",
+    "title": "Enable Privileged Identity Management (PIM)",
+    "description": "PIM provides just-in-time privileged access to Azure AD and Azure resources, time-bound access with start and end dates, and approval workflows for activating roles.",
+    "remediation_steps": "1. Navigate to Microsoft Entra admin center > Identity Governance > Privileged Identity Management.\n2. Discover and manage Azure AD roles.\n3. Convert permanent role assignments to eligible.\n4. Configure role settings (approval, MFA, notification, duration).\n5. Set up access reviews for privileged roles.",
+    "prerequisites": "Requires Microsoft Entra ID P2 license.",
+    "user_impact_description": "Admins will need to activate their roles when they need elevated access. Activation may require MFA and approval.",
+    "implementation_cost": "Moderate",
+    "category": "Identity",
+    "product": "Entra ID",
+    "reference_url": "https://learn.microsoft.com/en-us/entra/id-governance/privileged-identity-management/pim-getting-started",
+    "max_score": 5.0,
+    "title_variants": [
+      "Privileged Identity Management (PIM) aktivieren",
+      "Activer Privileged Identity Management (PIM)"
+    ]
+  },
+  {
+    "id": "RetentionPolicies",
+    "title": "Apply retention policies to Microsoft 365 data",
+    "description": "Retention policies help you manage data lifecycle by ensuring content is retained for regulatory or business reasons and then deleted when no longer needed.",
+    "remediation_steps": "1. Navigate to Microsoft Purview compliance portal > Data lifecycle management > Retention policies.\n2. Create a retention policy for each location (Exchange, SharePoint, OneDrive, Teams).\n3. Set retention periods based on regulatory and business requirements.\n4. Consider using retention labels for more granular control.",
+    "prerequisites": "Basic retention requires Microsoft 365 E3. Advanced retention (records management) requires E5 Compliance.",
+    "user_impact_description": "Content subject to retention policies cannot be permanently deleted by users until the retention period expires.",
+    "implementation_cost": "Moderate",
+    "category": "Data",
+    "product": "Microsoft Purview",
+    "reference_url": "https://learn.microsoft.com/en-us/purview/retention-policies-configure",
+    "max_score": 3.0,
+    "title_variants": [
+      "Aufbewahrungsrichtlinien auf Microsoft 365-Daten anwenden",
+      "Appliquer des stratégies de rétention aux données Microsoft 365"
+    ]
+  }
+]

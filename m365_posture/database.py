@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework
+from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, Workload
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
@@ -69,6 +69,7 @@ class Database:
                     description TEXT DEFAULT '',
                     source_tool TEXT NOT NULL DEFAULT 'Manual',
                     source_id TEXT DEFAULT '',
+                    reference_id TEXT DEFAULT '',
                     workload TEXT DEFAULT 'General',
                     status TEXT DEFAULT 'ToDo',
                     priority TEXT DEFAULT 'Medium',
@@ -224,6 +225,24 @@ class Database:
                     summary TEXT DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_drift_tenant ON drift_reports(tenant_name, timestamp);
+
+                -- Reference table of Secure Score controls (shared across tenants)
+                CREATE TABLE IF NOT EXISTS secure_score_controls (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    description TEXT DEFAULT '',
+                    remediation_steps TEXT DEFAULT '',
+                    prerequisites TEXT DEFAULT '',
+                    user_impact_description TEXT DEFAULT '',
+                    implementation_cost TEXT DEFAULT '',
+                    category TEXT DEFAULT '',
+                    product TEXT DEFAULT '',
+                    reference_url TEXT DEFAULT '',
+                    max_score REAL DEFAULT 0,
+                    title_variants TEXT DEFAULT '[]',
+                    updated_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_ssc_title ON secure_score_controls(title);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -233,11 +252,160 @@ class Database:
                 ("risk_review_date", "TEXT", "NULL"),
                 ("risk_expiry_date", "TEXT", "NULL"),
                 ("risk_accepted_at", "TEXT", "NULL"),
+                ("control_id", "TEXT", "NULL"),
+                ("reference_id", "TEXT", "''"),
+                ("threats", "TEXT", "'[]'"),
+                ("tier", "TEXT", "''"),
+                ("action_type", "TEXT", "''"),
+                ("remediation_impact", "TEXT", "''"),
+                ("deprecated", "INTEGER", "0"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
+
+            # Add Graph API overall scores and metadata to tenants (idempotent)
+            for col, coltype, default in [
+                ("graph_current_score", "REAL", "NULL"),
+                ("graph_max_score", "REAL", "NULL"),
+                ("graph_score_date", "TEXT", "NULL"),
+                ("graph_active_user_count", "INTEGER", "0"),
+                ("graph_licensed_user_count", "INTEGER", "0"),
+                ("graph_enabled_services", "TEXT", "''"),
+                ("graph_comparative_scores", "TEXT", "''"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+    # ── Graph API overall scores ──
+
+    def store_graph_scores(self, tenant_name: str, overall_scores: dict):
+        """Store the authoritative overall scores and metadata from Microsoft Graph API."""
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE tenants SET graph_current_score=?, graph_max_score=?,
+                   graph_score_date=?, graph_active_user_count=?,
+                   graph_licensed_user_count=?, graph_enabled_services=?,
+                   graph_comparative_scores=?
+                   WHERE name=?""",
+                (overall_scores.get("currentScore", 0),
+                 overall_scores.get("maxScore", 0),
+                 overall_scores.get("createdDateTime") or datetime.utcnow().isoformat(),
+                 overall_scores.get("activeUserCount", 0),
+                 overall_scores.get("licensedUserCount", 0),
+                 json.dumps(overall_scores.get("enabledServices", [])),
+                 json.dumps(overall_scores.get("averageComparativeScores", [])),
+                 tenant_name),
+            )
+
+    # ── Secure Score Controls (reference table) ──
+
+    def upsert_control(self, control: SecureScoreControl) -> dict:
+        """Insert or update a secure score control reference entry."""
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT id FROM secure_score_controls WHERE id=?", (control.id,)
+            ).fetchone()
+            variants_json = json.dumps(control.title_variants if control.title_variants else [])
+            if existing:
+                conn.execute(
+                    """UPDATE secure_score_controls SET title=?, description=?,
+                       remediation_steps=?, prerequisites=?, user_impact_description=?,
+                       implementation_cost=?, category=?, product=?, reference_url=?,
+                       max_score=?, title_variants=?, updated_at=?
+                       WHERE id=?""",
+                    (control.title, control.description, control.remediation_steps,
+                     control.prerequisites, control.user_impact_description,
+                     control.implementation_cost, control.category, control.product,
+                     control.reference_url, control.max_score, variants_json, now,
+                     control.id),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO secure_score_controls
+                       (id, title, description, remediation_steps, prerequisites,
+                        user_impact_description, implementation_cost, category, product,
+                        reference_url, max_score, title_variants, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (control.id, control.title, control.description,
+                     control.remediation_steps, control.prerequisites,
+                     control.user_impact_description, control.implementation_cost,
+                     control.category, control.product, control.reference_url,
+                     control.max_score, variants_json, now),
+                )
+        return self.get_control(control.id)
+
+    def get_control(self, control_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM secure_score_controls WHERE id=?", (control_id,)
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+            return d
+
+    def list_controls(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM secure_score_controls ORDER BY title"
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+                result.append(d)
+            return result
+
+    def delete_control(self, control_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM secure_score_controls WHERE id=?", (control_id,))
+
+    def find_control_by_title(self, title: str) -> dict | None:
+        """Find a control by exact title or any title variant (case-insensitive)."""
+        title_lower = title.strip().lower()
+        with self._conn() as conn:
+            # Try exact title match first
+            row = conn.execute(
+                "SELECT * FROM secure_score_controls WHERE LOWER(title)=?",
+                (title_lower,),
+            ).fetchone()
+            if row:
+                d = dict(row)
+                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
+                return d
+
+            # Search title_variants (JSON array)
+            rows = conn.execute("SELECT * FROM secure_score_controls").fetchall()
+            for r in rows:
+                variants = json.loads(r["title_variants"] or "[]")
+                for v in variants:
+                    if v.strip().lower() == title_lower:
+                        d = dict(r)
+                        d["title_variants"] = variants
+                        return d
+        return None
+
+    def seed_controls(self, controls: list[SecureScoreControl]) -> dict:
+        """Bulk upsert controls from seed data. Returns counts."""
+        new_count = 0
+        updated_count = 0
+        for ctrl in controls:
+            with self._conn() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM secure_score_controls WHERE id=?", (ctrl.id,)
+                ).fetchone()
+            self.upsert_control(ctrl)
+            if existing:
+                updated_count += 1
+            else:
+                new_count += 1
+        return {"new": new_count, "updated": updated_count, "total": len(controls)}
 
     # ── Tenant operations ──
 
@@ -311,9 +479,12 @@ class Database:
         d = dict(row)
         d["tags"] = json.loads(d.get("tags") or "[]")
         d["raw_data"] = json.loads(d.get("raw_data") or "{}")
+        d["threats"] = json.loads(d.get("threats") or "[]")
+        d["deprecated"] = bool(d.get("deprecated", 0))
         # Ensure risk fields exist even on older DBs
         for field in ("risk_justification", "risk_owner", "risk_review_date",
-                       "risk_expiry_date", "risk_accepted_at"):
+                       "risk_expiry_date", "risk_accepted_at",
+                       "tier", "action_type", "remediation_impact", "reference_id"):
             if field not in d:
                 d[field] = None
         if conn:
@@ -360,16 +531,19 @@ class Database:
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO actions (id, tenant_name, title, description, source_tool,
-                   source_id, workload, status, priority, risk_level, user_impact,
+                   source_id, reference_id, workload, status, priority, risk_level, user_impact,
                    implementation_effort, required_licence, score, max_score, score_percentage,
                    essential_eight_control, essential_eight_maturity, remediation_steps,
                    current_value, recommended_value, category, subcategory, planned_date,
                    responsible, tags, notes, reference_url, source_report_file,
-                   source_report_date, raw_data, correlation_group_id, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   source_report_date, raw_data, correlation_group_id,
+                   threats, tier, action_type, remediation_impact, deprecated,
+                   created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (action_id, tenant_name,
                  data.get("title", ""), data.get("description", ""),
                  data.get("source_tool", "Manual"), data.get("source_id", ""),
+                 data.get("reference_id", ""),
                  data.get("workload", "General"), data.get("status", "ToDo"),
                  data.get("priority", "Medium"), data.get("risk_level", "Medium"),
                  data.get("user_impact", "Low"), data.get("implementation_effort", "Medium"),
@@ -385,6 +559,11 @@ class Database:
                  data.get("source_report_date", ""),
                  json.dumps(data.get("raw_data", {})),
                  data.get("correlation_group_id"),
+                 json.dumps(data.get("threats", [])),
+                 data.get("tier", ""),
+                 data.get("action_type", ""),
+                 data.get("remediation_impact", ""),
+                 1 if data.get("deprecated") else 0,
                  data.get("created_at", now), now),
             )
         return self.get_action(action_id)
@@ -466,45 +645,120 @@ class Database:
                     ).fetchone()
                     if row:
                         existing = dict(row)
+                    # Fallback: match by old-style source_id (ss_<name>) for backwards compat
+                    if not existing:
+                        old_style_id = f"ss_{action.source_id.replace(' ', '_').lower()[:40]}"
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
+                            (tenant_name, action.source_tool, old_style_id),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
+                    # Fallback: match by controlName as old title (old imports used controlName as title)
+                    if not existing and action.source_id:
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
+                            (tenant_name, action.source_tool, action.source_id),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
+                    # Fallback: match by new title
+                    if not existing and action.title:
+                        row = conn.execute(
+                            "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
+                            (tenant_name, action.source_tool, action.title),
+                        ).fetchone()
+                        if row:
+                            existing = dict(row)
 
                 if existing:
-                    # Update existing action
+                    # Update existing action with all current data
                     changes = {}
-                    if action.score is not None and action.score != existing["score"]:
+
+                    # Always sync score and max_score from latest import
+                    if action.score is not None and action.score != existing.get("score"):
                         conn.execute(
                             """INSERT INTO action_history (action_id, timestamp, old_score,
                                new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
                             (existing["id"], datetime.utcnow().isoformat(),
-                             existing["score"], action.score, source_file),
+                             existing.get("score"), action.score, source_file),
                         )
-                        changes["score"] = action.score
-                        changes["max_score"] = action.max_score
-                        if action.max_score and action.max_score > 0:
-                            changes["score_percentage"] = round(
-                                (action.score / action.max_score) * 100, 1)
+                    changes["score"] = action.score
+                    changes["max_score"] = action.max_score
+                    if action.max_score and action.max_score > 0:
+                        changes["score_percentage"] = round(
+                            (action.score / action.max_score) * 100, 2)
+                    else:
+                        changes["score_percentage"] = 0
 
                     if action.status != existing["status"]:
-                        if existing["status"] in ("ToDo", "Completed") and existing["source_tool"] == source_tool:
-                            conn.execute(
-                                """INSERT INTO action_history (action_id, timestamp,
-                                   old_status, new_status, source_report)
-                                   VALUES (?, ?, ?, ?, ?)""",
-                                (existing["id"], datetime.utcnow().isoformat(),
-                                 existing["status"], action.status, source_file),
-                            )
-                            changes["status"] = action.status
+                        conn.execute(
+                            """INSERT INTO action_history (action_id, timestamp,
+                               old_status, new_status, source_report)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (existing["id"], datetime.utcnow().isoformat(),
+                             existing["status"], action.status, source_file),
+                        )
+                        changes["status"] = action.status
 
+                    # Always update source_id and title to latest format
+                    changes["source_id"] = action.source_id
+                    if action.title:
+                        changes["title"] = action.title
+
+                    # Always sync enriched fields from profile
                     if action.description:
                         changes["description"] = action.description
                     if action.remediation_steps:
                         changes["remediation_steps"] = action.remediation_steps
-                    if action.current_value:
-                        changes["current_value"] = action.current_value
+                    changes["current_value"] = action.current_value or existing.get("current_value", "")
                     if action.recommended_value:
                         changes["recommended_value"] = action.recommended_value
                     if action.essential_eight_control:
                         changes["essential_eight_control"] = action.essential_eight_control
                         changes["essential_eight_maturity"] = action.essential_eight_maturity
+
+                    # Link to reference control if available
+                    control_id = getattr(action, "control_id", None)
+                    if control_id:
+                        changes["control_id"] = control_id
+
+                    # Always update reference_id, workload, category, subcategory, priority
+                    if action.reference_id:
+                        changes["reference_id"] = action.reference_id
+                    if action.workload and action.workload != Workload.GENERAL.value:
+                        changes["workload"] = action.workload
+                    elif action.workload and not existing.get("workload"):
+                        changes["workload"] = action.workload
+                    if action.category:
+                        changes["category"] = action.category
+                    if action.subcategory:
+                        changes["subcategory"] = action.subcategory
+                    if action.priority:
+                        changes["priority"] = action.priority
+                    if action.risk_level:
+                        changes["risk_level"] = action.risk_level
+
+                    # Always sync user_impact and implementation_effort from profile
+                    if action.user_impact:
+                        changes["user_impact"] = action.user_impact
+                    if action.implementation_effort:
+                        changes["implementation_effort"] = action.implementation_effort
+                    if action.reference_url:
+                        changes["reference_url"] = action.reference_url
+                    if action.required_licence:
+                        changes["required_licence"] = action.required_licence
+
+                    # Always sync Secure Score enrichment fields
+                    if action.threats:
+                        changes["threats"] = json.dumps(action.threats)
+                    if action.tier:
+                        changes["tier"] = action.tier
+                    if action.action_type:
+                        changes["action_type"] = action.action_type
+                    if action.remediation_impact:
+                        changes["remediation_impact"] = action.remediation_impact
+                    changes["deprecated"] = 1 if action.deprecated else 0
 
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
@@ -519,19 +773,22 @@ class Database:
                     # Insert new action
                     now = datetime.utcnow().isoformat()
                     action_id = action.id or _generate_id()
+                    control_id = getattr(action, "control_id", None) or None
                     conn.execute(
                         """INSERT INTO actions (id, tenant_name, title, description,
-                           source_tool, source_id, workload, status, priority, risk_level,
-                           user_impact, implementation_effort, required_licence,
+                           source_tool, source_id, reference_id, workload, status, priority,
+                           risk_level, user_impact, implementation_effort, required_licence,
                            score, max_score, score_percentage,
                            essential_eight_control, essential_eight_maturity,
                            remediation_steps, current_value, recommended_value,
                            category, subcategory, planned_date, responsible,
                            tags, notes, reference_url, source_report_file,
-                           source_report_date, raw_data, created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           source_report_date, raw_data, created_at, updated_at, control_id,
+                           threats, tier, action_type, remediation_impact, deprecated)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (action_id, tenant_name, action.title, action.description,
-                         action.source_tool, action.source_id, action.workload,
+                         action.source_tool, action.source_id, action.reference_id,
+                         action.workload,
                          action.status, action.priority, action.risk_level,
                          action.user_impact, action.implementation_effort,
                          action.required_licence,
@@ -543,7 +800,9 @@ class Database:
                          json.dumps(action.tags), action.notes, action.reference_url,
                          source_file, now,
                          json.dumps(action.raw_data if hasattr(action, "raw_data") else {}),
-                         action.created_at or now, now),
+                         action.created_at or now, now, control_id,
+                         json.dumps(action.threats), action.tier, action.action_type,
+                         action.remediation_impact, 1 if action.deprecated else 0),
                     )
                     new_count += 1
 
@@ -557,6 +816,43 @@ class Database:
             )
 
         return new_count, updated_count
+
+    def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
+        """Remove duplicate actions, keeping the most recently updated one.
+
+        Duplicates are detected by matching source_id (new-style controlName)
+        against old-style source_id (ss_<controlname>) and by matching titles
+        that are controlName slugs vs profile titles for the same control.
+        """
+        actions = self.get_actions(tenant_name)
+        if source_tool:
+            actions = [a for a in actions if a["source_tool"] == source_tool]
+
+        # Group by normalized controlName
+        groups = {}
+        for a in actions:
+            sid = a.get("source_id", "")
+            # Normalize: strip ss_ prefix, lowercase
+            key = sid.lower()
+            if key.startswith("ss_"):
+                key = key[3:]
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(a)
+
+        removed = 0
+        with self._conn() as conn:
+            for key, group in groups.items():
+                if len(group) <= 1:
+                    continue
+                # Keep the one with the most recent updated_at
+                group.sort(key=lambda a: a.get("updated_at", ""), reverse=True)
+                keep = group[0]
+                for dup in group[1:]:
+                    conn.execute("DELETE FROM actions WHERE id=?", (dup["id"],))
+                    removed += 1
+
+        return {"removed": removed, "checked": len(actions)}
 
     # ── Action history ──
 
@@ -1021,10 +1317,10 @@ class Database:
                         ctrl_data["status"] = "ToDo"
                 fam_data["total"] = fam_total
                 fam_data["completed"] = fam_completed
-                fam_data["percentage"] = round((fam_completed / fam_total) * 100, 1) if fam_total > 0 else 0
+                fam_data["percentage"] = round((fam_completed / fam_total) * 100, 2) if fam_total > 0 else 0
             fw_data["total_controls"] = total
             fw_data["completed_controls"] = completed
-            fw_data["percentage"] = round((completed / total) * 100, 1) if total > 0 else 0
+            fw_data["percentage"] = round((completed / total) * 100, 2) if total > 0 else 0
 
         return result
 
@@ -1177,15 +1473,42 @@ class Database:
     # ── Scoring helpers ──
 
     def get_scores(self, tenant_name: str) -> dict:
-        """Calculate live scores from action data."""
+        """Calculate live scores from action data.
+
+        Uses authoritative Graph API overall scores when available (stored
+        by store_graph_scores). Falls back to summing per-action scores.
+        Per-workload/tool breakdowns always use per-action data.
+        """
         actions = self.get_actions(tenant_name)
         if not actions:
             return {"percentage": 0, "total_actions": 0, "completed_actions": 0,
                     "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {}}
 
-        total_score = sum(a.get("score") or 0 for a in actions)
-        total_max = sum(a.get("max_score") or 0 for a in actions)
+        # Sum per-action scores
+        action_total_score = sum(a.get("score") or 0 for a in actions)
+        action_total_max = sum(a.get("max_score") or 0 for a in actions)
         completed = sum(1 for a in actions if a["status"] == ActionStatus.COMPLETED.value)
+
+        # Check for authoritative Graph API scores
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT graph_current_score, graph_max_score, graph_score_date FROM tenants WHERE name=?",
+                (tenant_name,)
+            ).fetchone()
+
+        graph_score = None
+        graph_max = None
+        if row:
+            graph_score = row["graph_current_score"] if "graph_current_score" in row.keys() else None
+            graph_max = row["graph_max_score"] if "graph_max_score" in row.keys() else None
+
+        # Use Graph API authoritative scores for overall percentage when available
+        if graph_max and graph_max > 0:
+            total_score = graph_score or 0
+            total_max = graph_max
+        else:
+            total_score = action_total_score
+            total_max = action_total_max
 
         by_tool = {}
         by_workload = {}
@@ -1198,7 +1521,7 @@ class Database:
             st = a["status"]
             pr = a["priority"]
 
-            for group, key, in [(by_tool, tool), (by_workload, wl)]:
+            for group, key in [(by_tool, tool), (by_workload, wl)]:
                 if key not in group:
                     group[key] = {"score": 0, "max_score": 0, "total": 0, "completed": 0}
                 group[key]["score"] += a.get("score") or 0
@@ -1210,15 +1533,32 @@ class Database:
             by_status[st] = by_status.get(st, 0) + 1
             by_priority[pr] = by_priority.get(pr, 0) + 1
 
+        # For tool/workload breakdowns, use Graph max if available for Secure Score
+        if graph_max and graph_max > 0:
+            ss_key = "Microsoft Secure Score"
+            if ss_key in by_tool:
+                by_tool[ss_key]["score"] = total_score
+                by_tool[ss_key]["max_score"] = total_max
+
         for group in [by_tool, by_workload]:
             for data in group.values():
                 m = data["max_score"]
-                data["percentage"] = round((data["score"] / m) * 100, 1) if m > 0 else 0
+                data["percentage"] = round((data["score"] / m) * 100, 2) if m > 0 else 0
+
+        # Per-workload: distribute Graph scores proportionally if available
+        if graph_max and graph_max > 0:
+            for wl_data in by_workload.values():
+                wl_action_max = wl_data["max_score"]
+                if wl_action_max > 0 and action_total_max > 0:
+                    # Scale the workload's share proportionally to the Graph total
+                    proportion = wl_action_max / action_total_max
+                    wl_data["max_score"] = round(total_max * proportion, 2)
+                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 2) if wl_data["max_score"] > 0 else 0
 
         return {
-            "total_score": round(total_score, 1),
-            "total_max": round(total_max, 1),
-            "percentage": round((total_score / total_max) * 100, 1) if total_max > 0 else 0,
+            "total_score": round(total_score, 2),
+            "total_max": round(total_max, 2),
+            "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
             "total_actions": len(actions),
             "completed_actions": completed,
             "by_tool": by_tool,

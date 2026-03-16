@@ -16,9 +16,9 @@ def calculate_tool_score(actions: list[Action], source_tool: str) -> dict:
     completed = sum(1 for a in tool_actions if a.status == ActionStatus.COMPLETED.value)
 
     return {
-        "score": round(total_score, 1),
-        "max_score": round(total_max, 1),
-        "percentage": round((total_score / total_max) * 100, 1) if total_max > 0 else 0,
+        "score": round(total_score, 2),
+        "max_score": round(total_max, 2),
+        "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
         "total": len(tool_actions),
         "completed": completed,
     }
@@ -35,9 +35,9 @@ def calculate_workload_score(actions: list[Action], workload: str) -> dict:
     completed = sum(1 for a in wl_actions if a.status == ActionStatus.COMPLETED.value)
 
     return {
-        "score": round(total_score, 1),
-        "max_score": round(total_max, 1),
-        "percentage": round((total_score / total_max) * 100, 1) if total_max > 0 else 0,
+        "score": round(total_score, 2),
+        "max_score": round(total_max, 2),
+        "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
         "total": len(wl_actions),
         "completed": completed,
     }
@@ -84,9 +84,9 @@ def calculate_total_score(actions: list[Action]) -> dict:
         by_priority[a.priority] = by_priority.get(a.priority, 0) + 1
 
     return {
-        "total_score": round(total_score, 1),
-        "total_max": round(total_max, 1),
-        "percentage": round((total_score / total_max) * 100, 1) if total_max > 0 else 0,
+        "total_score": round(total_score, 2),
+        "total_max": round(total_max, 2),
+        "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
         "total_actions": len(actions),
         "completed_actions": sum(1 for a in actions if a.status == ActionStatus.COMPLETED.value),
         "by_tool": by_tool,
