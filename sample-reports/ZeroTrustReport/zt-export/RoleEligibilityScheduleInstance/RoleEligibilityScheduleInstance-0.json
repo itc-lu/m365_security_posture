@@ -1,0 +1,4 @@
+{
+  "value": [],
+  "@odata.context": "https://graph.microsoft.com/beta/$metadata#roleManagement/directory/roleEligibilityScheduleInstances(principal())"
+}

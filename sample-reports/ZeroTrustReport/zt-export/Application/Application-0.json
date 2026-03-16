@@ -1,0 +1,211 @@
+{
+  "value": [
+    {
+      "api": {
+        "knownClientApplications": [],
+        "acceptMappedClaims": null,
+        "tokenEncryptionSetting": {
+          "scheme": null,
+          "audience": null,
+          "automatedTokenVersion": {
+            "current": null,
+            "available": []
+          }
+        },
+        "requestedAccessTokenVersion": null,
+        "preAuthorizedApplications": [],
+        "oauth2PermissionScopes": []
+      },
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "orgRestrictions": [],
+      "id": "a473be4c-4e87-422f-9340-0a3fb6092754",
+      "disabledByMicrosoftStatus": null,
+      "tokenEncryptionKeyId": null,
+      "createdByAppId": "18ed3507-a475-4ccb-b669-d66bc9f2a36e",
+      "createdDateTime": "2026-02-03T12:29:35Z",
+      "isDisabled": null,
+      "defaultRedirectUri": null,
+      "owners": [],
+      "requiredResourceAccess": [
+        {
+          "resourceAppId": "00000003-0000-0000-c000-000000000000",
+          "resourceAccess": [
+            {
+              "type": "Scope",
+              "id": "c79f8feb-a9db-4090-85f9-90d820caa0eb"
+            },
+            {
+              "type": "Scope",
+              "id": "84bccea3-f856-4a8a-967b-dbe0a3d53a64"
+            },
+            {
+              "type": "Scope",
+              "id": "06da0dbc-49e2-44d2-8312-53f166ab848a"
+            },
+            {
+              "type": "Scope",
+              "id": "2f9ee017-59c1-4f1d-9472-bd5529a7b311"
+            },
+            {
+              "type": "Scope",
+              "id": "bc024368-1153-4739-b217-4326f2e966d0"
+            },
+            {
+              "type": "Scope",
+              "id": "4908d5b9-3fb2-4b1e-9336-1888b7937185"
+            },
+            {
+              "type": "Scope",
+              "id": "572fea84-0151-49b2-9301-11cb16974376"
+            },
+            {
+              "type": "Scope",
+              "id": "d329c81c-20ad-4772-abf9-3f6fdb7e5988"
+            },
+            {
+              "type": "Scope",
+              "id": "8f44f93d-ecef-46ae-a9bf-338508d44d6b"
+            },
+            {
+              "type": "Scope",
+              "id": "344a729c-0285-42c6-9014-f12b9b8d6129"
+            },
+            {
+              "type": "Scope",
+              "id": "eb0788c2-6d4e-4658-8c9e-c0fb8053f03d"
+            },
+            {
+              "type": "Scope",
+              "id": "741c54c3-0c1e-44a1-818b-3f97ab4e8c83"
+            },
+            {
+              "type": "Scope",
+              "id": "d01b97e9-cbc0-49fe-810a-750afd5527a3"
+            },
+            {
+              "type": "Scope",
+              "id": "7e26fdff-9cb1-4e56-bede-211fe0e420e8"
+            },
+            {
+              "type": "Scope",
+              "id": "3de2cdbe-0ff5-47d5-bdee-7f45b4749ead"
+            },
+            {
+              "type": "Scope",
+              "id": "5a54b8b3-347c-476d-8f8e-42d5c7424d29"
+            },
+            {
+              "type": "Scope",
+              "id": "e1fe6dd8-ba31-4d61-89e7-88639da4683d"
+            },
+            {
+              "type": "Scope",
+              "id": "a154be20-db9c-4678-8ab7-66f6cc099a59"
+            }
+          ]
+        }
+      ],
+      "samlMetadataUrl": null,
+      "isManagementRestricted": null,
+      "uniqueName": null,
+      "windows": null,
+      "parentalControlSettings": {
+        "legalAgeGroupRule": "Allow",
+        "countriesBlockedForMinors": []
+      },
+      "passwordCredentials": [
+        {
+          "customKeyIdentifier": null,
+          "keyId": "665cb6d9-d2e7-4abb-81f0-e761d19f7e40",
+          "endDateTime": "2028-02-06T07:19:15.177Z",
+          "secretText": null,
+          "startDateTime": "2026-02-06T07:19:15.177Z",
+          "hint": "rXy",
+          "displayName": "Test Tenant"
+        }
+      ],
+      "identifierUris": [],
+      "tags": [],
+      "addIns": [],
+      "publisherDomain": "4fk82f.onmicrosoft.com",
+      "appCapabilities": [],
+      "nativeAuthenticationApisEnabled": null,
+      "groupMembershipClaims": null,
+      "appRoles": [],
+      "certification": null,
+      "isDeviceOnlyAuthSupported": null,
+      "applicationTemplateId": null,
+      "servicePrincipalLockConfiguration": {
+        "identifierUris": false,
+        "credentialsWithUsageVerify": true,
+        "allProperties": true,
+        "isEnabled": true,
+        "tokenEncryptionKeyId": true,
+        "credentialsWithUsageSign": true
+      },
+      "deletedDateTime": null,
+      "requestSignatureVerification": null,
+      "publicClient": {
+        "redirectUris": [
+          "https://login.microsoftonline.com/common/oauth2/nativeclient",
+          "msalc177d709-7e71-4b51-9ea3-075b230c635c://auth",
+          "https://login.live.com/oauth20_desktop.srf",
+          "http://localhost"
+        ]
+      },
+      "displayName": "SECURITY-ASSESSMENT",
+      "signInAudienceRestrictions": {
+        "kind": "unrestricted",
+        "@odata.type": "#microsoft.graph.unrestrictedAudience"
+      },
+      "description": null,
+      "web": {
+        "implicitGrantSettings": {
+          "enableAccessTokenIssuance": false,
+          "enableIdTokenIssuance": false
+        },
+        "logoutUrl": null,
+        "redirectUris": [],
+        "redirectUriSettings": [],
+        "homePageUrl": null
+      },
+      "migrationStatus": null,
+      "isFallbackPublicClient": true,
+      "verifiedPublisher": {
+        "verifiedPublisherId": null,
+        "addedDateTime": null,
+        "displayName": null
+      },
+      "signInAudience": "AzureADMyOrg",
+      "optionalClaims": null,
+      "oauth2RequirePostResponse": false,
+      "info": {
+        "supportUrl": null,
+        "logoUrl": null,
+        "termsOfServiceUrl": null,
+        "marketingUrl": null,
+        "privacyStatementUrl": null
+      },
+      "notes": null,
+      "isAuthorizationServiceEnabled": false,
+      "spa": {
+        "redirectUris": []
+      },
+      "keyCredentials": [
+        {
+          "startDateTime": "2026-02-03T12:25:06Z",
+          "key": null,
+          "type": "AsymmetricX509Cert",
+          "keyId": "e0a99a11-a67e-4b95-afb4-da89a410cfd6",
+          "endDateTime": "2027-02-03T12:45:06Z",
+          "customKeyIdentifier": "659F0006BD9D4424C70D441D5794D5EA19BA0FFE",
+          "usage": "Verify",
+          "hasExtendedValue": null,
+          "displayName": "CN={secass-tenant-test}"
+        }
+      ],
+      "serviceManagementReference": null
+    }
+  ],
+  "@odata.context": "https://graph.microsoft.com/beta/$metadata#applications(owners())"
+}
