@@ -2274,62 +2274,270 @@ async function submitAddActionsToGroup(groupId) {
 }
 
 // ── Essential Eight ──
+let _e8TargetML = 'Maturity Level 3';
+let _e8ExcludeNA = false;
+
 async function renderE8() {
   if(!requireTenant()) return;
-  const e8 = await api.get(`/api/tenants/${state.activeTenant.name}/e8`);
+  const params = `target=${encodeURIComponent(_e8TargetML)}&exclude_na=${_e8ExcludeNA?'1':'0'}`;
+  const e8 = await api.get(`/api/tenants/${state.activeTenant.name}/e8?${params}`);
 
-  // Overall stats
-  const entries = Object.entries(e8);
-  const totalActions = entries.reduce((s,[,d])=>s+d.total_actions,0);
-  const totalCompleted = entries.reduce((s,[,d])=>s+d.completed_actions,0);
-  const overallPct = totalActions > 0 ? Math.round(totalCompleted/totalActions*100) : 0;
-  const mapped = entries.filter(([,d])=>d.total_actions>0).length;
+  const ov = e8.overall || {};
+  const controls = e8.controls || {};
+  const entries = Object.entries(controls);
+  const mlDescs = e8.maturity_descriptions || {};
 
+  // Helper: maturity level color
+  function mlColor(ml) {
+    if(!ml) return 'var(--text-light)';
+    if(ml.includes('0')) return 'var(--danger)';
+    if(ml.includes('1')) return 'var(--warning)';
+    if(ml.includes('2')) return '#84cc16';
+    return 'var(--success)';
+  }
+  function mlBadge(ml) {
+    const n = ml ? ml.replace('Maturity ','') : 'Level 0';
+    return `<span class="badge" style="background:${mlColor(ml)};color:#fff">${n}</span>`;
+  }
+
+  // ── Spider/Radar chart (SVG) ──
+  function renderRadarChart(controls) {
+    const cx=150,cy=150,r=120;
+    const names = Object.keys(controls);
+    const n = names.length;
+    if(n===0) return '';
+    const angleStep = (2*Math.PI)/n;
+
+    // Grid circles
+    let grid = '';
+    for(let lv=1;lv<=3;lv++){
+      const cr = r*(lv/3);
+      grid += `<circle cx="${cx}" cy="${cy}" r="${cr}" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>`;
+      // Level labels on top axis
+      grid += `<text x="${cx+3}" y="${cy-cr+4}" font-size="9" fill="var(--text-light)">ML${lv}</text>`;
+    }
+
+    // Axis lines and labels
+    let axes = '';
+    let labels = '';
+    names.forEach((name, i) => {
+      const angle = -Math.PI/2 + i*angleStep;
+      const x2 = cx + r*Math.cos(angle);
+      const y2 = cy + r*Math.sin(angle);
+      axes += `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="var(--border)" stroke-width="0.5"/>`;
+      // Label
+      const lx = cx + (r+20)*Math.cos(angle);
+      const ly = cy + (r+20)*Math.sin(angle);
+      const anchor = Math.abs(Math.cos(angle))<0.1?'middle':Math.cos(angle)>0?'start':'end';
+      const shortName = name.length>20 ? name.substring(0,18)+'...' : name;
+      labels += `<text x="${lx}" y="${ly}" font-size="10" fill="var(--text)" text-anchor="${anchor}" dominant-baseline="middle">${shortName}</text>`;
+    });
+
+    // Achieved polygon
+    let achievedPts = names.map((name, i) => {
+      const d = controls[name];
+      const angle = -Math.PI/2 + i*angleStep;
+      const level = d.achieved_maturity_num || 0;
+      const pr = r*(level/3);
+      return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
+    }).join(' ');
+
+    // Target polygon
+    let targetPts = names.map((name, i) => {
+      const d = controls[name];
+      const angle = -Math.PI/2 + i*angleStep;
+      const pr = r*(d.target_maturity_num/3);
+      return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
+    }).join(' ');
+
+    return `<svg viewBox="0 0 300 300" style="width:300px;height:300px">
+      ${grid}${axes}
+      <polygon points="${targetPts}" fill="rgba(59,130,246,0.08)" stroke="var(--primary)" stroke-width="1" stroke-dasharray="5,3"/>
+      <polygon points="${achievedPts}" fill="rgba(34,197,94,0.2)" stroke="var(--success)" stroke-width="2"/>
+      ${labels}
+    </svg>`;
+  }
+
+  // ── Control cards ──
   let cards = entries.map(([ctrl, d], idx) => {
-    let mlBars = Object.entries(d.maturity_levels||{}).map(([ml, md]) =>
-      `<div class="mb-8"><div class="flex justify-between"><span style="font-size:12px">${ml}</span><span style="font-size:12px">${md.completed}/${md.total}</span></div>${progressBar(md.percentage)}</div>`
-    ).join('');
+    const achievedCol = mlColor(d.achieved_maturity);
 
+    // Maturity level progress bars
+    let mlBars = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+      const md = (d.maturity_levels||{})[ml] || {total:0,completed:0,percentage:0};
+      const isTarget = ml === _e8TargetML;
+      const short = ml.replace('Maturity ','');
+      return `<div class="mb-8">
+        <div class="flex justify-between"><span style="font-size:12px;${isTarget?'font-weight:600':''}">${short}${isTarget?' ★':''}</span><span style="font-size:12px">${md.completed}/${md.total}</span></div>
+        ${progressBar(md.percentage)}
+      </div>`;
+    }).join('');
+
+    // M365 products & features
+    const products = (d.m365_products||[]).map(p=>`<span class="badge badge-info" style="font-size:10px;margin:1px">${p}</span>`).join(' ');
+    const features = (d.m365_features||[]).slice(0,5).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
+
+    // Gap analysis
+    let gapSection = '';
+    if(d.gap_action_count > 0) {
+      const gapRows = (d.gap_actions||[]).slice(0,10).map(a => `<tr>
+        <td style="font-size:11px">${a.maturity?.replace('Maturity ','')}</td>
+        <td style="font-size:12px">${(a.title||'').substring(0,50)}</td>
+        <td>${statusBadge(a.status)}</td>
+        <td style="font-size:11px">${a.source_tool||''}</td>
+      </tr>`).join('');
+      gapSection = `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="card-header" style="margin:0;font-size:13px;color:var(--danger)">Gap to Target: ${d.gap_action_count} actions needed</div>
+        <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Level</th><th>Action</th><th>Status</th><th>Source</th></tr></thead><tbody>${gapRows}</tbody></table></div>
+        ${d.gap_action_count>10?`<div style="font-size:11px;color:var(--text-light);margin-top:4px">... and ${d.gap_action_count-10} more</div>`:''}
+      </div>`;
+    }
+
+    // Maturity requirements (from seed data)
+    let reqSection = '';
+    const reqs = d.maturity_requirements || {};
+    if(Object.keys(reqs).length > 0) {
+      let reqPanels = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+        const r = reqs[ml];
+        if(!r || !r.requirements?.length) return '';
+        const items = r.requirements.map(req =>
+          `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--bg-hover)">
+            <code style="font-size:10px;color:var(--primary)">${req.id}</code> ${req.text.substring(0,120)}${req.text.length>120?'...':''}
+            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${req.ism.join(', ')}]</span>`:''}
+          </div>`
+        ).join('');
+        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${r.m365_implementation}</div>` : '';
+        return `<div style="margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${ml.replace('Maturity ','')} (${r.requirement_count} requirements)</div>
+          ${items}${implNote}
+        </div>`;
+      }).join('');
+      reqSection = `<div id="e8-reqs-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="card-header" style="margin:0 0 8px;font-size:13px">Maturity Requirements (ASD)</div>
+        ${reqPanels}
+      </div>`;
+    }
+
+    // Action table
     let actionRows = (d.actions||[]).map(a => `<tr>
+      <td style="font-size:11px;font-family:monospace">${a.reference_id||''}</td>
       <td style="font-size:12px">${a.source_tool||''}</td>
       <td>${(a.title||'').substring(0,55)}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
-      <td style="font-size:12px">${a.maturity||'—'}</td>
+      <td style="font-size:12px">${a.maturity?.replace('Maturity ','')||'—'}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
     </tr>`).join('');
-
-    const achievedColor = d.achieved_maturity==='Level 0'?'var(--danger)':d.achieved_maturity==='Level 1'?'var(--warning)':d.achieved_maturity==='Level 2'?'#84cc16':'var(--success)';
 
     return `<div class="card mb-16">
       <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('e8-detail-${idx}').classList.toggle('hidden')">
         <div>
-          <div class="card-header" style="margin:0;font-size:14px">${ctrl}</div>
-          <div style="font-size:12px;color:var(--text-light);margin-top:4px">${d.completed_actions}/${d.total_actions} actions &middot; Achieved: <strong style="color:${achievedColor}">${d.achieved_maturity}</strong></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="card-header" style="margin:0;font-size:14px">${ctrl}</span>
+            <span style="font-size:11px;color:var(--text-light)">${d.control_id||''}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">
+            ${d.completed_actions}/${d.total_actions} actions &middot;
+            Achieved: ${mlBadge(d.achieved_maturity)}
+            ${d.gap_to_target>0?` &middot; <span style="color:var(--danger)">${d.gap_action_count} gaps to target</span>`:''}
+          </div>
+          <div style="margin-top:4px">${products}</div>
         </div>
         <div style="flex-shrink:0">${gauge(d.percentage, 80)}</div>
       </div>
       <div id="e8-detail-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${d.objective?`<div style="font-size:12px;color:var(--text-light);margin-bottom:12px;font-style:italic">${d.objective}</div>`:''}
         <div class="grid grid-2 mb-16" style="gap:16px">
-          <div>${mlBars||'<div style="color:var(--text-light);font-size:13px">No maturity data</div>'}</div>
-          <div style="font-size:13px">
-            <div class="mb-8"><strong>Achieved Maturity:</strong> <span style="color:${achievedColor}">${d.achieved_maturity}</span></div>
-            <div>A maturity level is considered achieved when &ge;80% of its actions are completed.</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">Maturity Progress</div>
+            ${mlBars}
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">M365 Features</div>
+            ${features||'<div style="color:var(--text-light);font-size:12px">No M365 features mapped</div>'}
           </div>
         </div>
-        ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Maturity</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px">No actions mapped to this control</div>'}
+        <div style="margin-bottom:8px">
+          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-reqs-${idx}').classList.toggle('hidden')">Requirements</button>
+        </div>
+        ${reqSection}
+        ${gapSection}
+        ${actionRows ? `<div style="margin-top:12px"><div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div></div>` : '<div style="color:var(--text-light);padding:8px">No actions mapped to this control</div>'}
       </div>
     </div>`;
   }).join('');
 
+  // ── Maturity summary table ──
+  let matSummaryRows = entries.map(([ctrl,d]) => {
+    const cells = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+      const md = (d.maturity_levels||{})[ml] || {percentage:0,total:0,completed:0};
+      const bg = md.percentage>=80?'var(--success)':md.percentage>=50?'var(--warning)':md.percentage>0?'var(--danger)':'var(--bg-hover)';
+      const txt = md.total>0?`${md.completed}/${md.total}`:'-';
+      return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${md.total>0?'#fff':'var(--text-light)};min-width:40px">${txt}</span></td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px">${ctrl}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
+  }).join('');
+
+  const radarChart = renderRadarChart(controls);
+
   document.getElementById('content').innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <h2 style="margin:0">Essential Eight Assessment</h2>
+      <div style="display:flex;gap:12px;align-items:center">
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" ${_e8ExcludeNA?'checked':''} onchange="_e8ExcludeNA=this.checked;renderE8()"> Exclude N/A & Risk Accepted
+        </label>
+        <select class="input" style="width:auto;font-size:12px" onchange="_e8TargetML=this.value;renderE8()">
+          <option ${_e8TargetML==='Maturity Level 1'?'selected':''}>Maturity Level 1</option>
+          <option ${_e8TargetML==='Maturity Level 2'?'selected':''}>Maturity Level 2</option>
+          <option ${_e8TargetML==='Maturity Level 3'?'selected':''}>Maturity Level 3</option>
+        </select>
+      </div>
+    </div>
+
     <div class="card mb-16"><div class="grid grid-4">
-      <div class="stat-card">${gauge(overallPct, 100)}<div class="label">Overall E8</div></div>
-      <div class="stat-card"><div class="value">${totalActions}</div><div class="label">Total Actions</div></div>
-      <div class="stat-card"><div class="value" style="color:var(--success)">${totalCompleted}</div><div class="label">Completed</div></div>
-      <div class="stat-card"><div class="value">${mapped}/8</div><div class="label">Controls Mapped</div></div>
+      <div class="stat-card">${gauge(ov.overall_percentage||0, 100)}<div class="label">Overall E8</div></div>
+      <div class="stat-card"><div class="value">${ov.total_actions||0}</div><div class="label">Actions Mapped</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--success)">${ov.total_completed||0}</div><div class="label">Completed</div></div>
+      <div class="stat-card">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${mlBadge(ov.overall_achieved_maturity)}
+        </div>
+        <div class="label" style="margin-top:8px">Overall Achieved</div>
+        ${ov.total_gap_actions>0?`<div style="font-size:11px;color:var(--danger);margin-top:2px">${ov.total_gap_actions} gaps to target</div>`:''}
+      </div>
     </div></div>
-    ${cards}`;
+
+    <div class="grid grid-2 mb-16" style="gap:16px">
+      <div class="card" style="display:flex;justify-content:center;align-items:center;padding:16px">
+        ${radarChart}
+        <div style="margin-top:8px;font-size:11px;color:var(--text-light);text-align:center">
+          <span style="color:var(--success)">■</span> Achieved &nbsp;
+          <span style="color:var(--primary)">- -</span> Target
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="font-size:14px">Maturity Summary</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Control</th><th>Achieved</th><th>ML1</th><th>ML2</th><th>ML3</th></tr></thead>
+          <tbody>${matSummaryRows}</tbody>
+        </table></div>
+      </div>
+    </div>
+
+    ${cards}
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">About Essential Eight</div>
+      <p style="font-size:13px">The <a href="https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight" target="_blank">Essential Eight</a> is a set of baseline mitigation strategies from the Australian Signals Directorate (ASD) designed to protect Microsoft Windows-based internet-connected networks.</p>
+      <div class="grid grid-2" style="gap:12px;margin-top:12px">
+        ${Object.entries(mlDescs).map(([ml,desc])=>`<div style="font-size:12px"><strong>${ml}:</strong> ${desc}</div>`).join('')}
+      </div>
+      <div style="margin-top:12px;font-size:12px">
+        <a href="https://blueprint.asd.gov.au/security-and-governance/essential-eight/" target="_blank">ASD Blueprint - Essential Eight</a> &middot;
+        <a href="https://learn.microsoft.com/en-us/compliance/anz/e8-overview" target="_blank">Microsoft E8 Overview</a>
+      </div>
+    </div>`;
 }
 
 // ── SCuBA ──

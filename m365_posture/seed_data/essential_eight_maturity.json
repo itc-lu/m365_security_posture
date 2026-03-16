@@ -1,0 +1,488 @@
+{
+  "framework": "ASD Essential Eight",
+  "version": "October 2024",
+  "reference": "https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight",
+  "maturity_levels": {
+    "Maturity Level 0": "There are weaknesses in the overall cyber security posture. When exploited, these weaknesses could facilitate compromise of the confidentiality, integrity or availability of data.",
+    "Maturity Level 1": "Partly aligned with the intent of the mitigation strategy. Focus on adversaries using commodity tradecraft.",
+    "Maturity Level 2": "Mostly aligned with the intent of the mitigation strategy. Focus on adversaries operating with a modest step-up in capability and targeting.",
+    "Maturity Level 3": "Fully aligned with the intent of the mitigation strategy. Focus on adversaries using more advanced tradecraft."
+  },
+  "controls": [
+    {
+      "id": "E8-AC",
+      "name": "Application Control",
+      "short_name": "AppControl",
+      "description": "Application control prevents the execution of unapproved or malicious programs, including .exe, DLL, scripts and installers.",
+      "objective": "Prevent execution of unapproved/malicious programs on workstations and servers.",
+      "m365_products": ["Intune", "Defender", "Entra ID"],
+      "m365_features": [
+        "Microsoft Defender Application Control (WDAC)",
+        "AppLocker via Intune",
+        "Windows Defender SmartScreen",
+        "Attack Surface Reduction rules",
+        "Controlled folder access"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-AC-ML1-01", "text": "Application control is implemented on workstations to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.", "ism": ["ISM-0843"]},
+            {"id": "E8-AC-ML1-02", "text": "Application control is implemented on internet-facing servers to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.", "ism": ["ISM-1490"]},
+            {"id": "E8-AC-ML1-03", "text": "Allowed and blocked executions on workstations and internet-facing servers are logged.", "ism": ["ISM-1657", "ISM-1658"]}
+          ],
+          "m365_implementation": "Deploy AppLocker or WDAC policies via Intune. Configure ASR rules in Defender for Endpoint. Enable audit logging for allowed/blocked applications."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-AC-ML2-01", "text": "Application control is implemented on workstations to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.", "ism": ["ISM-0843"]},
+            {"id": "E8-AC-ML2-02", "text": "Application control is implemented on internet-facing servers to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.", "ism": ["ISM-1490"]},
+            {"id": "E8-AC-ML2-03", "text": "Application control is implemented on non-internet-facing servers to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.", "ism": ["ISM-1656"]},
+            {"id": "E8-AC-ML2-04", "text": "Application control rulesets are validated on an annual or more frequent basis.", "ism": ["ISM-1582"]},
+            {"id": "E8-AC-ML2-05", "text": "Allowed and blocked executions on workstations and servers are centrally logged.", "ism": ["ISM-1657", "ISM-1658"]},
+            {"id": "E8-AC-ML2-06", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-AC-ML2-07", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Extend WDAC/AppLocker to all servers. Integrate with Microsoft Sentinel for centralized logging and monitoring. Configure log immutability. Set up detection rules for bypass attempts."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-AC-ML3-01", "text": "Application control is implemented on workstations to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set using publisher certificate rules, path rules or hash rules.", "ism": ["ISM-0843"]},
+            {"id": "E8-AC-ML3-02", "text": "Application control is implemented on internet-facing servers to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set using publisher certificate rules, path rules or hash rules.", "ism": ["ISM-1490"]},
+            {"id": "E8-AC-ML3-03", "text": "Application control is implemented on non-internet-facing servers to restrict the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set using publisher certificate rules, path rules or hash rules.", "ism": ["ISM-1656"]},
+            {"id": "E8-AC-ML3-04", "text": "Microsoft's recommended block rules are implemented to prevent application control bypasses.", "ism": ["ISM-1544"]},
+            {"id": "E8-AC-ML3-05", "text": "Microsoft's recommended driver block rules are implemented to prevent vulnerable drivers from being used.", "ism": ["ISM-1659"]},
+            {"id": "E8-AC-ML3-06", "text": "Application control rulesets are validated on an annual or more frequent basis.", "ism": ["ISM-1582"]},
+            {"id": "E8-AC-ML3-07", "text": "Allowed and blocked executions on workstations and servers are centrally logged.", "ism": ["ISM-1657", "ISM-1658"]},
+            {"id": "E8-AC-ML3-08", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-AC-ML3-09", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Enforce WDAC with publisher certificate rules. Implement Microsoft recommended block rules and driver block rules. Full Sentinel integration with automated incident response. Immutable log storage."
+        }
+      }
+    },
+    {
+      "id": "E8-PA",
+      "name": "Patch Applications",
+      "short_name": "PatchApps",
+      "description": "Security vulnerabilities in applications can be used to execute malicious code. Patching applications in a timely manner reduces this risk.",
+      "objective": "Patch or mitigate security vulnerabilities in applications within a defined timeframe.",
+      "m365_products": ["Intune", "Defender"],
+      "m365_features": [
+        "Microsoft Intune app management",
+        "Microsoft Defender Vulnerability Management",
+        "Windows Update for Business",
+        "Microsoft 365 Apps update channels",
+        "Defender for Endpoint TVM"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-PA-ML1-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PA-ML1-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PA-ML1-03", "text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products.", "ism": ["ISM-1809"]},
+            {"id": "E8-PA-ML1-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1690"]},
+            {"id": "E8-PA-ML1-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release.", "ism": ["ISM-1691"]},
+            {"id": "E8-PA-ML1-06", "text": "Internet-facing services, office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed.", "ism": ["ISM-1693"]}
+          ],
+          "m365_implementation": "Use Defender Vulnerability Management for vulnerability scanning. Configure Intune compliance policies for application updates. Use M365 Apps update channel (Monthly Enterprise). Remove unsupported software via Intune app management."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-PA-ML2-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PA-ML2-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PA-ML2-03", "text": "A vulnerability scanner is used at least weekly to identify missing patches or updates for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products.", "ism": ["ISM-1809"]},
+            {"id": "E8-PA-ML2-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1690"]},
+            {"id": "E8-PA-ML2-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1691"]},
+            {"id": "E8-PA-ML2-06", "text": "Internet-facing services, office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed.", "ism": ["ISM-1693"]}
+          ],
+          "m365_implementation": "Increase scan frequency to weekly for all apps. Apply critical patches within 48 hours using Intune expedited updates. Use Defender TVM dashboard for prioritization. Automate compliance reporting."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-PA-ML3-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PA-ML3-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PA-ML3-03", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products.", "ism": ["ISM-1809"]},
+            {"id": "E8-PA-ML3-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1690"]},
+            {"id": "E8-PA-ML3-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within 48 hours of release.", "ism": ["ISM-1691"]},
+            {"id": "E8-PA-ML3-06", "text": "Internet-facing services, office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed.", "ism": ["ISM-1693"]}
+          ],
+          "m365_implementation": "Daily vulnerability scanning via Defender TVM. All patches applied within 48 hours. Automated remediation via Intune. Zero tolerance for unsupported software. Continuous compliance monitoring via Sentinel."
+        }
+      }
+    },
+    {
+      "id": "E8-MS",
+      "name": "Configure Microsoft Office Macro Settings",
+      "short_name": "MacroSettings",
+      "description": "Microsoft Office macros can be used to deliver and execute malicious code. Configuring macro settings reduces this risk.",
+      "objective": "Configure Microsoft Office macro settings to block macros from the internet and only allow vetted macros.",
+      "m365_products": ["Intune", "Defender"],
+      "m365_features": [
+        "Microsoft Intune configuration profiles",
+        "Group Policy via Intune",
+        "Attack Surface Reduction rules",
+        "Office cloud policy service",
+        "Microsoft 365 Apps admin center"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-MS-ML1-01", "text": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement.", "ism": ["ISM-1671"]},
+            {"id": "E8-MS-ML1-02", "text": "Microsoft Office macros in files originating from the internet are blocked.", "ism": ["ISM-1672"]},
+            {"id": "E8-MS-ML1-03", "text": "Microsoft Office macro antivirus scanning is enabled.", "ism": ["ISM-1673"]},
+            {"id": "E8-MS-ML1-04", "text": "Microsoft Office macro security settings cannot be changed by users.", "ism": ["ISM-1674"]}
+          ],
+          "m365_implementation": "Deploy Intune configuration profiles to disable macros by default. Enable 'Block macros from Office files from the internet' via ASR rules. Enable macro antivirus scanning. Lock down macro settings via Office cloud policy."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-MS-ML2-01", "text": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement.", "ism": ["ISM-1671"]},
+            {"id": "E8-MS-ML2-02", "text": "Microsoft Office macros in files originating from the internet are blocked.", "ism": ["ISM-1672"]},
+            {"id": "E8-MS-ML2-03", "text": "Microsoft Office macros are blocked from making Win32 API calls.", "ism": ["ISM-1675"]},
+            {"id": "E8-MS-ML2-04", "text": "Microsoft Office macro antivirus scanning is enabled.", "ism": ["ISM-1673"]},
+            {"id": "E8-MS-ML2-05", "text": "Microsoft Office macro security settings cannot be changed by users.", "ism": ["ISM-1674"]},
+            {"id": "E8-MS-ML2-06", "text": "Allowed and blocked Microsoft Office macro executions are logged.", "ism": ["ISM-1676"]},
+            {"id": "E8-MS-ML2-07", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-MS-ML2-08", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Add ASR rule to block Win32 API calls from macros. Enable centralized logging of macro execution events. Configure Sentinel for macro-related alerts. Protect event logs with immutable storage."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-MS-ML3-01", "text": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement.", "ism": ["ISM-1671"]},
+            {"id": "E8-MS-ML3-02", "text": "Microsoft Office macros in files originating from the internet are blocked.", "ism": ["ISM-1672"]},
+            {"id": "E8-MS-ML3-03", "text": "Microsoft Office macros are blocked from making Win32 API calls.", "ism": ["ISM-1675"]},
+            {"id": "E8-MS-ML3-04", "text": "Only Microsoft Office macros running from within a sandboxed environment, a Trusted Location or that are digitally signed by a trusted publisher are allowed to execute.", "ism": ["ISM-1677"]},
+            {"id": "E8-MS-ML3-05", "text": "Only privileged users responsible for validating that Microsoft Office macros are free of malicious code can write to and modify content within Trusted Locations.", "ism": ["ISM-1678"]},
+            {"id": "E8-MS-ML3-06", "text": "Microsoft Office macro antivirus scanning is enabled.", "ism": ["ISM-1673"]},
+            {"id": "E8-MS-ML3-07", "text": "Microsoft Office macro security settings cannot be changed by users.", "ism": ["ISM-1674"]},
+            {"id": "E8-MS-ML3-08", "text": "Allowed and blocked Microsoft Office macro executions are centrally logged.", "ism": ["ISM-1676"]},
+            {"id": "E8-MS-ML3-09", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-MS-ML3-10", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Restrict macros to digitally signed by trusted publishers only. Configure Trusted Locations with strict access controls. Full centralized logging and monitoring. Sandbox environment for macro validation."
+        }
+      }
+    },
+    {
+      "id": "E8-UH",
+      "name": "User Application Hardening",
+      "short_name": "UserHardening",
+      "description": "Hardening user applications reduces the attack surface by blocking known exploitation techniques in web browsers, Office, and other applications.",
+      "objective": "Configure web browsers, Microsoft Office, and other user applications to reduce exploitation risk.",
+      "m365_products": ["Intune", "Defender", "Entra ID"],
+      "m365_features": [
+        "Attack Surface Reduction rules",
+        "Microsoft Defender SmartScreen",
+        "Intune configuration profiles",
+        "Edge security settings",
+        "Office security settings via cloud policy"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-UH-ML1-01", "text": "Web browsers do not process Java from the internet.", "ism": ["ISM-1486"]},
+            {"id": "E8-UH-ML1-02", "text": "Web browsers do not process web advertisements from the internet.", "ism": ["ISM-1485"]},
+            {"id": "E8-UH-ML1-03", "text": "Internet Explorer 11 does not process content from the internet.", "ism": ["ISM-1666"]},
+            {"id": "E8-UH-ML1-04", "text": "Microsoft Office is blocked from creating child processes.", "ism": ["ISM-1667"]},
+            {"id": "E8-UH-ML1-05", "text": "Microsoft Office is blocked from creating executable content.", "ism": ["ISM-1668"]},
+            {"id": "E8-UH-ML1-06", "text": "Microsoft Office is blocked from injecting code into other processes.", "ism": ["ISM-1669"]},
+            {"id": "E8-UH-ML1-07", "text": "Microsoft Office is configured to prevent activation of OLE packages.", "ism": ["ISM-1542"]},
+            {"id": "E8-UH-ML1-08", "text": "Security settings for Microsoft Office and web browsers cannot be changed by users.", "ism": ["ISM-1585"]}
+          ],
+          "m365_implementation": "Deploy ASR rules via Intune: Block Office child processes, executable content creation, code injection. Disable OLE packages. Configure Edge to block Java and ads. Disable IE11 via Intune. Lock security settings."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-UH-ML2-01", "text": "Web browsers do not process Java from the internet.", "ism": ["ISM-1486"]},
+            {"id": "E8-UH-ML2-02", "text": "Web browsers do not process web advertisements from the internet.", "ism": ["ISM-1485"]},
+            {"id": "E8-UH-ML2-03", "text": "Internet Explorer 11 does not process content from the internet.", "ism": ["ISM-1666"]},
+            {"id": "E8-UH-ML2-04", "text": "Microsoft Office is blocked from creating child processes.", "ism": ["ISM-1667"]},
+            {"id": "E8-UH-ML2-05", "text": "Microsoft Office is blocked from creating executable content.", "ism": ["ISM-1668"]},
+            {"id": "E8-UH-ML2-06", "text": "Microsoft Office is blocked from injecting code into other processes.", "ism": ["ISM-1669"]},
+            {"id": "E8-UH-ML2-07", "text": "Microsoft Office is configured to prevent activation of OLE packages.", "ism": ["ISM-1542"]},
+            {"id": "E8-UH-ML2-08", "text": "PowerShell module logging, script block logging and transcription events are centrally logged.", "ism": ["ISM-1623", "ISM-1624", "ISM-1625"]},
+            {"id": "E8-UH-ML2-09", "text": "Security settings for Microsoft Office, web browsers and PowerShell cannot be changed by users.", "ism": ["ISM-1585"]},
+            {"id": "E8-UH-ML2-10", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-UH-ML2-11", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML1 controls plus: Enable PowerShell logging (module, script block, transcription). Forward to Sentinel. Lock PowerShell security settings via Intune. Enable log protection and monitoring."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-UH-ML3-01", "text": "Web browsers do not process Java from the internet.", "ism": ["ISM-1486"]},
+            {"id": "E8-UH-ML3-02", "text": "Web browsers do not process web advertisements from the internet.", "ism": ["ISM-1485"]},
+            {"id": "E8-UH-ML3-03", "text": "Internet Explorer 11 is disabled or removed.", "ism": ["ISM-1666"]},
+            {"id": "E8-UH-ML3-04", "text": "Microsoft Office is blocked from creating child processes.", "ism": ["ISM-1667"]},
+            {"id": "E8-UH-ML3-05", "text": "Microsoft Office is blocked from creating executable content.", "ism": ["ISM-1668"]},
+            {"id": "E8-UH-ML3-06", "text": "Microsoft Office is blocked from injecting code into other processes.", "ism": ["ISM-1669"]},
+            {"id": "E8-UH-ML3-07", "text": "Microsoft Office is configured to prevent activation of OLE packages.", "ism": ["ISM-1542"]},
+            {"id": "E8-UH-ML3-08", "text": ".NET Framework 3.5 (includes .NET 2.0 and 3.0) is disabled or removed.", "ism": ["ISM-1655"]},
+            {"id": "E8-UH-ML3-09", "text": "Windows PowerShell 2.0 is disabled or removed.", "ism": ["ISM-1654"]},
+            {"id": "E8-UH-ML3-10", "text": "PowerShell is configured to use Constrained Language Mode.", "ism": ["ISM-1621"]},
+            {"id": "E8-UH-ML3-11", "text": "PowerShell module logging, script block logging and transcription events are centrally logged.", "ism": ["ISM-1623", "ISM-1624", "ISM-1625"]},
+            {"id": "E8-UH-ML3-12", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-UH-ML3-13", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML2 controls plus: Remove IE11 and .NET 3.5 via Intune. Disable PowerShell 2.0. Enforce PowerShell Constrained Language Mode via WDAC. Full centralized logging and monitoring."
+        }
+      }
+    },
+    {
+      "id": "E8-RA",
+      "name": "Restrict Administrative Privileges",
+      "short_name": "RestrictAdmin",
+      "description": "Restricting administrative privileges reduces the opportunity for adversaries to use privileged accounts to access sensitive information and systems.",
+      "objective": "Restrict and secure administrative privileges to reduce the attack surface for privileged accounts.",
+      "m365_products": ["Entra ID", "Intune", "Defender"],
+      "m365_features": [
+        "Entra ID Privileged Identity Management (PIM)",
+        "Conditional Access policies",
+        "Privileged Access Workstations (PAW)",
+        "Administrative Units",
+        "Just-in-time access",
+        "Emergency access accounts"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-RA-ML1-01", "text": "Requests for privileged access to systems and applications are validated when first requested.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML1-02", "text": "Privileged access to systems and applications is limited to only what is required for users and services to undertake their duties.", "ism": ["ISM-1508"]},
+            {"id": "E8-RA-ML1-03", "text": "Administrative activities are conducted through jump servers.", "ism": ["ISM-1380"]},
+            {"id": "E8-RA-ML1-04", "text": "Privileged accounts (excluding local administrator accounts and break glass accounts) are prevented from accessing the internet, email and web services.", "ism": ["ISM-1688"]},
+            {"id": "E8-RA-ML1-05", "text": "Privileged users use separate privileged and unprivileged operating environments.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML1-06", "text": "Unprivileged accounts cannot logon to privileged operating environments.", "ism": ["ISM-1508"]},
+            {"id": "E8-RA-ML1-07", "text": "Privileged accounts (excluding local administrator accounts) cannot logon to unprivileged operating environments.", "ism": ["ISM-1175"]}
+          ],
+          "m365_implementation": "Implement PIM for just-in-time access. Create Conditional Access policies to block privileged accounts from browser/email access. Enforce separate admin and user accounts. Use Azure Virtual Desktop or PAW for admin activities."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-RA-ML2-01", "text": "Requests for privileged access to systems and applications are validated when first requested and revalidated on an annual or more frequent basis.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML2-02", "text": "Privileged access to systems and applications is limited to only what is required for users and services to undertake their duties.", "ism": ["ISM-1508"]},
+            {"id": "E8-RA-ML2-03", "text": "Privileged access to systems and applications is automatically disabled after 45 days of inactivity.", "ism": ["ISM-1651"]},
+            {"id": "E8-RA-ML2-04", "text": "Privileged access to systems and applications is automatically disabled after a predetermined period unless revalidated.", "ism": ["ISM-1509"]},
+            {"id": "E8-RA-ML2-05", "text": "Administrative activities are conducted through jump servers.", "ism": ["ISM-1380"]},
+            {"id": "E8-RA-ML2-06", "text": "Privileged accounts (excluding local administrator accounts and break glass accounts) are prevented from accessing the internet, email and web services.", "ism": ["ISM-1688"]},
+            {"id": "E8-RA-ML2-07", "text": "Privileged users use separate privileged and unprivileged operating environments.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML2-08", "text": "Privileged operating environments are not virtualised within unprivileged operating environments.", "ism": ["ISM-1652"]},
+            {"id": "E8-RA-ML2-09", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-RA-ML2-10", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML1 controls plus: Configure PIM with annual access reviews. Set 45-day inactivity auto-disable. Ensure PAW environments are not virtualised within user environments. Centralized logging with Sentinel."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-RA-ML3-01", "text": "Requests for privileged access to systems and applications are validated when first requested and revalidated on an annual or more frequent basis.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML3-02", "text": "Privileged access to systems and applications is limited to only what is required for users and services to undertake their duties.", "ism": ["ISM-1508"]},
+            {"id": "E8-RA-ML3-03", "text": "Privileged access to systems and applications is automatically disabled after 45 days of inactivity.", "ism": ["ISM-1651"]},
+            {"id": "E8-RA-ML3-04", "text": "Privileged access to systems and applications is automatically disabled after 12 months unless revalidated.", "ism": ["ISM-1509"]},
+            {"id": "E8-RA-ML3-05", "text": "Just-in-time administration is used for administering systems and applications.", "ism": ["ISM-1653"]},
+            {"id": "E8-RA-ML3-06", "text": "Administrative activities are conducted through jump servers.", "ism": ["ISM-1380"]},
+            {"id": "E8-RA-ML3-07", "text": "Privileged accounts (excluding local administrator accounts and break glass accounts) are prevented from accessing the internet, email and web services.", "ism": ["ISM-1688"]},
+            {"id": "E8-RA-ML3-08", "text": "Privileged users use separate privileged and unprivileged operating environments.", "ism": ["ISM-1507"]},
+            {"id": "E8-RA-ML3-09", "text": "Privileged operating environments are not virtualised within unprivileged operating environments.", "ism": ["ISM-1652"]},
+            {"id": "E8-RA-ML3-10", "text": "Event logs are centrally logged.", "ism": ["ISM-1405"]},
+            {"id": "E8-RA-ML3-11", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-RA-ML3-12", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML2 controls plus: Full JIT administration via PIM with time-limited activations. 12-month maximum privilege duration. All admin activities through hardened PAW. Full centralized logging and monitoring with Sentinel."
+        }
+      }
+    },
+    {
+      "id": "E8-PO",
+      "name": "Patch Operating Systems",
+      "short_name": "PatchOS",
+      "description": "Security vulnerabilities in operating systems can be used to further compromise systems. Patching operating systems in a timely manner reduces this risk.",
+      "objective": "Patch or mitigate security vulnerabilities in operating systems within a defined timeframe.",
+      "m365_products": ["Intune", "Defender"],
+      "m365_features": [
+        "Windows Update for Business",
+        "Microsoft Intune compliance policies",
+        "Windows Autopatch",
+        "Defender Vulnerability Management",
+        "Feature update policies"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-PO-ML1-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PO-ML1-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in operating systems of internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PO-ML1-03", "text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for security vulnerabilities in operating systems of workstations, servers and network devices.", "ism": ["ISM-1809"]},
+            {"id": "E8-PO-ML1-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1694"]},
+            {"id": "E8-PO-ML1-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of workstations, servers and network devices are applied within one month of release.", "ism": ["ISM-1695"]},
+            {"id": "E8-PO-ML1-06", "text": "Operating systems that are no longer supported by vendors are replaced.", "ism": ["ISM-1696"]}
+          ],
+          "m365_implementation": "Use Defender TVM for vulnerability scanning. Configure Windows Update for Business via Intune with monthly update rings. Set compliance policies requiring OS to be within supported versions. Use Intune device compliance for unsupported OS detection."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-PO-ML2-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PO-ML2-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in operating systems of internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PO-ML2-03", "text": "A vulnerability scanner is used at least weekly to identify missing patches or updates for security vulnerabilities in operating systems of workstations, servers and network devices.", "ism": ["ISM-1809"]},
+            {"id": "E8-PO-ML2-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1694"]},
+            {"id": "E8-PO-ML2-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of workstations, servers and network devices are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1695"]},
+            {"id": "E8-PO-ML2-06", "text": "Operating systems that are no longer supported by vendors are replaced.", "ism": ["ISM-1696"]}
+          ],
+          "m365_implementation": "Increase scan frequency to weekly. Apply critical OS patches within 48 hours using Intune expedited updates. Use Windows Autopatch for automated deployment. Configure compliance policies with 2-week deadline for all patches."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-PO-ML3-01", "text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.", "ism": ["ISM-1807"]},
+            {"id": "E8-PO-ML3-02", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in operating systems of internet-facing services.", "ism": ["ISM-1808"]},
+            {"id": "E8-PO-ML3-03", "text": "A vulnerability scanner is used at least daily to identify missing patches or updates for security vulnerabilities in operating systems of workstations, servers and network devices.", "ism": ["ISM-1809"]},
+            {"id": "E8-PO-ML3-04", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of internet-facing services are applied within two weeks of release, or within 48 hours if an exploit exists.", "ism": ["ISM-1694"]},
+            {"id": "E8-PO-ML3-05", "text": "Patches, updates or other vendor mitigations for security vulnerabilities in operating systems of workstations, servers and network devices are applied within 48 hours of release.", "ism": ["ISM-1695"]},
+            {"id": "E8-PO-ML3-06", "text": "The latest release, or the previous release, of operating systems are used.", "ism": ["ISM-1696"]}
+          ],
+          "m365_implementation": "Daily vulnerability scanning. All OS patches applied within 48 hours. Use only latest or N-1 OS versions. Automated remediation via Intune expedited updates. Zero tolerance for unsupported OS. Continuous monitoring via Defender and Sentinel."
+        }
+      }
+    },
+    {
+      "id": "E8-MFA",
+      "name": "Multi-Factor Authentication",
+      "short_name": "MFA",
+      "description": "Multi-factor authentication makes it significantly harder for adversaries to compromise user credentials and use them to access systems.",
+      "objective": "Implement strong MFA for all users accessing important data and systems, with phishing-resistant MFA at higher maturity levels.",
+      "m365_products": ["Entra ID", "Intune"],
+      "m365_features": [
+        "Conditional Access policies",
+        "Entra ID MFA",
+        "FIDO2 security keys",
+        "Microsoft Authenticator (number matching, push)",
+        "Passkeys",
+        "Certificate-based authentication",
+        "Authentication strengths"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-MFA-ML1-01", "text": "Multi-factor authentication is used to authenticate users to their organisation's online services that process, store or communicate their organisation's sensitive data.", "ism": ["ISM-1504"]},
+            {"id": "E8-MFA-ML1-02", "text": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation's sensitive data.", "ism": ["ISM-1679"]},
+            {"id": "E8-MFA-ML1-03", "text": "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation's non-sensitive data.", "ism": ["ISM-1680"]},
+            {"id": "E8-MFA-ML1-04", "text": "Multi-factor authentication is used to authenticate users to their organisation's online customer services that process, store or communicate their organisation's sensitive customer data.", "ism": ["ISM-1681"]},
+            {"id": "E8-MFA-ML1-05", "text": "Multi-factor authentication is enabled by default for non-organisational users (but they can choose to opt out) of their organisation's online customer services that process, store or communicate their organisation's sensitive customer data.", "ism": ["ISM-1682"]},
+            {"id": "E8-MFA-ML1-06", "text": "Multi-factor authentication uses at least two of the following authentication factor types: something users have, something users know, or something users are.", "ism": ["ISM-1401"]}
+          ],
+          "m365_implementation": "Enable Conditional Access policies requiring MFA for all users accessing M365 services. Configure Microsoft Authenticator as default method. Block legacy authentication protocols. Enable Security Defaults as minimum."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-MFA-ML2-01", "text": "Multi-factor authentication is used to authenticate users to their organisation's online services.", "ism": ["ISM-1504"]},
+            {"id": "E8-MFA-ML2-02", "text": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation's sensitive data.", "ism": ["ISM-1679"]},
+            {"id": "E8-MFA-ML2-03", "text": "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation's non-sensitive data.", "ism": ["ISM-1680"]},
+            {"id": "E8-MFA-ML2-04", "text": "Multi-factor authentication is used to authenticate users to their organisation's online customer services that process, store or communicate their organisation's sensitive customer data.", "ism": ["ISM-1681"]},
+            {"id": "E8-MFA-ML2-05", "text": "Multi-factor authentication is used to authenticate privileged users of systems.", "ism": ["ISM-1683"]},
+            {"id": "E8-MFA-ML2-06", "text": "Multi-factor authentication uses at least two of the following authentication factor types: something users have and is unlocked by either something users know or are, something users have that is unlocked by something users know and are.", "ism": ["ISM-1401"]},
+            {"id": "E8-MFA-ML2-07", "text": "Multi-factor authentication used for authenticating users of online services is phishing-resistant or uses at least two of: something users have and is unlocked by something users know or are.", "ism": ["ISM-1559"]},
+            {"id": "E8-MFA-ML2-08", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-MFA-ML2-09", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Extend MFA to all online services (not just sensitive data). Enforce MFA for all privileged accounts via PIM. Configure Authentication Strengths to require phishing-resistant methods for privileged users. Enable number matching in Authenticator. Monitor sign-in logs via Sentinel."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-MFA-ML3-01", "text": "Multi-factor authentication is used to authenticate users to their organisation's online services.", "ism": ["ISM-1504"]},
+            {"id": "E8-MFA-ML3-02", "text": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation's data.", "ism": ["ISM-1679"]},
+            {"id": "E8-MFA-ML3-03", "text": "Multi-factor authentication is used to authenticate users to their organisation's online customer services that process, store or communicate their organisation's sensitive customer data.", "ism": ["ISM-1681"]},
+            {"id": "E8-MFA-ML3-04", "text": "Multi-factor authentication is used to authenticate privileged users of systems.", "ism": ["ISM-1683"]},
+            {"id": "E8-MFA-ML3-05", "text": "Multi-factor authentication is used to authenticate users of important data repositories.", "ism": ["ISM-1684"]},
+            {"id": "E8-MFA-ML3-06", "text": "Multi-factor authentication is phishing-resistant and uses either: something users have that is unlocked by something users know or are, or something users have that is unlocked by something users know and are.", "ism": ["ISM-1401", "ISM-1559"]},
+            {"id": "E8-MFA-ML3-07", "text": "Multi-factor authentication events are centrally logged.", "ism": ["ISM-1685"]},
+            {"id": "E8-MFA-ML3-08", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-MFA-ML3-09", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "Phishing-resistant MFA for ALL users (FIDO2 security keys, passkeys, or certificate-based auth). Enforce via Conditional Access Authentication Strengths. Block all non-phishing-resistant methods for privileged users. Centralized sign-in logging with Sentinel. Automated response to anomalous authentication events."
+        }
+      }
+    },
+    {
+      "id": "E8-RB",
+      "name": "Regular Backups",
+      "short_name": "Backups",
+      "description": "Regular backups of important data, software and configuration settings ensure information can be accessed following a cyber security incident.",
+      "objective": "Perform and protect regular backups of important data, software and configuration settings.",
+      "m365_products": ["SharePoint Online", "Exchange Online", "OneDrive"],
+      "m365_features": [
+        "Microsoft 365 retention policies",
+        "SharePoint versioning",
+        "OneDrive file restore",
+        "Exchange Online mailbox retention",
+        "Microsoft 365 Backup (preview)",
+        "Azure Backup",
+        "Third-party backup solutions"
+      ],
+      "maturity_levels": {
+        "Maturity Level 1": {
+          "requirements": [
+            {"id": "E8-RB-ML1-01", "text": "Backups of important data, software and configuration settings are performed and retained in accordance with business continuity requirements.", "ism": ["ISM-1511"]},
+            {"id": "E8-RB-ML1-02", "text": "Restoration of systems, software and important data from backups is tested as part of disaster recovery exercises.", "ism": ["ISM-1515"]},
+            {"id": "E8-RB-ML1-03", "text": "Unprivileged accounts cannot access backups belonging to other accounts.", "ism": ["ISM-1705"]},
+            {"id": "E8-RB-ML1-04", "text": "Unprivileged accounts are prevented from modifying and deleting backups.", "ism": ["ISM-1707"]}
+          ],
+          "m365_implementation": "Configure M365 retention policies for Exchange, SharePoint, and OneDrive. Enable SharePoint versioning. Test restore procedures regularly. Restrict backup access to administrators only."
+        },
+        "Maturity Level 2": {
+          "requirements": [
+            {"id": "E8-RB-ML2-01", "text": "Backups of important data, software and configuration settings are performed and retained in accordance with business continuity requirements.", "ism": ["ISM-1511"]},
+            {"id": "E8-RB-ML2-02", "text": "Backups of important data, software and configuration settings are synchronised to enable restoration to a common point in time.", "ism": ["ISM-1810"]},
+            {"id": "E8-RB-ML2-03", "text": "Restoration of systems, software and important data from backups is tested as part of disaster recovery exercises.", "ism": ["ISM-1515"]},
+            {"id": "E8-RB-ML2-04", "text": "Unprivileged accounts cannot access backups belonging to other accounts.", "ism": ["ISM-1705"]},
+            {"id": "E8-RB-ML2-05", "text": "Unprivileged accounts are prevented from modifying and deleting backups.", "ism": ["ISM-1707"]},
+            {"id": "E8-RB-ML2-06", "text": "Privileged accounts (excluding backup administrator accounts) are prevented from modifying and deleting backups.", "ism": ["ISM-1706"]},
+            {"id": "E8-RB-ML2-07", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-RB-ML2-08", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML1 controls plus: Implement point-in-time synchronised backups. Restrict backup deletion to dedicated backup admin accounts only. Use Microsoft 365 Backup or third-party solution with immutable storage. Monitor backup events via Sentinel."
+        },
+        "Maturity Level 3": {
+          "requirements": [
+            {"id": "E8-RB-ML3-01", "text": "Backups of important data, software and configuration settings are performed and retained in accordance with business continuity requirements.", "ism": ["ISM-1511"]},
+            {"id": "E8-RB-ML3-02", "text": "Backups of important data, software and configuration settings are synchronised to enable restoration to a common point in time.", "ism": ["ISM-1810"]},
+            {"id": "E8-RB-ML3-03", "text": "Restoration of systems, software and important data from backups is tested as part of disaster recovery exercises.", "ism": ["ISM-1515"]},
+            {"id": "E8-RB-ML3-04", "text": "Unprivileged accounts cannot access backups belonging to other accounts and their own accounts.", "ism": ["ISM-1705"]},
+            {"id": "E8-RB-ML3-05", "text": "Unprivileged accounts are prevented from modifying and deleting backups.", "ism": ["ISM-1707"]},
+            {"id": "E8-RB-ML3-06", "text": "Privileged accounts (excluding backup administrator accounts) are prevented from modifying and deleting backups.", "ism": ["ISM-1706"]},
+            {"id": "E8-RB-ML3-07", "text": "Backup administrator accounts are prevented from modifying and deleting backups during their retention period.", "ism": ["ISM-1708"]},
+            {"id": "E8-RB-ML3-08", "text": "Event logs are centrally logged.", "ism": ["ISM-1405"]},
+            {"id": "E8-RB-ML3-09", "text": "Event logs are protected from unauthorised modification and deletion.", "ism": ["ISM-1659"]},
+            {"id": "E8-RB-ML3-10", "text": "Event logs are monitored for signs of compromise and actioned when signs of compromise are detected.", "ism": ["ISM-1660"]}
+          ],
+          "m365_implementation": "All ML2 controls plus: Even backup admins cannot delete backups during retention (immutable/WORM storage). Users cannot access their own backups directly. All backup events centrally logged. Use Azure immutable blob storage or equivalent for backup protection."
+        }
+      }
+    }
+  ],
+  "secure_score_to_e8_mapping": [
+    {"secure_score_id": "AdminMFAV2", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "MFARegistrationV2", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "BlockLegacyAuthentication", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "SigninRiskPolicy", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 2"},
+    {"secure_score_id": "UserRiskPolicy", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 2"},
+    {"secure_score_id": "OneAdmin", "e8_control": "E8-RA", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "RoleScopeTags", "e8_control": "E8-RA", "maturity_level": "Maturity Level 2"},
+    {"secure_score_id": "PasswordNeverExpireV2", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "DisableAnonymousJoinMeeting", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "SafeAttachments", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "SafeLinks", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "AntiPhishingPolicy", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "AntiMalwarePolicy", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1"},
+    {"secure_score_id": "SelfServicePasswordReset", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1"}
+  ],
+  "scuba_to_e8_mapping": [
+    {"scuba_prefix": "MS.AAD.3", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1", "notes": "Phishing-resistant MFA policies"},
+    {"scuba_prefix": "MS.AAD.4", "e8_control": "E8-MFA", "maturity_level": "Maturity Level 1", "notes": "Legacy authentication controls"},
+    {"scuba_prefix": "MS.AAD.7", "e8_control": "E8-RA", "maturity_level": "Maturity Level 1", "notes": "Highly privileged role policies"},
+    {"scuba_prefix": "MS.AAD.8", "e8_control": "E8-RA", "maturity_level": "Maturity Level 2", "notes": "PIM and admin role management"},
+    {"scuba_prefix": "MS.EXO.4", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "Mailbox auditing"},
+    {"scuba_prefix": "MS.EXO.8", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "Attachment filtering"},
+    {"scuba_prefix": "MS.DEFENDER.1", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "Safe Links policies"},
+    {"scuba_prefix": "MS.DEFENDER.2", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "Safe Attachments policies"},
+    {"scuba_prefix": "MS.DEFENDER.4", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "Anti-phishing policies"},
+    {"scuba_prefix": "MS.TEAMS.1", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "External access restrictions"},
+    {"scuba_prefix": "MS.SHAREPOINT.1", "e8_control": "E8-UH", "maturity_level": "Maturity Level 1", "notes": "External sharing restrictions"},
+    {"scuba_prefix": "MS.POWERPLATFORM.1", "e8_control": "E8-AC", "maturity_level": "Maturity Level 1", "notes": "Power Platform environment creation restrictions"}
+  ]
+}

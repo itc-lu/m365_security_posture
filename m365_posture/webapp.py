@@ -28,7 +28,7 @@ from .parsers import (
     SCTParser, M365AssessParser,
     enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
 )
-from .essential_eight import apply_e8_mapping, get_e8_summary
+from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions, calculate_action_roi
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
@@ -485,11 +485,18 @@ def create_app(db_path: str = None) -> Flask:
     def api_e8(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
+        target = request.args.get("target", "Maturity Level 3")
+        exclude_na = request.args.get("exclude_na", "0") == "1"
         actions = db.get_actions(name)
         action_objects = [Action.from_dict(a) for a in actions]
         action_objects = apply_e8_mapping(action_objects)
-        summary = get_e8_summary(action_objects)
+        summary = get_e8_summary(action_objects, target_maturity=target, exclude_na=exclude_na)
         return jsonify(summary)
+
+    @app.route("/api/e8/controls", methods=["GET"])
+    def api_e8_controls():
+        """Return the full E8 control definitions with maturity requirements."""
+        return jsonify(get_e8_controls_data())
 
     # ── SCuBA endpoints ──
 
