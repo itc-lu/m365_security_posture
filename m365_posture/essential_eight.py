@@ -21,6 +21,7 @@ from .models import (
 
 _E8_DATA: dict | None = None
 _MS_DATA: dict | None = None
+_ASD_DATA: dict | None = None
 
 
 def _load_e8_data() -> dict:
@@ -58,6 +59,41 @@ def _get_ms_control_by_name(name: str) -> dict:
         if ctrl.get("control_name") == name:
             return ctrl
     return {}
+
+
+def _load_asd_blueprint() -> dict:
+    """Load the ASD Blueprint E8 reference data."""
+    global _ASD_DATA
+    if _ASD_DATA is not None:
+        return _ASD_DATA
+    seed_path = Path(__file__).parent / "seed_data" / "essential_eight_asd_blueprint.json"
+    if seed_path.exists():
+        with open(seed_path, "r", encoding="utf-8") as f:
+            _ASD_DATA = json.load(f)
+    else:
+        _ASD_DATA = {"controls": {}}
+    return _ASD_DATA
+
+
+# Map E8 control names to ASD Blueprint keys
+_ASD_KEY_MAP = {
+    "Application Control": "application_control",
+    "Patch Applications": "patch_applications",
+    "Configure Microsoft Office Macro Settings": "restrict_microsoft_office_macros",
+    "User Application Hardening": "user_application_hardening",
+    "Restrict Administrative Privileges": "restrict_administrative_privileges",
+    "Patch Operating Systems": "patch_operating_systems",
+    "Multi-Factor Authentication": "multi_factor_authentication",
+    "Regular Backups": "regular_backups",
+}
+
+
+def _get_asd_control(name: str) -> dict:
+    """Get ASD Blueprint data for a control."""
+    asd = _load_asd_blueprint()
+    controls = asd.get("controls", {})
+    key = _ASD_KEY_MAP.get(name, "")
+    return controls.get(key, {})
 
 
 def get_e8_controls_data() -> list[dict]:
@@ -374,6 +410,12 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
         ms_licensing = ms_ctrl.get("licensing", {})
         ms_github = ms_ctrl.get("github_resources", [])
 
+        # ASD Blueprint data
+        asd_ctrl = _get_asd_control(control.value)
+        asd_url = asd_ctrl.get("url", "")
+        asd_technologies = asd_ctrl.get("m365_technologies", [])
+        asd_implementation = asd_ctrl.get("implementation_details", {})
+
         # Get maturity requirements from seed data
         maturity_requirements = {}
         for ml_key, ml_data_ref in ctrl_ref.get("maturity_levels", {}).items():
@@ -405,6 +447,9 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
             "ms_doc_url": ms_doc_url,
             "ms_licensing": ms_licensing,
             "ms_guidance": ms_guidance,
+            "asd_url": asd_url,
+            "asd_technologies": asd_technologies,
+            "asd_implementation": asd_implementation,
             "total_actions": total,
             "completed_actions": completed,
             "percentage": round((completed / total) * 100, 1) if total > 0 else 0,

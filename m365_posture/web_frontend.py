@@ -2375,7 +2375,8 @@ async function renderE8() {
 
     // M365 products & features
     const products = (d.m365_products||[]).map(p=>`<span class="badge badge-info" style="font-size:10px;margin:1px">${p}</span>`).join(' ');
-    const features = (d.m365_features||[]).slice(0,5).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
+    const allFeatures = [...new Set([...(d.m365_features||[]), ...(d.asd_technologies||[])])];
+    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
 
     // Gap analysis
     let gapSection = '';
@@ -2461,6 +2462,7 @@ async function renderE8() {
           <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-reqs-${idx}').classList.toggle('hidden')">ASD Requirements</button>
           <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-ms-${idx}').classList.toggle('hidden')">Microsoft Guidance</button>
           ${d.ms_doc_url?`<a class="btn btn-sm" href="${d.ms_doc_url}" target="_blank" onclick="event.stopPropagation()">Microsoft Docs</a>`:''}
+          ${d.asd_url?`<a class="btn btn-sm" href="${d.asd_url}" target="_blank" onclick="event.stopPropagation()">ASD Blueprint</a>`:''}
         </div>
         ${reqSection}
         ${(()=>{

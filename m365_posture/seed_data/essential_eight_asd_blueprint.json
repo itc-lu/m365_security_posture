@@ -1,0 +1,531 @@
+{
+  "source": "ASD Blueprint for Secure Cloud",
+  "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/",
+  "last_fetched": "2026-03-16",
+  "overview": {
+    "description": "The Blueprint does not itself achieve any particular Essential Eight Maturity levels, but rather assists organisations in designing and building systems to achieve their desired maturity level based on their own operating context.",
+    "minimum_requirement": "Under the PSPF, government organisations must implement Maturity Level Two for each Essential Eight component.",
+    "identity_platform": "Microsoft Entra ID",
+    "endpoint_management": "Microsoft Intune",
+    "security_platform": "Microsoft Defender XDR (Defender for Endpoint, Defender for Office 365, Defender for Identity, Defender for Cloud Apps, Defender Vulnerability Management, Entra ID Protection, Purview DLP)",
+    "logging_platform": "Microsoft Log Analytics / Microsoft Sentinel",
+    "siem_platform": "Microsoft Sentinel (recommended)"
+  },
+  "controls": {
+    "patch_applications": {
+      "control_number": 1,
+      "name": "Patch Applications",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/patch-applications/",
+      "description": "Manage and deploy patches for applications to mitigate known vulnerabilities",
+      "m365_technologies": [
+        "Microsoft Intune (patch deployment for Windows endpoints)",
+        "Microsoft Defender for Endpoint (update application)",
+        "Microsoft Defender Vulnerability Management (vulnerability scanning)"
+      ],
+      "asset_discovery": {
+        "requirement": "Automated asset discovery performed at least fortnightly",
+        "tool": "Organization-selected asset discovery tool"
+      },
+      "vulnerability_scanning": {
+        "online_services": {"ML1": "daily", "ML2": "daily", "ML3": "daily"},
+        "core_applications": {"ML1": "weekly", "ML2": "weekly", "ML3": "weekly"},
+        "other_applications": {"ML1": "N/A", "ML2": "fortnightly", "ML3": "fortnightly"},
+        "database_updates": "Nightly minimum",
+        "core_apps_defined_as": "Office productivity suites, web browsers and extensions, email clients, PDF software, security products"
+      },
+      "patching_timelines": {
+        "critical_or_exploited": {
+          "online_services": {"ML1": "48 hours", "ML2": "48 hours", "ML3": "48 hours"},
+          "core_applications": {"ML1": "2 weeks", "ML2": "2 weeks", "ML3": "48 hours"},
+          "other_applications": {"ML1": "N/A", "ML2": "1 month", "ML3": "1 month"}
+        },
+        "non_critical": {
+          "core_applications": {"all_levels": "2 weeks"},
+          "other_applications": {"all_levels": "1 month"}
+        }
+      },
+      "unsupported_applications": {
+        "requirement": "Monitor vendor support lifecycles; remove unsupported applications prior to end-of-support",
+        "applies_to": "Office suites, browsers, extensions, email clients, PDF software, Flash, security products"
+      },
+      "implementation_details": {
+        "windows_endpoints": "Microsoft Intune manages patches; Microsoft Defender for Endpoint applies updates",
+        "hybrid_servers": "Server-specific patch deployment mechanism (organization-defined)",
+        "online_services": "N/A if not implemented"
+      }
+    },
+    "patch_operating_systems": {
+      "control_number": 2,
+      "name": "Patch Operating Systems",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/patch-os/",
+      "description": "Manage and deploy patches for operating systems to mitigate known vulnerabilities",
+      "m365_technologies": [
+        "Microsoft Intune (OS patch deployment for Windows endpoints)",
+        "Microsoft Defender for Endpoint (update application)",
+        "Windows Update for Business"
+      ],
+      "asset_discovery": {
+        "requirement": "Automated method of asset discovery used at least fortnightly"
+      },
+      "vulnerability_scanning": {
+        "internet_facing_servers_os": {"ML1_ML2": "daily", "ML3": "daily"},
+        "internet_facing_servers_drivers_firmware": {"ML1_ML2": "fortnightly", "ML3": "fortnightly"},
+        "workstations_os": {"ML1_ML2": "fortnightly", "ML3": "fortnightly"},
+        "workstations_drivers_firmware": {"ML1_ML2": "fortnightly", "ML3": "fortnightly"}
+      },
+      "patching_timelines": {
+        "internet_facing_systems": {
+          "critical_exploited": {"ML1_ML2": "48 hours", "ML3": "48 hours"},
+          "non_critical": {"ML1_ML2": "2 weeks", "ML3": "1 month"}
+        },
+        "workstations": {
+          "critical_exploited": {"ML1_ML2": "1 month", "ML3": "48 hours"},
+          "non_critical": {"all_levels": "1 month"}
+        }
+      },
+      "unsupported_os": {
+        "all_levels": "Remove vendor-unsupported operating systems",
+        "ML3_additional": "Must use latest or previous OS release"
+      },
+      "implementation_details": {
+        "windows_endpoints": "Patches managed and deployed using Microsoft Intune, applied using Microsoft Defender for Endpoint",
+        "hybrid_servers": "Alternative deployment mechanisms documented in organizational patch management processes"
+      }
+    },
+    "multi_factor_authentication": {
+      "control_number": 3,
+      "name": "Multi-Factor Authentication",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/multi-factor-authentication/",
+      "description": "Implement MFA for access to systems and data, particularly for privileged access",
+      "m365_technologies": [
+        "Microsoft Entra ID (central identity store)",
+        "Microsoft Entra ID Conditional Access",
+        "Microsoft Authenticator app",
+        "FIDO2 Security Keys",
+        "Windows Hello for Business",
+        "Hardware OATH Tokens",
+        "Temporary Access Pass (TAP)",
+        "Microsoft Entra ID Protection (risk-based policies)",
+        "Microsoft 365 Defender portal"
+      ],
+      "authentication_methods_by_maturity": {
+        "ML1": {
+          "allowed": ["Microsoft Authenticator (Passwordless)", "Hardware Token"],
+          "excluded": ["SMS", "Email OTP"]
+        },
+        "ML2_ML3": {
+          "required": "Phishing-resistant MFA only",
+          "primary_methods": ["FIDO2 Security Keys", "Windows Hello for Business (PIN only)"],
+          "onboarding_recovery": ["Temporary Access Pass"],
+          "prohibited": "All password-based combinations and legacy authentication",
+          "note": "Microsoft Authenticator is NOT phishing resistant"
+        }
+      },
+      "microsoft_authenticator_config": {
+        "authentication_mode": "Push notifications (not passwordless)",
+        "number_matching": "Enabled (reduces MFA fatigue attacks)",
+        "additional_context": "Enabled for user verification"
+      },
+      "conditional_access_policies": {
+        "naming_convention": "[PREFIX]-[TYPE]-[purpose]",
+        "prefixes": {"ADM": "administrative users", "DEV": "devices", "GST": "guest users", "LOC": "locations", "USR": "users"},
+        "types": {"B": "blocks access", "G": "grants access", "S": "alters session behavior"},
+        "key_policies": [
+          "Enforce phishing-resistant MFA for all users",
+          "Enforce phishing-resistant MFA for admin access",
+          "Enforce phishing-resistant MFA for Intune device enrollment",
+          "Block legacy authentication methods lacking MFA support",
+          "Block high-risk sign-ins",
+          "Block high-risk user accounts and compromised identities",
+          "Restrict access to iOS and Windows devices only",
+          "Require Intune device compliance across all devices",
+          "Prevent access from non-allowed countries",
+          "Block all unapproved guest access",
+          "Web-based admin sessions expire after 4 hours",
+          "Standard user sessions expire after 12 hours",
+          "Require acceptable use policy acknowledgment"
+        ]
+      },
+      "logging_requirements": {
+        "ML2_ML3": "All successful and unsuccessful MFA events must be captured and centrally logged to Microsoft Log Analytics",
+        "log_protection": "Event logs protected from unauthorized modification and deletion"
+      },
+      "monitoring_requirements": {
+        "internet_facing_servers": {"ML2": "real-time analysis", "ML3": "real-time analysis"},
+        "non_internet_facing_servers": {"ML2": "N/A", "ML3": "required"},
+        "workstations": {"ML2": "N/A", "ML3": "required"}
+      },
+      "phishing_resistance_strategy": [
+        "Require managed devices via Conditional Access",
+        "Geographic restrictions using device GPS signals",
+        "FIDO2 keys as preferred phishing-resistant method"
+      ]
+    },
+    "restrict_administrative_privileges": {
+      "control_number": 4,
+      "name": "Restrict Administrative Privileges",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/restrict-administrative-privileges/",
+      "description": "Restrict and control administrative privileges to reduce the attack surface",
+      "m365_technologies": [
+        "Microsoft Entra ID (identity management)",
+        "Microsoft Entra Privileged Identity Management (PIM)",
+        "Conditional Access policies",
+        "Microsoft 365 Defender portal",
+        "Microsoft Sentinel / SIEM",
+        "Microsoft Log Analytics"
+      ],
+      "privileged_access_validation": {
+        "ML1_ML3": "All access validated when first requested",
+        "ML2_ML3_revalidation": "Disabled after 12 months without revalidation",
+        "ML2_ML3_inactivity": "Disabled after 45 days of inactivity"
+      },
+      "operating_environment_separation": {
+        "all_levels": [
+          "Privileged accounts cannot access unprivileged environments",
+          "Unprivileged accounts cannot access privileged environments"
+        ],
+        "ML2_ML3": [
+          "Privileged environments not virtualized within unprivileged ones",
+          "Administrative activities conducted through jump servers"
+        ],
+        "ML3": "Administrative activities performed on Secure Admin Workstations (SAWs)"
+      },
+      "privileged_account_restrictions": [
+        "Restricted from internet, email, and web service access",
+        "Access limited to required Microsoft management portals",
+        "Role-Based Access Control (RBAC) implementation",
+        "Just-in-time administration required"
+      ],
+      "credential_requirements": {
+        "ML2_ML3": {
+          "break_glass_accounts": "Minimum 30 characters, unique, unpredictable",
+          "local_admin_accounts": "Minimum 30 characters, unique, unpredictable",
+          "service_accounts": "Managed as Managed Service Accounts"
+        }
+      },
+      "credential_protection_ML3": [
+        "Memory integrity enabled",
+        "Local Security Authority (LSA) protection enabled",
+        "Credential Guard enabled",
+        "Remote Credential Guard (where applicable)"
+      ],
+      "event_logging_monitoring": {
+        "events_to_log": [
+          "Privileged access events",
+          "Privileged account management activities",
+          "Group management changes"
+        ],
+        "log_analysis_required": {
+          "internet_facing_servers": "All maturity levels",
+          "non_internet_facing_servers": "ML3 only",
+          "workstations": "ML3 only"
+        }
+      },
+      "assessment_checklist": [
+        "Separate privileged/unprivileged operating environments",
+        "Credential length and complexity standards (30+ characters)",
+        "Centralized identity management via Entra ID",
+        "Automatic account disabling mechanisms",
+        "Just-in-time administration implementation",
+        "Comprehensive event logging and monitoring",
+        "RBAC implementation with principle of least privilege",
+        "Credential Guard and LSA protection enabled",
+        "Jump server or Secure Admin Workstation deployment (ML2+)"
+      ]
+    },
+    "application_control": {
+      "control_number": 5,
+      "name": "Application Control",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/application-control/",
+      "description": "Control which applications are allowed to execute on systems",
+      "m365_technologies": [
+        "Windows Defender Application Control (WDAC)",
+        "Microsoft Intune (WDAC policy deployment)",
+        "AppLocker (supplementary blocklists)",
+        "Microsoft Log Analytics (event logging)"
+      ],
+      "wdac_configuration": {
+        "user_mode_code_integrity": "Enabled",
+        "whql_driver_signing": "Required",
+        "flight_signing": "Disabled",
+        "ev_signers": "Required",
+        "script_enforcement": "Enabled (forces PowerShell into constrained language mode)",
+        "hypervisor_protected_code_integrity": "Enabled",
+        "managed_installer": "Enabled (auto-allows apps deployed via Config Manager)",
+        "intelligent_security_graph": "Disabled",
+        "rule_methodology": "Combination of publisher certificate and path rules",
+        "deployment": "Intune with supplemental policies enabled",
+        "boot_config": "Advanced Boot Options Menu disabled, Boot Audit on Failure enabled"
+      },
+      "controlled_locations": {
+        "windows_endpoints": {
+          "user_profiles": {"ML1": true, "ML2": true, "ML3": true},
+          "temp_folders_os_browser_email": {"ML1": true, "ML2": true, "ML3": true},
+          "all_other_locations": {"ML1": false, "ML2": true, "ML3": true}
+        },
+        "internet_facing_servers": {
+          "user_profiles": {"ML1": false, "ML2": true, "ML3": true},
+          "temp_folders": {"ML1": false, "ML2": true, "ML3": true},
+          "all_other_locations": {"ML1": false, "ML2": true, "ML3": true}
+        },
+        "non_internet_facing_servers": {
+          "user_profiles": {"ML1": false, "ML2": false, "ML3": true},
+          "temp_folders": {"ML1": false, "ML2": false, "ML3": true},
+          "all_other_locations": {"ML1": false, "ML2": false, "ML3": true}
+        }
+      },
+      "controlled_filetypes": {
+        "executables": {"ML1": true, "ML2": true, "ML3": true},
+        "software_libraries": {"ML1": true, "ML2": true, "ML3": true},
+        "scripts": {"ML1": true, "ML2": true, "ML3": true},
+        "installers": {"ML1": true, "ML2": true, "ML3": true},
+        "compiled_html": {"ML1": true, "ML2": true, "ML3": true},
+        "html_applications": {"ML1": true, "ML2": true, "ML3": true},
+        "control_panel_applets": {"ML1": true, "ML2": true, "ML3": true},
+        "drivers": {"ML1": false, "ML2": false, "ML3": true}
+      },
+      "blocklists": {
+        "microsoft_recommended_blocklist": {"ML1": false, "ML2": true, "ML3": true},
+        "microsoft_vulnerable_driver_blocklist": {"ML1": false, "ML2": false, "ML3": true}
+      },
+      "validation_requirement": "ML2 and ML3 require application control rule-sets validated on annual basis minimum",
+      "logging": {
+        "ML2_ML3": "All allowed and blocked application control events centrally logged from workstations, internet-facing servers, non-internet-facing servers",
+        "platform": "Microsoft Log Analytics"
+      },
+      "additional_controls": {
+        "applocker_blocklists": "Prevent administrators from accessing browsers and email clients"
+      }
+    },
+    "restrict_microsoft_office_macros": {
+      "control_number": 6,
+      "name": "Restrict Microsoft Office Macros",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/restrict-microsoft-office-macros/",
+      "description": "Restrict and control Microsoft Office macro execution",
+      "m365_technologies": [
+        "Microsoft Intune (macro policy deployment)",
+        "Microsoft Defender Antivirus (AMSI scanning)",
+        "Microsoft Defender for Endpoint (EDR logging)",
+        "Attack Surface Reduction (ASR) rules",
+        "Microsoft 365 Apps Group Policy / Intune configuration profiles"
+      ],
+      "requirements_all_levels": [
+        "Disable all Microsoft Office macros unless demonstrated business requirement exists",
+        "Block macros from internet-originating files",
+        "Enable antivirus scanning for Office macros",
+        "Prevent user modification of macro security settings"
+      ],
+      "requirements_ML2_ML3": [
+        "Block Win32 API calls from macros (via ASR rules) for users with documented business needs"
+      ],
+      "requirements_ML3": [
+        "Macros execute only when: sandboxed, from Trusted Locations, or digitally signed by trusted publishers",
+        "Pre-signature malicious code checking",
+        "Block enablement via Message Bar/Backstage for untrusted or non-V3 signatures"
+      ],
+      "implementation_details": {
+        "macro_execution": "Restricted to trusted digital certificate signatures per ASD guidance",
+        "internet_origin_blocking": "Internet-origin macros blocked; standard users cannot modify settings",
+        "antivirus_scanning": "Microsoft Defender Antivirus and Defender for Endpoint provide scanning via Antimalware Scan Interface (AMSI) for runtime macro inspection",
+        "asr_rules": "Attack Surface Reduction rules prevent Win32 API calls from macros",
+        "edr_logging": "Defender for Endpoint centrally stores EDR logs including macro-enabled document execution"
+      }
+    },
+    "user_application_hardening": {
+      "control_number": 7,
+      "name": "User Application Hardening",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/user-application-hardening/",
+      "description": "Harden user-facing applications to reduce the attack surface",
+      "m365_technologies": [
+        "Windows Defender Application Control (WDAC)",
+        "Microsoft Edge (hardened browser)",
+        "Microsoft Intune (configuration deployment)",
+        "Microsoft Defender SmartScreen",
+        "Microsoft 365 Apps (hardened configuration)",
+        "Attack Surface Reduction (ASR) rules"
+      ],
+      "requirements_all_levels": [
+        "Internet Explorer 11 disabled/removed",
+        "Web browsers with locked security settings, no Java/ad processing",
+        "Web browsers hardened using ASD and vendor hardening guidance"
+      ],
+      "requirements_ML2_ML3": [
+        "Office suites with locked settings",
+        "Office blocked from creating child processes",
+        "Office blocked from creating executable content",
+        "Office blocked from code injection into other processes",
+        "Microsoft Office configured to prevent activation of OLE packages",
+        "PDF software blocked from creating child processes"
+      ],
+      "requirements_ML3": [
+        ".NET Framework 3.5 disabled/removed",
+        "PowerShell 2.0 disabled/removed",
+        "PowerShell configured for Constrained Language Mode"
+      ],
+      "implementation_details": {
+        "web_browser": "Microsoft Edge hardened via WDAC, Java disabled, ad blocking via WDAC and gateway systems",
+        "office_suite": "Child process creation blocked, executable content creation blocked, code injection blocked, OLE package activation prevented",
+        "powershell": "Constrained Language Mode enforced via WDAC script enforcement"
+      },
+      "logging_ML2_ML3": {
+        "events": [
+          "Command line process creation",
+          "PowerShell module logging",
+          "PowerShell script block logging",
+          "PowerShell transcription events"
+        ],
+        "sources": ["Workstations", "Internet-facing servers", "Non-internet-facing servers"],
+        "platform": "Microsoft Log Analytics"
+      }
+    },
+    "regular_backups": {
+      "control_number": 8,
+      "name": "Regular Backups",
+      "url": "https://blueprint.asd.gov.au/security-and-governance/essential-eight/regular-backups/",
+      "description": "Perform regular backups to enable recovery from ransomware and destructive attacks",
+      "m365_technologies": [
+        "Microsoft 365 Data Lifecycle Management",
+        "Exchange Online (native retention)",
+        "SharePoint Online (native retention)",
+        "OneDrive for Business (native retention)",
+        "Microsoft Teams (native retention)",
+        "Third-party backup solutions (organization-selected)"
+      ],
+      "backup_requirements_all_levels": [
+        "Backups performed and retained according to business criticality",
+        "Backups synchronized to enable restoration to common point in time",
+        "Backups stored securely in a resilient manner",
+        "Backups tested regularly through disaster recovery exercises"
+      ],
+      "access_controls": {
+        "unprivileged_accounts": {
+          "cannot_access_others_backups": {"ML1": true, "ML2": true, "ML3": true},
+          "cannot_modify_delete_backups": {"ML1": true, "ML2": true, "ML3": true},
+          "cannot_access_own_backups": {"ML1": false, "ML2": false, "ML3": true}
+        },
+        "privileged_non_backup_admin": {
+          "restricted_cross_account_access": {"ML1": false, "ML2": true, "ML3": true},
+          "cannot_modify_delete_backups": {"ML1": false, "ML2": true, "ML3": true},
+          "isolation_from_own_backups": {"ML1": false, "ML2": false, "ML3": true}
+        },
+        "backup_admin_accounts": {
+          "cannot_modify_delete_during_retention": {"ML1": false, "ML2": false, "ML3": true}
+        }
+      },
+      "native_m365_retention": {
+        "onedrive": "Recycle bin recovery up to 93 days",
+        "sharepoint_online": "Recycle bin recovery up to 93 days",
+        "exchange_online": "Deleted items recovery approximately 30 days",
+        "teams": "Data retained indefinitely unless retention policies implemented"
+      },
+      "rpo_rto_guidance": {
+        "exchange_online": {"RPO": "24 hours or better", "RTO": "less than 48 hours"},
+        "sharepoint_onedrive_groups_teams": {"RPO": "24 hours or better", "RTO": "less than 48 hours"}
+      },
+      "backup_scope": [
+        "Exchange Online",
+        "SharePoint Online",
+        "Microsoft Teams",
+        "OneDrive for Business",
+        "Microsoft 365 Groups"
+      ]
+    }
+  },
+  "cross_cutting_configurations": {
+    "defender_xdr": {
+      "components": [
+        "Defender for Endpoint",
+        "Defender for Office 365",
+        "Defender for Identity",
+        "Defender for Cloud Apps",
+        "Defender Vulnerability Management",
+        "Entra ID Protection",
+        "Purview DLP",
+        "App Governance"
+      ],
+      "data_retention": "12 months (aligned with ISM requirements)",
+      "data_location": "Australian regions where possible",
+      "rbac": "Unified RBAC model supporting least privilege",
+      "api_integration": "SIEM-SOAR tools, ticketing systems, third-party apps"
+    },
+    "windows_hardening": {
+      "credential_protection": {
+        "virtualization_based_security": "Enabled with UEFI lock",
+        "credential_guard": "Configured for enhanced credential protection",
+        "interactive_logon_caching": "Limited to 1 previous logon",
+        "wdigest_auth": "Disabled",
+        "password_storage_network_auth": "Disabled"
+      },
+      "memory_integrity": "Secure Boot and DMA Protection",
+      "drive_encryption": "BitLocker XTS-AES 256-bit on all drives",
+      "privilege_management": {
+        "builtin_admin": "Disabled",
+        "uac": "All admins in Admin Approval Mode",
+        "elevation": "Requires credentials on secure desktop",
+        "standard_users": "Denied automatic elevation"
+      },
+      "asr_rules": "Multiple ASR rules enabled against credential theft, Office macro abuse, suspicious script execution",
+      "authentication_hardening": {
+        "ntlm": "NTLMv2 required; LM and NTLM refused",
+        "kerberos_encryption": "AES128/AES256 HMAC-SHA1",
+        "secure_channel": "Digitally signed and encrypted"
+      },
+      "additional": {
+        "powershell_script_block_logging": "Enabled",
+        "command_prompt_access": "Restricted",
+        "remote_assistance": "Disabled",
+        "smb_v1": "Disabled"
+      }
+    },
+    "entra_id_password_policy": {
+      "minimum_length": 8,
+      "maximum_length": 256,
+      "complexity": "Three of four: uppercase, lowercase, numbers, symbols",
+      "unicode": "Not allowed",
+      "password_reuse": "No recent password reuse",
+      "password_lockout": "Configured to mitigate brute force",
+      "custom_banned_lists": "Organization-specific weak password detection"
+    }
+  },
+  "maturity_level_summary": {
+    "ML1": {
+      "description": "Basic mitigation strategies",
+      "key_requirements": [
+        "Patch applications: 2-week SLA for critical core apps, weekly vulnerability scanning",
+        "Patch OS: 1-month SLA for critical workstation patches",
+        "MFA: Microsoft Authenticator (Passwordless) or Hardware Token; no SMS/email",
+        "Admin privileges: Access validated on request; privileged/unprivileged separation",
+        "Application control: WDAC on user profiles and temp folders; 7 filetypes controlled",
+        "Office macros: Disabled unless business need; block internet-origin; AV scanning",
+        "User app hardening: IE11 disabled; browser security locked; no Java/ads",
+        "Backups: Performed per business criticality; unprivileged users cannot access/modify others' backups"
+      ]
+    },
+    "ML2": {
+      "description": "Target maturity for Australian Government (PSPF minimum)",
+      "key_requirements": [
+        "Patch applications: 2-week SLA for critical core apps; fortnightly scanning for all apps",
+        "Patch OS: 48-hour SLA for internet-facing critical; 2-week non-critical",
+        "MFA: Phishing-resistant only (FIDO2, WHfB); all MFA events logged centrally",
+        "Admin privileges: 12-month revalidation; 45-day inactivity disable; jump servers; 30-char credentials",
+        "Application control: All locations controlled; Microsoft recommended blocklist; annual rule validation; all events logged",
+        "Office macros: Win32 API calls blocked via ASR rules",
+        "User app hardening: Office child process/executable/injection blocked; OLE blocked; PDF child process blocked",
+        "Backups: Privileged non-backup-admin access restricted; cannot modify/delete"
+      ]
+    },
+    "ML3": {
+      "description": "Advanced maturity for high-value targets",
+      "key_requirements": [
+        "Patch applications: 48-hour SLA for ALL critical patches",
+        "Patch OS: 48-hour SLA for critical workstation patches; latest/previous release only",
+        "MFA: Phishing-resistant; real-time analysis for all systems including workstations",
+        "Admin privileges: Secure Admin Workstations; Credential Guard; LSA protection; memory integrity",
+        "Application control: Non-internet-facing servers included; drivers controlled; vulnerable driver blocklist",
+        "Office macros: Trusted Locations/publishers/sandboxed only; pre-signature malicious code checking",
+        "User app hardening: .NET 3.5 removed; PS 2.0 removed; PS Constrained Language Mode",
+        "Backups: Backup admins cannot modify/delete during retention; users cannot access own backups"
+      ]
+    }
+  }
+}
