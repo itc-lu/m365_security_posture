@@ -20,6 +20,7 @@ from .models import (
 # ── Seed data loading ──────────────────────────────────────────────
 
 _E8_DATA: dict | None = None
+_MS_DATA: dict | None = None
 
 
 def _load_e8_data() -> dict:
@@ -34,6 +35,29 @@ def _load_e8_data() -> dict:
     else:
         _E8_DATA = {"controls": [], "secure_score_to_e8_mapping": [], "scuba_to_e8_mapping": []}
     return _E8_DATA
+
+
+def _load_ms_mapping() -> dict:
+    """Load the Microsoft E8 compliance mapping data."""
+    global _MS_DATA
+    if _MS_DATA is not None:
+        return _MS_DATA
+    seed_path = Path(__file__).parent / "seed_data" / "essential_eight_microsoft_mapping.json"
+    if seed_path.exists():
+        with open(seed_path, "r", encoding="utf-8") as f:
+            _MS_DATA = json.load(f)
+    else:
+        _MS_DATA = {"controls": []}
+    return _MS_DATA
+
+
+def _get_ms_control_by_name(name: str) -> dict:
+    """Get Microsoft mapping data for a control by name."""
+    ms = _load_ms_mapping()
+    for ctrl in ms.get("controls", []):
+        if ctrl.get("control_name") == name:
+            return ctrl
+    return {}
 
 
 def get_e8_controls_data() -> list[dict]:
@@ -343,6 +367,13 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
         m365_features = ctrl_ref.get("m365_features", [])
         objective = ctrl_ref.get("objective", "")
 
+        # Merge Microsoft-specific mapping data
+        ms_ctrl = _get_ms_control_by_name(control.value)
+        ms_ml_mapping = ms_ctrl.get("maturity_level_mapping", {})
+        ms_doc_url = ms_ctrl.get("microsoft_doc_url", "")
+        ms_licensing = ms_ctrl.get("licensing", {})
+        ms_github = ms_ctrl.get("github_resources", [])
+
         # Get maturity requirements from seed data
         maturity_requirements = {}
         for ml_key, ml_data_ref in ctrl_ref.get("maturity_levels", {}).items():
@@ -354,11 +385,26 @@ def get_e8_summary(actions: list[Action], target_maturity: str = "Maturity Level
                 "requirement_count": len(reqs),
             }
 
+        # Build Microsoft implementation guidance per maturity level
+        ms_guidance = {}
+        for ml_key in ["ML1", "ML2", "ML3"]:
+            ml_data_ms = ms_ml_mapping.get(ml_key, {})
+            if ml_data_ms:
+                ms_guidance[ml_key] = {
+                    "primary_tool": ml_data_ms.get("primary_tool", ""),
+                    "description": ml_data_ms.get("description", ""),
+                    "key_configurations": ml_data_ms.get("key_configurations", []),
+                    "ism_controls": ml_data_ms.get("ism_controls", []),
+                }
+
         summary[control.value] = {
             "control_id": ctrl_id,
             "objective": objective,
             "m365_products": m365_products,
             "m365_features": m365_features,
+            "ms_doc_url": ms_doc_url,
+            "ms_licensing": ms_licensing,
+            "ms_guidance": ms_guidance,
             "total_actions": total,
             "completed_actions": completed,
             "percentage": round((completed / total) * 100, 1) if total > 0 else 0,

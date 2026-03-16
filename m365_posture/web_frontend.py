@@ -2457,10 +2457,31 @@ async function renderE8() {
             ${features||'<div style="color:var(--text-light);font-size:12px">No M365 features mapped</div>'}
           </div>
         </div>
-        <div style="margin-bottom:8px">
-          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-reqs-${idx}').classList.toggle('hidden')">Requirements</button>
+        <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-reqs-${idx}').classList.toggle('hidden')">ASD Requirements</button>
+          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-ms-${idx}').classList.toggle('hidden')">Microsoft Guidance</button>
+          ${d.ms_doc_url?`<a class="btn btn-sm" href="${d.ms_doc_url}" target="_blank" onclick="event.stopPropagation()">Microsoft Docs</a>`:''}
         </div>
         ${reqSection}
+        ${(()=>{
+          const msg = d.ms_guidance || {};
+          if(!Object.keys(msg).length) return '';
+          let panels = ['ML1','ML2','ML3'].map(ml => {
+            const g = msg[ml];
+            if(!g) return '';
+            const configs = (g.key_configurations||[]).map(c=>`<div style="font-size:11px;padding:2px 0">• ${typeof c==='string'?c:JSON.stringify(c)}</div>`).join('');
+            return '<div style="margin-bottom:10px;padding:8px;background:var(--bg-hover);border-radius:4px">'+
+              '<div style="font-size:12px;font-weight:600;margin-bottom:4px">'+ml+': '+g.primary_tool+'</div>'+
+              '<div style="font-size:11px;color:var(--text-light);margin-bottom:4px">'+g.description+'</div>'+
+              (configs?'<div style="margin-top:4px"><strong style="font-size:11px">Key Configurations:</strong>'+configs+'</div>':'')+
+            '</div>';
+          }).join('');
+          const lic = d.ms_licensing||{};
+          const licHtml = Object.keys(lic).length?'<div style="margin-top:8px;font-size:11px"><strong>Licensing:</strong> '+Object.entries(lic).map(([k,v])=>k+': '+(typeof v==='string'?v:JSON.stringify(v))).join(', ')+'</div>':'';
+          return '<div id="e8-ms-'+idx+'" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">'+
+            '<div class="card-header" style="margin:0 0 8px;font-size:13px">Microsoft Implementation Guidance</div>'+
+            panels+licHtml+'</div>';
+        })()}
         ${gapSection}
         ${actionRows ? `<div style="margin-top:12px"><div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div></div>` : '<div style="color:var(--text-light);padding:8px">No actions mapped to this control</div>'}
       </div>
