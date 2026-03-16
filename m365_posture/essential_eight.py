@@ -181,6 +181,20 @@ def get_e8_summary(actions: list[Action]) -> dict:
             "percentage": round((completed / total) * 100, 1) if total > 0 else 0,
             "maturity_levels": maturity_data,
             "achieved_maturity": achieved,
+            "actions": [
+                {
+                    "id": a.id if hasattr(a, 'id') else "",
+                    "title": a.title,
+                    "status": a.status,
+                    "priority": a.priority,
+                    "source_tool": a.source_tool,
+                    "maturity": a.essential_eight_maturity or "",
+                    "workload": a.workload,
+                    "score": a.score,
+                    "max_score": a.max_score,
+                }
+                for a in control_actions
+            ],
         }
 
     return summary

@@ -636,6 +636,122 @@ def create_app(db_path: str = None) -> Flask:
 
         return jsonify(result)
 
+    # ── GitLab Templates ──
+
+    @app.route("/api/tenants/<name>/gitlab-templates", methods=["GET"])
+    def api_list_gitlab_templates(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_gitlab_templates(name))
+
+    @app.route("/api/tenants/<name>/gitlab-templates", methods=["POST"])
+    def api_create_gitlab_template(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        if not data.get("name"):
+            return _json_error("name is required")
+        tpl = db.create_gitlab_template(
+            name, data["name"], data.get("template_type", "assessment"),
+            data.get("title_template", ""), data.get("body_template", ""),
+            data.get("labels", []),
+        )
+        return jsonify(tpl), 201
+
+    @app.route("/api/gitlab-templates/<template_id>", methods=["GET"])
+    def api_get_gitlab_template(template_id):
+        tpl = db.get_gitlab_template(template_id)
+        if not tpl:
+            return _json_error("Template not found", 404)
+        return jsonify(tpl)
+
+    @app.route("/api/gitlab-templates/<template_id>", methods=["PUT"])
+    def api_update_gitlab_template(template_id):
+        data = request.get_json() or {}
+        tpl = db.update_gitlab_template(template_id, **data)
+        if not tpl:
+            return _json_error("Template not found", 404)
+        return jsonify(tpl)
+
+    @app.route("/api/gitlab-templates/<template_id>", methods=["DELETE"])
+    def api_delete_gitlab_template(template_id):
+        db.delete_gitlab_template(template_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/tenants/<name>/plans/<plan_id>/export-gitlab", methods=["POST"])
+    def api_export_plan_gitlab(name, plan_id):
+        """Export plan actions as GitLab-ready files using tenant's templates."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        plan = db.get_plan(plan_id)
+        if not plan:
+            return _json_error("Plan not found", 404)
+
+        data = request.get_json() or {}
+        template_id = data.get("template_id")
+        if not template_id:
+            return _json_error("template_id is required")
+        tpl = db.get_gitlab_template(template_id)
+        if not tpl:
+            return _json_error("Template not found", 404)
+
+        tenant = db.get_tenant(name)
+
+        # Render each action through the template
+        issues = []
+        for item in plan.get("items", []):
+            # Build variable context for template substitution
+            ctx = {
+                "action_title": item.get("title", ""),
+                "action_status": item.get("status", ""),
+                "action_priority": item.get("priority", ""),
+                "action_workload": item.get("workload", ""),
+                "action_effort": item.get("implementation_effort", ""),
+                "action_risk_level": item.get("risk_level", ""),
+                "action_user_impact": item.get("user_impact", ""),
+                "action_score": f"{item.get('score', 0)}/{item.get('max_score', 0)}",
+                "action_source": item.get("source_tool", ""),
+                "action_licence": item.get("required_licence", ""),
+                "action_id": item.get("action_id", ""),
+                "plan_name": plan.get("name", ""),
+                "tenant_name": tenant.get("display_name", name),
+                "tenant_id": tenant.get("tenant_id", ""),
+            }
+
+            # Get full action for description/remediation
+            full_action = db.get_action(item.get("action_id", ""))
+            if full_action:
+                ctx["action_description"] = full_action.get("description", "")
+                ctx["action_remediation"] = full_action.get("remediation_steps", "")
+                ctx["action_current_value"] = full_action.get("current_value", "")
+                ctx["action_recommended_value"] = full_action.get("recommended_value", "")
+                ctx["action_reference_url"] = full_action.get("reference_url", "")
+                ctx["action_category"] = full_action.get("category", "")
+                ctx["action_subcategory"] = full_action.get("subcategory", "")
+                ctx["action_tags"] = ", ".join(full_action.get("tags", []))
+
+            # Substitute variables in templates
+            title = tpl.get("title_template", "")
+            body = tpl.get("body_template", "")
+            for k, v in ctx.items():
+                title = title.replace(f"{{{{{k}}}}}", str(v or ""))
+                body = body.replace(f"{{{{{k}}}}}", str(v or ""))
+
+            issues.append({
+                "title": title,
+                "body": body,
+                "labels": tpl.get("labels", []),
+                "action_id": item.get("action_id", ""),
+            })
+
+        return jsonify({
+            "template": tpl["name"],
+            "template_type": tpl["template_type"],
+            "plan": plan["name"],
+            "issue_count": len(issues),
+            "issues": issues,
+        })
+
     # ── Export endpoint ──
 
     @app.route("/api/tenants/<name>/export", methods=["POST"])

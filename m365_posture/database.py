@@ -265,6 +265,19 @@ class Database:
                     source_file TEXT DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_zt_reports_tenant ON zt_reports(tenant_name);
+
+                CREATE TABLE IF NOT EXISTS gitlab_templates (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    template_type TEXT NOT NULL DEFAULT 'assessment',
+                    title_template TEXT DEFAULT '',
+                    body_template TEXT DEFAULT '',
+                    labels TEXT DEFAULT '[]',
+                    created_at TEXT,
+                    updated_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_gitlab_tpl_tenant ON gitlab_templates(tenant_name);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -359,6 +372,63 @@ class Database:
             d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
             d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
             return d
+
+    # ── GitLab Templates ──
+
+    def get_gitlab_templates(self, tenant_name: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM gitlab_templates WHERE tenant_name=? ORDER BY template_type, name",
+                (tenant_name,),
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["labels"] = json.loads(d.get("labels") or "[]")
+                result.append(d)
+            return result
+
+    def get_gitlab_template(self, template_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM gitlab_templates WHERE id=?", (template_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["labels"] = json.loads(d.get("labels") or "[]")
+            return d
+
+    def create_gitlab_template(self, tenant_name: str, name: str, template_type: str,
+                                title_template: str, body_template: str,
+                                labels: list[str] = None) -> dict:
+        tid = _generate_id()
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO gitlab_templates (id, tenant_name, name, template_type,
+                   title_template, body_template, labels, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (tid, tenant_name, name, template_type,
+                 title_template, body_template, json.dumps(labels or []), now, now),
+            )
+        return self.get_gitlab_template(tid)
+
+    def update_gitlab_template(self, template_id: str, **kwargs) -> dict | None:
+        allowed = {"name", "template_type", "title_template", "body_template", "labels"}
+        updates = {}
+        for k, v in kwargs.items():
+            if k in allowed:
+                updates[k] = json.dumps(v) if k == "labels" else v
+        if updates:
+            updates["updated_at"] = datetime.utcnow().isoformat()
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [template_id]
+            with self._conn() as conn:
+                conn.execute(f"UPDATE gitlab_templates SET {sets} WHERE id=?", vals)
+        return self.get_gitlab_template(template_id)
+
+    def delete_gitlab_template(self, template_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM gitlab_templates WHERE id=?", (template_id,))
 
     # ── Graph API overall scores ──
 

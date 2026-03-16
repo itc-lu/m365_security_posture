@@ -347,17 +347,22 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 <script>
 // ── API Client ──
 const api = {
-  async get(url) { const r = await fetch(url); return r.json(); },
+  async _handle(r) {
+    const data = await r.json().catch(()=>({error:'Invalid response'}));
+    if(!r.ok && !data.error) data.error = `HTTP ${r.status}`;
+    return data;
+  },
+  async get(url) { const r = await fetch(url); return this._handle(r); },
   async post(url, data) {
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    return r.json();
+    return this._handle(r);
   },
   async put(url, data) {
     const r = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    return r.json();
+    return this._handle(r);
   },
-  async del(url) { const r = await fetch(url, {method:'DELETE'}); return r.json(); },
-  async upload(url, formData) { const r = await fetch(url, {method:'POST', body:formData}); return r.json(); },
+  async del(url) { const r = await fetch(url, {method:'DELETE'}); return this._handle(r); },
+  async upload(url, formData) { const r = await fetch(url, {method:'POST', body:formData}); return this._handle(r); },
   async download(url, data) {
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
     return r;
@@ -1139,8 +1144,12 @@ async function showAddToPlan(actionIds) {
   // Store plan existing items for dedup at submit time
   const planData = [];
   for(const p of plans) {
-    const full = await api.get(`/api/plans/${p.id}`);
-    planData.push({...p, existingActionIds: full.items.map(i => i.action_id)});
+    try {
+      const full = await api.get(`/api/plans/${p.id}`);
+      planData.push({...p, existingActionIds: (full?.items||[]).map(i => i.action_id)});
+    } catch(e) {
+      planData.push({...p, existingActionIds: []});
+    }
   }
   window._atpPlanData = planData;
 
@@ -1203,12 +1212,14 @@ async function addToPlanSubmit() {
       return toast('All selected actions are already in this plan', 'error');
     }
 
+    let added = 0;
     for(const aid of newIds) {
-      await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+      const r = await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+      if(!r.error) added++;
     }
     closeModal();
     const dupeMsg = dupes ? ` (${dupes} already in plan, skipped)` : '';
-    toast(`${newIds.length} action${newIds.length>1?'s':''} added to plan${dupeMsg}`, 'success');
+    toast(`${added} action${added>1?'s':''} added to plan${dupeMsg}`, 'success');
   }
 }
 
@@ -1727,7 +1738,7 @@ async function showZtReportDetail(reportId) {
 
   const htmlBtn = r.html_path ? `<button class="btn btn-primary" onclick="window.open('/api/zt-reports/${r.id}/html','_blank')">Open Full HTML Report</button>` : '';
 
-  showModal('Zero Trust Report Details', `
+  openModal('Zero Trust Report Details', `
     <div style="margin-bottom:16px">
       <div class="grid grid-2" style="gap:8px;font-size:13px">
         <div><strong>Domain:</strong> ${r.report_domain||'—'}</div>
@@ -1872,6 +1883,7 @@ async function viewPlan(planId) {
         <div class="flex gap-8 items-center">
           <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
           <button class="btn btn-sm" onclick="showEditPlan('${planId}', ${JSON.stringify(plan.name).replace(/"/g,'&quot;')}, ${JSON.stringify(plan.description||'').replace(/"/g,'&quot;')})">Edit</button>
+          <button class="btn btn-sm" onclick="exportPlanPDF('${planId}')">PDF Report</button>
           <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
         </div>
       </div>
@@ -1973,6 +1985,83 @@ async function submitAddActionsToPlan(planId) {
   viewPlan(planId);
 }
 
+async function exportPlanPDF(planId) {
+  const t = state.activeTenant.name;
+  const [plan, sim] = await Promise.all([
+    api.get(`/api/plans/${planId}`),
+    api.post(`/api/tenants/${t}/simulate`, {action_ids: (await api.get(`/api/plans/${planId}`)).items.map(i=>i.action_id)}).catch(()=>({}))
+  ]);
+  const tenant = state.activeTenant;
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
+  // Group by priority
+  const byPriority = {};
+  (plan.items||[]).forEach(a => { const p=a.priority||'Medium'; if(!byPriority[p]) byPriority[p]=[]; byPriority[p].push(a); });
+  // Group by workload
+  const byWorkload = {};
+  (plan.items||[]).forEach(a => { const w=a.workload||'General'; if(!byWorkload[w]) byWorkload[w]=[]; byWorkload[w].push(a); });
+  // Status counts
+  const statusCounts = {};
+  (plan.items||[]).forEach(a => { statusCounts[a.status||'ToDo'] = (statusCounts[a.status||'ToDo']||0)+1; });
+
+  let actionRows = (plan.items||[]).map((a,i) => `<tr>
+    <td>${i+1}</td><td>${a.title||''}</td><td>${a.status||''}</td><td>${a.priority||''}</td>
+    <td>${a.workload||''}</td><td>${a.implementation_effort||''}</td>
+    <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+  </tr>`).join('');
+
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>${plan.name} - Plan Report</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:40px;color:#1e293b;font-size:13px}
+    h1{font-size:22px;margin-bottom:4px} h2{font-size:16px;margin-top:24px;border-bottom:2px solid #3b82f6;padding-bottom:4px}
+    .meta{color:#64748b;font-size:12px;margin-bottom:20px}
+    .kpi-row{display:flex;gap:16px;margin:16px 0}
+    .kpi{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
+    .kpi .val{font-size:24px;font-weight:700;color:#3b82f6} .kpi .lbl{font-size:11px;color:#64748b;margin-top:4px}
+    table{width:100%;border-collapse:collapse;margin:8px 0} th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;font-size:12px}
+    th{background:#f1f5f9;font-weight:600} tr:nth-child(even){background:#f8fafc}
+    .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+    .green{color:#10b981} .red{color:#ef4444} .yellow{color:#f59e0b}
+    @media print{body{margin:20px}}
+  </style></head><body>
+  <h1>${plan.name}</h1>
+  <div class="meta">${tenant.display_name||tenant.name} &middot; ${today} &middot; Status: ${plan.status}</div>
+  <p>${plan.description||''}</p>
+
+  <h2>Key Performance Indicators</h2>
+  <div class="kpi-row">
+    <div class="kpi"><div class="val">${plan.items?.length||0}</div><div class="lbl">Total Actions</div></div>
+    <div class="kpi"><div class="val green">+${(sim.percentage_gain||0).toFixed(1)}%</div><div class="lbl">Projected Score Gain</div></div>
+    <div class="kpi"><div class="val">${(sim.current_percentage||0).toFixed(1)}%</div><div class="lbl">Current Score</div></div>
+    <div class="kpi"><div class="val green">${(sim.projected_percentage||0).toFixed(1)}%</div><div class="lbl">Projected Score</div></div>
+  </div>
+
+  <h2>Status Breakdown</h2>
+  <div class="kpi-row">${Object.entries(statusCounts).map(([s,n])=>`<div class="kpi"><div class="val">${n}</div><div class="lbl">${s}</div></div>`).join('')}</div>
+
+  <h2>By Priority</h2>
+  <table><thead><tr><th>Priority</th><th>Count</th><th>Actions</th></tr></thead><tbody>
+  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${p}</td><td>${acts.length}</td><td style="font-size:11px">${acts.map(a=>a.title?.substring(0,40)).join(', ')}</td></tr>`).join('')}
+  </tbody></table>
+
+  <h2>By Workload</h2>
+  <table><thead><tr><th>Workload</th><th>Count</th></tr></thead><tbody>
+  ${Object.entries(byWorkload).map(([w,acts])=>`<tr><td>${w}</td><td>${acts.length}</td></tr>`).join('')}
+  </tbody></table>
+
+  <h2>All Planned Actions</h2>
+  <table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th></tr></thead>
+  <tbody>${actionRows}</tbody></table>
+
+  <div style="margin-top:30px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:8px">
+    Generated by M365 Security Posture Manager &middot; ${today}
+  </div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(), 500);
+}
+
 async function deletePlan(id) {
   if(!confirm('Delete this plan?')) return;
   await api.del(`/api/plans/${id}`);
@@ -2009,11 +2098,14 @@ async function renderCorrelations() {
 
   let html = corr.map(g => `
     <div class="card mb-16">
-      <div class="card-header">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+      <div class="flex justify-between items-center">
+        <div class="card-header" style="margin:0">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+        <button class="btn btn-sm" onclick="showAddActionToGroup('${g.group_id}','${g.canonical_name.replace(/'/g,"\\'")}')">+ Add Action</button>
+      </div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${g.description}</p>
       <div style="font-size:13px;margin-bottom:8px">Found in ${g.source_count} tools: ${g.sources.join(', ')}</div>
-      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th></tr></thead><tbody>
-        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td></tr>`).join('')}
+      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>
+        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -2063,14 +2155,11 @@ async function seedDefaultFamilies() {
 }
 
 function showAddFamily() {
-  showModal('Add Control Family', `
+  openModal('Add Control Family', `
     <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" placeholder="e.g. MFA Enforcement"></div>
     <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" placeholder="Short description"></div>
-    <div class="field mb-16"><label class="field-label">Keywords (comma-separated)</label><textarea id="cf-kw" class="form-control" rows="4" placeholder="mfa, multi-factor, authenticator, ..."></textarea></div>
-    <div class="flex gap-8 mt-16">
-      <button class="btn btn-primary" onclick="submitAddFamily()">Save</button>
-      <button class="btn" onclick="closeModal()">Cancel</button>
-    </div>`);
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4" placeholder="mfa, multi-factor, authenticator, ..."></textarea></div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddFamily()">Save</button>');
 }
 
 async function submitAddFamily() {
@@ -2089,14 +2178,11 @@ async function editControlFamily(id) {
   const groups = await api.get('/api/correlation-groups');
   const g = groups.find(x=>x.id===id);
   if(!g) return toast('Family not found','error');
-  showModal('Edit Control Family', `
+  openModal('Edit Control Family', `
     <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${g.canonical_name}"></div>
     <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${g.description||''}"></div>
-    <div class="field mb-16"><label class="field-label">Keywords (comma-separated)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>
-    <div class="flex gap-8 mt-16">
-      <button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>
-      <button class="btn" onclick="closeModal()">Cancel</button>
-    </div>`);
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>`);
 }
 
 async function submitEditFamily(id) {
@@ -2123,26 +2209,103 @@ async function runCorrelation() {
   renderCorrelations();
 }
 
+async function unlinkActionFromGroup(actionId) {
+  if(!confirm('Remove this action from the correlation group?')) return;
+  await api.post(`/api/actions/${actionId}/unlink`);
+  toast('Action removed from group','success');
+  renderCorrelations();
+}
+
+async function showAddActionToGroup(groupId, groupName) {
+  const t = state.activeTenant.name;
+  const actions = await api.get(`/api/tenants/${t}/actions`);
+  const uncorrelated = actions.filter(a => !a.correlation_group_id);
+  if(!uncorrelated.length) return openModal('Add Action to Group', '<p style="padding:20px;text-align:center;color:var(--text-light)">All actions are already in correlation groups.</p>',
+    '<button class="btn" onclick="closeModal()">Close</button>');
+
+  let rows = uncorrelated.map(a => `<tr>
+    <td><input type="checkbox" value="${a.id}" class="corr-add-cb"></td>
+    <td style="font-size:12px">${a.source_tool}</td>
+    <td>${a.title.substring(0,55)}</td>
+    <td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+
+  openModal(`Add Actions to "${groupName}"`, `
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${uncorrelated.length} uncorrelated actions available</div>
+    <div style="max-height:400px;overflow-y:auto">
+      <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.corr-add-cb').forEach(c=>c.checked=this.checked)"></th><th>Source</th><th>Title</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddActionsToGroup('${groupId}')">Link Selected</button>`);
+}
+
+async function submitAddActionsToGroup(groupId) {
+  const ids = [...document.querySelectorAll('.corr-add-cb:checked')].map(c=>c.value);
+  if(!ids.length) return toast('Select at least one action','error');
+  for(const id of ids) {
+    await api.post(`/api/actions/${id}/link`, {group_id: groupId});
+  }
+  closeModal();
+  toast(`${ids.length} action(s) linked to group`,'success');
+  renderCorrelations();
+}
+
 // ── Essential Eight ──
 async function renderE8() {
   if(!requireTenant()) return;
   const e8 = await api.get(`/api/tenants/${state.activeTenant.name}/e8`);
 
-  let cards = Object.entries(e8).map(([ctrl, d]) => {
+  // Overall stats
+  const entries = Object.entries(e8);
+  const totalActions = entries.reduce((s,[,d])=>s+d.total_actions,0);
+  const totalCompleted = entries.reduce((s,[,d])=>s+d.completed_actions,0);
+  const overallPct = totalActions > 0 ? Math.round(totalCompleted/totalActions*100) : 0;
+  const mapped = entries.filter(([,d])=>d.total_actions>0).length;
+
+  let cards = entries.map(([ctrl, d], idx) => {
     let mlBars = Object.entries(d.maturity_levels||{}).map(([ml, md]) =>
       `<div class="mb-8"><div class="flex justify-between"><span style="font-size:12px">${ml}</span><span style="font-size:12px">${md.completed}/${md.total}</span></div>${progressBar(md.percentage)}</div>`
     ).join('');
 
-    return `<div class="card">
-      <div class="card-header" style="font-size:14px">${ctrl}</div>
-      <div class="text-center mb-8">${gauge(d.percentage, 100)}</div>
-      <div style="font-size:13px;text-align:center;margin-bottom:8px">${d.completed_actions}/${d.total_actions} actions</div>
-      <div style="font-size:13px;text-align:center;margin-bottom:12px">Achieved: <strong>${d.achieved_maturity}</strong></div>
-      ${mlBars}
+    let actionRows = (d.actions||[]).map(a => `<tr>
+      <td style="font-size:12px">${a.source_tool||''}</td>
+      <td>${(a.title||'').substring(0,55)}</td>
+      <td>${statusBadge(a.status)}</td>
+      <td>${priorityBadge(a.priority)}</td>
+      <td style="font-size:12px">${a.maturity||'—'}</td>
+      <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+    </tr>`).join('');
+
+    const achievedColor = d.achieved_maturity==='Level 0'?'var(--danger)':d.achieved_maturity==='Level 1'?'var(--warning)':d.achieved_maturity==='Level 2'?'#84cc16':'var(--success)';
+
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('e8-detail-${idx}').classList.toggle('hidden')">
+        <div>
+          <div class="card-header" style="margin:0;font-size:14px">${ctrl}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">${d.completed_actions}/${d.total_actions} actions &middot; Achieved: <strong style="color:${achievedColor}">${d.achieved_maturity}</strong></div>
+        </div>
+        <div style="flex-shrink:0">${gauge(d.percentage, 80)}</div>
+      </div>
+      <div id="e8-detail-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="grid grid-2 mb-16" style="gap:16px">
+          <div>${mlBars||'<div style="color:var(--text-light);font-size:13px">No maturity data</div>'}</div>
+          <div style="font-size:13px">
+            <div class="mb-8"><strong>Achieved Maturity:</strong> <span style="color:${achievedColor}">${d.achieved_maturity}</span></div>
+            <div>A maturity level is considered achieved when &ge;80% of its actions are completed.</div>
+          </div>
+        </div>
+        ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Maturity</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px">No actions mapped to this control</div>'}
+      </div>
     </div>`;
   }).join('');
 
-  document.getElementById('content').innerHTML = `<div class="grid grid-4">${cards}</div>`;
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16"><div class="grid grid-4">
+      <div class="stat-card">${gauge(overallPct, 100)}<div class="label">Overall E8</div></div>
+      <div class="stat-card"><div class="value">${totalActions}</div><div class="label">Total Actions</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--success)">${totalCompleted}</div><div class="label">Completed</div></div>
+      <div class="stat-card"><div class="value">${mapped}/8</div><div class="label">Controls Mapped</div></div>
+    </div></div>
+    ${cards}`;
 }
 
 // ── Compare ──
@@ -2185,11 +2348,31 @@ async function doCompare() {
 }
 
 // ── Export ──
+let _exportTab = 'quick';
+
 async function renderExport() {
   if(!requireTenant()) return;
-  document.getElementById('content').innerHTML = `
+  const t = state.activeTenant.name;
+
+  const tabClass = tab => `atab${_exportTab===tab?' active':''}`;
+  const tabBar = `<div class="card mb-16" style="padding:0"><div class="action-tabs" style="margin:0">
+    <div class="${tabClass('quick')}" onclick="_exportTab='quick';renderExport()">Quick Export</div>
+    <div class="${tabClass('templates')}" onclick="_exportTab='templates';renderExport()">GitLab Templates</div>
+    <div class="${tabClass('plan-export')}" onclick="_exportTab='plan-export';renderExport()">Export Plan to GitLab</div>
+  </div></div>`;
+
+  if(_exportTab === 'templates') {
+    await renderGitlabTemplates(tabBar);
+    return;
+  }
+  if(_exportTab === 'plan-export') {
+    await renderPlanExport(tabBar);
+    return;
+  }
+
+  document.getElementById('content').innerHTML = `${tabBar}
     <div class="card">
-      <div class="card-header">Export to GitLab</div>
+      <div class="card-header">Quick Export to GitLab</div>
       <div class="form-row">
         <div class="form-group"><label>Format</label><select id="exp-fmt"><option value="csv">CSV (Bulk Import)</option><option value="json">JSON (API)</option><option value="script">Shell Script (glab CLI)</option></select></div>
         <div class="form-group"><label>Filter Status (optional)</label><input id="exp-status" placeholder="ToDo,In Progress"></div>
@@ -2200,6 +2383,169 @@ async function renderExport() {
       </div>
       <button class="btn btn-primary" onclick="doExport()">Download Export</button>
     </div>`;
+}
+
+async function renderGitlabTemplates(tabBar) {
+  const t = state.activeTenant.name;
+  const templates = await api.get(`/api/tenants/${t}/gitlab-templates`);
+
+  let rows = templates.map(tpl => `<tr>
+    <td style="font-weight:600">${tpl.name}</td>
+    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${tpl.template_type}</span></td>
+    <td style="font-size:12px;max-width:300px">${tpl.title_template.substring(0,60)||'—'}</td>
+    <td style="font-size:11px">${(tpl.labels||[]).join(', ')||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editGitlabTemplate('${tpl.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteGitlabTemplate('${tpl.id}','${tpl.name.replace(/'/g,"\\'")}')">Delete</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card">
+      <div class="flex justify-between items-center mb-16">
+        <div class="card-header" style="margin:0">GitLab Issue Templates (${templates.length})</div>
+        <button class="btn btn-sm btn-primary" onclick="showAddGitlabTemplate()">+ New Template</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Define templates per tenant for exporting actions as GitLab issues. Use <code>{{variable}}</code> placeholders in title and body.<br>
+      Available variables: <code>action_title</code>, <code>action_status</code>, <code>action_priority</code>, <code>action_workload</code>, <code>action_effort</code>, <code>action_risk_level</code>, <code>action_description</code>, <code>action_remediation</code>, <code>action_current_value</code>, <code>action_reference_url</code>, <code>action_category</code>, <code>action_tags</code>, <code>plan_name</code>, <code>tenant_name</code>, <code>tenant_id</code></p>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Title Template</th><th>Labels</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="text-center">No templates yet. Create one to start exporting.</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+function showAddGitlabTemplate() {
+  openModal('New GitLab Template', `
+    <div class="form-group"><label>Template Name</label><input id="gt-name" placeholder="e.g. Security Assessment Issue"></div>
+    <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment">Assessment Issue</option><option value="implementation">Implementation Issue</option></select></div>
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" placeholder="[{{action_priority}}] {{action_title}}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px" placeholder="## Description\n{{action_description}}\n\n## Remediation\n{{action_remediation}}\n\n## Details\n- Priority: {{action_priority}}\n- Workload: {{action_workload}}"></textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" placeholder="security, assessment, {{action_workload}}"></div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddGitlabTemplate()">Create</button>');
+}
+
+async function submitAddGitlabTemplate() {
+  const name = document.getElementById('gt-name').value.trim();
+  if(!name) return toast('Name is required','error');
+  const data = {
+    name,
+    template_type: document.getElementById('gt-type').value,
+    title_template: document.getElementById('gt-title').value,
+    body_template: document.getElementById('gt-body').value,
+    labels: document.getElementById('gt-labels').value.split(',').map(l=>l.trim()).filter(Boolean),
+  };
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/gitlab-templates`, data);
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Template created','success');
+  renderExport();
+}
+
+async function editGitlabTemplate(id) {
+  const tpl = await api.get(`/api/gitlab-templates/${id}`);
+  if(!tpl||tpl.error) return toast('Template not found','error');
+  openModal('Edit GitLab Template', `
+    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${tpl.name||''}"></div>
+    <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment" ${tpl.template_type==='assessment'?'selected':''}>Assessment Issue</option><option value="implementation" ${tpl.template_type==='implementation'?'selected':''}>Implementation Issue</option></select></div>
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${(tpl.title_template||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${tpl.body_template||''}</textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${(tpl.labels||[]).join(', ')}"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditGitlabTemplate('${id}')">Save</button>`);
+}
+
+async function submitEditGitlabTemplate(id) {
+  const name = document.getElementById('gt-name').value.trim();
+  if(!name) return toast('Name is required','error');
+  const data = {
+    name,
+    template_type: document.getElementById('gt-type').value,
+    title_template: document.getElementById('gt-title').value,
+    body_template: document.getElementById('gt-body').value,
+    labels: document.getElementById('gt-labels').value.split(',').map(l=>l.trim()).filter(Boolean),
+  };
+  const r = await api.put(`/api/gitlab-templates/${id}`, data);
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Template updated','success');
+  renderExport();
+}
+
+async function deleteGitlabTemplate(id, name) {
+  if(!confirm(`Delete template "${name}"?`)) return;
+  await api.del(`/api/gitlab-templates/${id}`);
+  toast('Template deleted','success');
+  renderExport();
+}
+
+async function renderPlanExport(tabBar) {
+  const t = state.activeTenant.name;
+  const [plans, templates] = await Promise.all([
+    api.get(`/api/tenants/${t}/plans`),
+    api.get(`/api/tenants/${t}/gitlab-templates`),
+  ]);
+
+  if(!plans.length) {
+    document.getElementById('content').innerHTML = `${tabBar}<div class="card text-center" style="padding:40px"><h3>No plans available</h3><p style="color:var(--text-light)">Create a plan first, then export it using a GitLab template.</p></div>`;
+    return;
+  }
+  if(!templates.length) {
+    document.getElementById('content').innerHTML = `${tabBar}<div class="card text-center" style="padding:40px"><h3>No templates defined</h3><p style="color:var(--text-light)">Create a GitLab template first on the "GitLab Templates" tab.</p></div>`;
+    return;
+  }
+
+  const planOpts = plans.map(p=>`<option value="${p.id}">${p.name} (${p.item_count} actions)</option>`).join('');
+  const tplOpts = templates.map(t=>`<option value="${t.id}">${t.name} (${t.template_type})</option>`).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16">
+      <div class="card-header">Export Plan as GitLab Issues</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select a plan and template to generate GitLab issue files. The output can be used to create issues in your GitLab project.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Plan</label><select id="pe-plan">${planOpts}</select></div>
+        <div class="form-group"><label>Template</label><select id="pe-tpl">${tplOpts}</select></div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-primary" onclick="doExportPlanGitlab()">Generate Issues</button>
+        <button class="btn" onclick="previewPlanExport()">Preview</button>
+      </div>
+    </div>
+    <div id="plan-export-result"></div>`;
+}
+
+async function previewPlanExport() {
+  const t = state.activeTenant.name;
+  const planId = document.getElementById('pe-plan').value;
+  const tplId = document.getElementById('pe-tpl').value;
+  const r = await api.post(`/api/tenants/${t}/plans/${planId}/export-gitlab`, {template_id: tplId});
+  if(r.error) return toast(r.error, 'error');
+
+  let preview = r.issues.slice(0,5).map((iss,i) => `
+    <div class="card mb-8" style="border-left:3px solid var(--primary)">
+      <div style="font-weight:600;margin-bottom:4px">${iss.title}</div>
+      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${iss.body.substring(0,500)}${iss.body.length>500?'...':''}</div>
+      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+l+'</span>').join(' ')}</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('plan-export-result').innerHTML = `
+    <div class="card"><div class="card-header">Preview (${r.issue_count} issues, showing first 5)</div>${preview}
+    ${r.issue_count>5?`<div style="color:var(--text-light);font-size:13px;padding:8px">... and ${r.issue_count-5} more</div>`:''}
+    </div>`;
+}
+
+async function doExportPlanGitlab() {
+  const t = state.activeTenant.name;
+  const planId = document.getElementById('pe-plan').value;
+  const tplId = document.getElementById('pe-tpl').value;
+  const r = await api.post(`/api/tenants/${t}/plans/${planId}/export-gitlab`, {template_id: tplId});
+  if(r.error) return toast(r.error, 'error');
+
+  // Download as JSON file
+  const blob = new Blob([JSON.stringify(r, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gitlab_issues_${r.plan.replace(/[^a-zA-Z0-9]/g,'_')}_${r.template_type}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast(`Exported ${r.issue_count} issues`,'success');
 }
 
 async function doExport() {
@@ -2393,8 +2739,23 @@ async function renderCompliance() {
     return;
   }
 
+  // Overall summary across all frameworks
+  let totalControls = 0, totalCompleted = 0;
+  frameworks.forEach(fw => { totalControls += compliance[fw].total_controls||0; totalCompleted += compliance[fw].completed_controls||0; });
+  const overallPct = totalControls > 0 ? Math.round(totalCompleted/totalControls*100) : 0;
+
+  // Framework summary cards
+  let fwSummary = frameworks.map(fw => {
+    const d = compliance[fw];
+    const pct = d.percentage||0;
+    return `<div class="stat-card" style="cursor:pointer" onclick="showFrameworkTab(document.querySelector('[data-fw=\\'${fw}\\']'),'fw-${fw}')">
+      ${gauge(pct, 80)}<div class="label" style="font-size:12px">${fw}</div>
+      <div style="font-size:11px;color:var(--text-light)">${d.completed_controls}/${d.total_controls} controls</div>
+    </div>`;
+  }).join('');
+
   // Framework tabs
-  let tabs = frameworks.map((fw,i) => `<div class="tab ${i===0?'active':''}" onclick="showFrameworkTab(this,'fw-${i}')">${fw}</div>`).join('');
+  let tabs = frameworks.map((fw,i) => `<div class="tab ${i===0?'active':''}" data-fw="${fw}" onclick="showFrameworkTab(this,'fw-${fw}')">${fw} (${compliance[fw].percentage||0}%)</div>`).join('');
 
   let frameworkPanels = frameworks.map((fw, i) => {
     const data = compliance[fw];
@@ -2402,30 +2763,33 @@ async function renderCompliance() {
     for(const [fam, famData] of Object.entries(data.families||{})) {
       let controlRows = Object.entries(famData.controls||{}).map(([ctrlId, ctrl]) => {
         const statusCls = ctrl.status==='Completed'?'success':ctrl.status==='In Progress'?'info':'danger';
-        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)}</div>`).join('');
+        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)} <span style="color:var(--text-light)">(${a.source_tool||''})</span></div>`).join('');
         return `<tr>
-          <td><code>${ctrlId}</code></td>
-          <td>${ctrl.control_name}</td>
+          <td><code style="font-size:12px">${ctrlId}</code></td>
+          <td style="font-size:13px">${ctrl.control_name}</td>
           <td><span class="badge badge-${statusCls}">${ctrl.status}</span></td>
-          <td>${ctrl.actions.length}</td>
+          <td style="text-align:center">${ctrl.actions.length}</td>
           <td>${actions}</td>
         </tr>`;
       }).join('');
 
-      familiesHtml += `<div class="compliance-family">
-        <div class="compliance-family-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
-          <span>${fam}</span>
-          <span>${famData.completed}/${famData.total} controls (${famData.percentage}%)</span>
+      const famPct = famData.percentage||0;
+      const barColor = famPct >= 80 ? 'var(--success)' : famPct >= 40 ? 'var(--warning)' : 'var(--danger)';
+
+      familiesHtml += `<div class="compliance-family" style="margin-bottom:8px">
+        <div class="compliance-family-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg);border-radius:6px" onclick="this.nextElementSibling.classList.toggle('hidden')">
+          <span style="font-weight:600;font-size:14px">${fam}</span>
+          <span style="font-size:13px;color:var(--text-light)">${famData.completed}/${famData.total} (${famPct}%)</span>
         </div>
-        <div class="compliance-family-body">
-          ${progressBar(famData.percentage)}
-          <table class="mt-16"><thead><tr><th>Control</th><th>Name</th><th>Status</th><th>Actions</th><th>Details</th></tr></thead>
-          <tbody>${controlRows}</tbody></table>
+        <div class="compliance-family-body hidden" style="padding:8px 0">
+          <div style="margin-bottom:8px">${progressBar(famPct, barColor)}</div>
+          <div class="table-wrap"><table><thead><tr><th>Control</th><th>Name</th><th>Status</th><th style="text-align:center">Actions</th><th>Details</th></tr></thead>
+          <tbody>${controlRows}</tbody></table></div>
         </div>
       </div>`;
     }
 
-    return `<div id="fw-${i}" class="card ${i>0?'hidden':''}">
+    return `<div id="fw-${fw}" class="card ${i>0?'hidden':''}">
       <div class="grid grid-3 mb-16">
         <div class="stat-card">${gauge(data.percentage, 100)}<div class="label">${fw}</div></div>
         <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
@@ -2436,14 +2800,21 @@ async function renderCompliance() {
   }).join('');
 
   document.getElementById('content').innerHTML = `
+    <div class="card mb-16"><div class="grid grid-${Math.min(frameworks.length+1, 5)}">
+      <div class="stat-card">${gauge(overallPct, 100)}<div class="label">Overall</div></div>
+      ${fwSummary}
+    </div></div>
     <div class="tabs">${tabs}</div>
     ${frameworkPanels}`;
 }
 
 function showFrameworkTab(el, tabId) {
-  el.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if(!el) return;
+  const tabBar = el.closest('.tabs');
+  if(tabBar) tabBar.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
-  document.querySelectorAll('[id^="fw-"]').forEach(p=>p.classList.add('hidden'));
+  // Hide all framework panels (match id starting with fw-)
+  document.querySelectorAll('[id^="fw-"].card').forEach(p=>p.classList.add('hidden'));
   document.getElementById(tabId)?.classList.remove('hidden');
 }
 
