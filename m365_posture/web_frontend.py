@@ -2495,8 +2495,9 @@ async function renderE8() {
     const cells = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
       const md = (d.maturity_levels||{})[ml] || {percentage:0,total:0,completed:0};
       const bg = md.percentage>=80?'var(--success)':md.percentage>=50?'var(--warning)':md.percentage>0?'var(--danger)':'var(--bg-hover)';
-      const txt = md.total>0?`${md.completed}/${md.total}`:'-';
-      return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${md.total>0?'#fff':'var(--text-light)};min-width:40px">${txt}</span></td>`;
+      const txt = md.total>0?md.completed+'/'+md.total:'-';
+      const clr = md.total>0?'#fff':'var(--text-light)';
+      return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${clr};min-width:40px">${txt}</span></td>`;
     }).join('');
     return `<tr><td style="font-size:12px">${ctrl}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
   }).join('');
