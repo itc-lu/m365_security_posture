@@ -34,7 +34,7 @@ from .planner import simulate_plan, suggest_phases, get_prioritized_actions, cal
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
 from .compliance import auto_map_compliance, map_action_to_frameworks
 from .drift import detect_drift
-from .graph_api import start_device_code_flow, poll_for_token, fetch_secure_scores, fetch_control_profiles
+from .graph_api import start_device_code_flow, poll_for_token, fetch_secure_scores, fetch_control_profiles, client_credentials_token
 from .web_frontend import get_spa_html
 
 PARSER_MAP = {
@@ -1415,6 +1415,41 @@ def create_app(db_path: str = None) -> Flask:
             return jsonify({"authenticated": False, "expired": True})
         remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
         return jsonify({"authenticated": True, "expires_in": remaining})
+
+    @app.route("/api/tenants/<name>/graph/client-auth", methods=["POST"])
+    def api_graph_client_auth(name):
+        """Authenticate using client credentials (client_id + client_secret).
+
+        This is an app-only flow -- no interactive sign-in required.
+        The app registration must have **application** (not delegated) permission
+        SecurityEvents.Read.All with admin consent granted.
+        """
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+
+        tenant_id = tenant.get("tenant_id", "")
+        client_id = tenant.get("client_id", "")
+        client_secret = tenant.get("client_secret", "")
+
+        if not tenant_id or not client_id or not client_secret:
+            return _json_error(
+                "Tenant must have tenant_id, client_id, and client_secret configured."
+            )
+
+        try:
+            result = client_credentials_token(tenant_id, client_id, client_secret)
+            expires_in = result.get("expires_in", 3600)
+            _device_flows[name] = {
+                "access_token": result["access_token"],
+                "expires_at": datetime.utcnow().timestamp() + expires_in,
+            }
+            return jsonify({
+                "status": "authenticated",
+                "expires_in": expires_in,
+            })
+        except Exception as e:
+            return _json_error(f"Client credentials auth failed: {str(e)}")
 
     # ── Enums update ──
 

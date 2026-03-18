@@ -84,6 +84,37 @@ def poll_for_token(tenant_id: str, client_id: str, device_code: str) -> dict:
             return {"error": "unknown", "error_description": body}
 
 
+def client_credentials_token(tenant_id: str, client_id: str, client_secret: str) -> dict:
+    """Acquire an access token using the client credentials (app-only) flow.
+
+    Requires an app registration with a client secret and
+    **application** permission SecurityEvents.Read.All (admin-consented).
+
+    Returns the full token response dict including ``access_token``.
+    """
+    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    data = urlencode({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://graph.microsoft.com/.default",
+    }).encode()
+
+    req = Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+    try:
+        with urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except HTTPError as e:
+        body = e.read().decode()
+        try:
+            err = json.loads(body)
+            raise RuntimeError(err.get("error_description", body))
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Client credentials auth failed ({e.code}): {body}")
+
+
 def fetch_secure_scores(access_token: str) -> dict:
     """Fetch the latest Secure Score data from Microsoft Graph.
 

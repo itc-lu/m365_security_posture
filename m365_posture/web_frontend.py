@@ -1464,9 +1464,10 @@ async function renderImport() {
           <p style="margin-bottom:8px">To import directly from Microsoft Graph, configure your tenant with:</p>
           <ol style="margin-left:20px;font-size:13px;line-height:1.8">
             <li>Register an app in <strong>Entra ID > App registrations</strong></li>
-            <li>Set <strong>Allow public client flows</strong> to <strong>Yes</strong></li>
-            <li>Add API permission: <strong>Microsoft Graph > SecurityEvents.Read.All</strong> (delegated)</li>
-            <li>Set the <strong>Tenant ID</strong> and <strong>Client ID</strong> on your tenant configuration</li>
+            <li>Add API permission: <strong>Microsoft Graph > SecurityEvents.Read.All</strong></li>
+            <li>Either: add a <strong>Client Secret</strong> and grant <strong>admin consent</strong> for <strong>application</strong> permissions,<br>
+                or: set <strong>Allow public client flows = Yes</strong> and use <strong>delegated</strong> permissions with device code</li>
+            <li>Set the <strong>Tenant ID</strong>, <strong>Client ID</strong>, and optionally <strong>Client Secret</strong> on your tenant configuration</li>
           </ol>
           <button class="btn btn-sm mt-16" onclick="navigate('tenants')">Go to Tenant Settings</button>
         </div>
@@ -1486,11 +1487,20 @@ async function renderImport() {
         <div id="graph-result" style="margin-top:12px"></div>
       </div>`;
   } else {
+    const hasSecret = !!(state.activeTenant.client_secret);
     graphSection = `
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
+        ${hasSecret ? `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively with device code (uses <strong>delegated</strong> permissions).</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>
+          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+        </div>
+        ` : `
         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. No credentials are stored.</p>
         <button class="btn btn-primary" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Microsoft</button>
+        `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
       </div>`;
   }
@@ -1552,6 +1562,24 @@ async function startGraphAuth() {
   const interval = (r.interval || 5) * 1000;
   if(graphPollTimer) clearInterval(graphPollTimer);
   graphPollTimer = setInterval(() => pollGraphToken(), interval);
+}
+
+async function startClientAuth() {
+  const t = state.activeTenant.name;
+  const btn = document.getElementById('graph-client-auth-btn');
+  btn.disabled = true;
+  btn.textContent = 'Authenticating...';
+
+  const r = await api.post(`/api/tenants/${t}/graph/client-auth`);
+  if(r.error) {
+    btn.disabled = false;
+    btn.textContent = 'Sign in with Client Secret';
+    toast(r.error, 'error');
+    return;
+  }
+
+  toast('Authenticated with client credentials!', 'success');
+  renderImport();
 }
 
 async function pollGraphToken() {
