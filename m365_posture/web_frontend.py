@@ -784,12 +784,11 @@ async function switchTenantFromDashboard(name) {
 
 function showDashboardCompare() {
   let checks = state.tenants.map(t => {
-    const checked = t.is_active || t.name === state.tenants.find(x=>!x.is_active)?.name;
-    return `<label style="display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''}> ${t.display_name||t.name}</label>`;
+    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${t.display_name||t.name}</span></label>`;
   }).join('');
   openModal('Compare Tenants', `
-    <p style="margin-bottom:12px;color:var(--text-light)">Select 2 tenants to compare side by side.</p>
-    <div style="display:flex;flex-direction:column;gap:4px">${checks}</div>`,
+    <p style="margin-bottom:12px;color:var(--text-light)">Select 2 or more tenants to compare side by side.</p>
+    <div style="display:flex;flex-direction:column">${checks}</div>`,
     '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doDashboardCompare()">Compare</button>');
 }
 
@@ -824,10 +823,10 @@ async function doDashboardCompare() {
   let actionDiffRows = diffActions.slice(0,100).map(a => {
     let cells = tenants.map(t => {
       const d = a.tenants[t];
-      if(!d) return '<td style="color:var(--text-light);font-style:italic">Missing</td>';
-      return `<td>${statusBadge(d.status)}</td>`;
+      if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
+      return `<td><a href="#" onclick="switchTenantAndViewAction('${t}','${d.id}');event.preventDefault()" style="text-decoration:none">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="max-width:300px;font-size:12px">${a.title.substring(0,60)}</td>${cells}</tr>`;
+    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>`;
   }).join('');
 
   c.innerHTML = `
@@ -852,6 +851,17 @@ async function doDashboardCompare() {
           <tbody>${actionDiffRows}</tbody></table>
         </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No differences found - all actions have the same status across tenants.</div>'}
     </div>`;
+}
+
+async function switchTenantAndViewAction(tenantName, actionId) {
+  await api.post(`/api/tenants/${tenantName}/activate`);
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  state.tenants = await api.get('/api/tenants');
+  updateTenantIndicator();
+  navigate('actions');
+  // Wait for actions to load then expand the target action
+  setTimeout(() => { toggleActionDetail(actionId); }, 500);
 }
 
 // ── PDF Report Download ──
@@ -911,7 +921,8 @@ function downloadDashboardPDF() {
 }
 
 async function unpinDashAction(actionId) {
-  await api.post(`/api/actions/${actionId}/unpin`);
+  // Set to -1 to explicitly hide from dashboard priority list
+  await api.put(`/api/actions/${actionId}`, {pinned_priority: -1});
   _dashData = {};
   renderDashboard(document.getElementById('dash-source-filter')?.value||'');
 }
@@ -1285,6 +1296,15 @@ async function showAddToPlan(actionIds) {
       <div id="new-plan-section" style="${hasPlans?'display:none;':''}padding-left:24px">
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Plan Name</span><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Description</span><textarea id="atp-new-desc" rows="2"></textarea></div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span><input id="atp-new-responsible" placeholder="e.g. John Smith"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Priority</span><select id="atp-new-priority">${['Critical','High','Medium','Low'].map(p=>'<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>').join('')}</select></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Start Date</span><input id="atp-new-start" type="date"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">End Date</span><input id="atp-new-end" type="date"></div>
+        </div>
+        <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Effort</span><select id="atp-new-effort"><option value="Small">Small (within a day)</option><option value="Medium" selected>Medium (within a week)</option><option value="Large">Large (within a month)</option></select></div>
       </div>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
@@ -1300,7 +1320,14 @@ async function addToPlanSubmit() {
   if(mode === 'new') {
     const name = document.getElementById('atp-new-name').value;
     if(!name) return toast('Plan name required', 'error');
-    const r = await api.post(`/api/tenants/${t}/plans`, {name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds});
+    const r = await api.post(`/api/tenants/${t}/plans`, {
+      name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds,
+      responsible_person: document.getElementById('atp-new-responsible')?.value||'',
+      priority: document.getElementById('atp-new-priority')?.value||'Medium',
+      start_date: document.getElementById('atp-new-start')?.value||null,
+      end_date: document.getElementById('atp-new-end')?.value||null,
+      implementation_effort: document.getElementById('atp-new-effort')?.value||'Medium'
+    });
     if(r.error) return toast(r.error, 'error');
     closeModal();
     toast(`Plan created with ${actionIds.length} action${actionIds.length>1?'s':''}`, 'success');

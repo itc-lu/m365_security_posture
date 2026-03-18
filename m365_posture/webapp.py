@@ -914,7 +914,8 @@ def create_app(db_path: str = None) -> Flask:
                 a = tenant_actions[tname].get(sid)
                 if a:
                     row["tenants"][tname] = {
-                        "status": a["status"], "priority": a["priority"],
+                        "id": a["id"], "status": a["status"],
+                        "priority": a["priority"],
                         "score": a.get("score"), "max_score": a.get("max_score"),
                         "workload": a.get("workload", ""),
                     }
