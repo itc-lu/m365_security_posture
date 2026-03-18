@@ -152,10 +152,12 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
 
 /* Phase card */
-.phase-card { border-left:4px solid var(--primary); }
+.phase-card { border-left:4px solid var(--primary); padding-left:16px; }
 .phase-card.phase-1 { border-left-color:var(--success); }
 .phase-card.phase-2 { border-left-color:var(--warning); }
 .phase-card.phase-3 { border-left-color:var(--purple); }
+.phase-card table { table-layout:fixed; width:100%; }
+.phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
 
 /* Correlation badge */
 .corr-badge { display:inline-flex; gap:4px; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--purple-light); color:#5b21b6; }
@@ -698,7 +700,12 @@ async function renderDashboard(sourceFilter) {
     for(const [s, n] of Object.entries(scores.by_status||{})) statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
   }
 
-  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => `<tr><td>${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td></tr>`).join('');
+  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => `<tr>
+    <td style="max-width:300px">${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="unpinDashAction('${a.id}');event.stopPropagation()" title="${a.pinned_priority?'Unpin from dashboard':'Remove from list'}" style="padding:2px 6px;font-size:11px">${a.pinned_priority?'&#9733;':'&times;'}</button>
+    </td>
+  </tr>`).join('');
 
   // Mini trend sparkline
   let trendHtml = '';
@@ -760,8 +767,8 @@ async function renderDashboard(sourceFilter) {
       <div class="card"><div class="card-header">Score by Workload${sf?' ('+sf+')':''}</div>${wlBars||'<div style="color:var(--text-light);padding:8px">No workload data</div>'}</div>
     </div>
     <div class="card mb-16"><div class="card-header">Status Distribution${sf?' ('+sf+')':''}</div><div style="padding:8px">${statusPills||'No data'}</div></div>
-    <div class="card"><div class="card-header">Top Priority Actions (by ROI)</div>
-      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th></tr></thead><tbody>${topActions||'<tr><td colspan="4" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
+    <div class="card"><div class="card-header">Top Priority Actions (by ROI) <button class="btn btn-sm" onclick="showPinActionModal()" style="font-size:11px">+ Add</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th><th style="width:40px"></th></tr></thead><tbody>${topActions||'<tr><td colspan="5" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
     </div>
     </div>`;
 }
@@ -790,7 +797,10 @@ async function doDashboardCompare() {
   const tenants = [...document.querySelectorAll('.dash-cmp:checked')].map(c=>c.value);
   if(tenants.length < 2) return toast('Select at least 2 tenants','error');
   closeModal();
-  const r = await api.post('/api/compare', {tenants});
+  const [r, actionCmp] = await Promise.all([
+    api.post('/api/compare', {tenants}),
+    api.post('/api/compare-actions', {tenants})
+  ]);
   const c = document.getElementById('content');
 
   let rows = tenants.map(t => {
@@ -808,6 +818,18 @@ async function doDashboardCompare() {
     return `<tr><td>${wl}</td>${cells}</tr>`;
   }).join('');
 
+  // Action-level comparison
+  const diffActions = (actionCmp.actions||[]).filter(a => a.differs);
+  const sameActions = (actionCmp.actions||[]).filter(a => !a.differs);
+  let actionDiffRows = diffActions.slice(0,100).map(a => {
+    let cells = tenants.map(t => {
+      const d = a.tenants[t];
+      if(!d) return '<td style="color:var(--text-light);font-style:italic">Missing</td>';
+      return `<td>${statusBadge(d.status)}</td>`;
+    }).join('');
+    return `<tr><td style="max-width:300px;font-size:12px">${a.title.substring(0,60)}</td>${cells}</tr>`;
+  }).join('');
+
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
       <h2 style="font-size:18px;font-weight:600">Tenant Comparison</h2>
@@ -820,6 +842,15 @@ async function doDashboardCompare() {
         <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
         <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">Action Differences <span class="badge badge-danger">${actionCmp.differing||0} differ</span> <span class="badge badge-success">${sameActions.length} same</span></div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or action exists in one but not the other.</div>
+      ${actionDiffRows ? `
+        <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+          <table><thead><tr><th>Action</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead>
+          <tbody>${actionDiffRows}</tbody></table>
+        </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No differences found - all actions have the same status across tenants.</div>'}
     </div>`;
 }
 
@@ -877,6 +908,38 @@ function downloadDashboardPDF() {
     <scr`+`ipt>setTimeout(()=>{window.print();},400);<\/scr`+`ipt>
   </body></html>`);
   printWin.document.close();
+}
+
+async function unpinDashAction(actionId) {
+  await api.post(`/api/actions/${actionId}/unpin`);
+  _dashData = {};
+  renderDashboard(document.getElementById('dash-source-filter')?.value||'');
+}
+
+async function showPinActionModal() {
+  const t = state.activeTenant.name;
+  const actions = await api.get(`/api/tenants/${t}/actions`);
+  const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && !a.pinned_priority);
+  let rows = pending.slice(0,50).map(a => `<tr>
+    <td><input type="checkbox" value="${a.id}" class="pin-cb"></td>
+    <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+  openModal('Pin Actions to Dashboard', `
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Select actions to pin to the Top Priority list.</div>
+    <div style="max-height:400px;overflow-y:auto">
+      <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.pin-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="pinSelectedActions()">Pin Selected</button>');
+}
+
+async function pinSelectedActions() {
+  const ids = [...document.querySelectorAll('.pin-cb:checked')].map(c=>c.value);
+  if(!ids.length) return toast('Select at least one action','error');
+  for(const id of ids) await api.post(`/api/actions/${id}/pin`);
+  closeModal();
+  toast(ids.length + ' action(s) pinned','success');
+  _dashData = {};
+  renderDashboard(document.getElementById('dash-source-filter')?.value||'');
 }
 
 // ── Tenants ──
@@ -983,6 +1046,8 @@ async function renderActions() {
   await filterActions();
 }
 
+let _actionPlanMap = {};
+
 async function filterActions() {
   const t = state.activeTenant.name;
   const params = new URLSearchParams();
@@ -992,7 +1057,11 @@ async function filterActions() {
   const src = document.getElementById('f-source')?.value; if(src) params.set('source_tool', src);
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
-  const actions = await api.get(`/api/tenants/${t}/actions?${params}`);
+  const [actions, planMap] = await Promise.all([
+    api.get(`/api/tenants/${t}/actions?${params}`),
+    api.get(`/api/tenants/${t}/action-plans`)
+  ]);
+  _actionPlanMap = planMap || {};
 
   // Show ZT filter row if ZT Report actions exist
   const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
@@ -1044,8 +1113,8 @@ function sortActionsBy(colIdx) {
     _actionsSortCol = colIdx;
     _actionsSortDir = 'asc';
   }
-  // Sort keys by column index (matching header order: checkbox,ID,Ref,Title,Status,Priority,Workload,Source,Score)
-  const keys = [null,'id','reference_id','title','status','priority','workload','source_tool','_score'];
+  // Sort keys by column index (matching header order: checkbox,ID,Ref,Title,Status,Priority,Workload,Source,Score,Plan)
+  const keys = [null,'id','reference_id','title','status','priority','workload','source_tool','_score','_plan'];
   const key = keys[colIdx];
   if(!key) return;
   const sorted = [..._actionsData].sort((a,b) => {
@@ -1053,6 +1122,9 @@ function sortActionsBy(colIdx) {
     if(key === '_score') {
       aVal = a.score != null ? a.score : -1;
       bVal = b.score != null ? b.score : -1;
+    } else if(key === '_plan') {
+      aVal = (_actionPlanMap[a.id]||[]).length;
+      bVal = (_actionPlanMap[b.id]||[]).length;
     } else if(key === 'reference_id') {
       aVal = (a[key]||'').toString().toLowerCase();
       bVal = (b[key]||'').toString().toLowerCase();
@@ -1074,6 +1146,8 @@ function _renderActionsTableSorted() {
 
   let rows = actions.map(a => {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    const plans = _actionPlanMap[a.id] || [];
+    const planBadge = plans.length ? `<span class="badge badge-info" title="${plans.map(p=>p.plan_name).join(', ')}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
@@ -1085,12 +1159,13 @@ function _renderActionsTableSorted() {
       <td style="font-size:12px">${a.workload}</td>
       <td style="font-size:12px">${a.source_tool}</td>
       <td>${scoreDisplay}</td>
+      <td>${planBadge}</td>
     </tr>
-    <tr id="detail-${a.id}" class="hidden"><td colspan="9" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
+    <tr id="detail-${a.id}" class="hidden"><td colspan="10" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
   }).join('');
 
   // Build sort indicators for headers
-  const cols = ['','ID','Ref','Title','Status','Priority','Workload','Source','Score'];
+  const cols = ['','ID','Ref','Title','Status','Priority','Workload','Source','Score','Plan'];
   const headers = cols.map((c,i) => {
     if(i===0) return '<th onclick="event.stopPropagation()"><input type="checkbox" id="select-all-actions" onchange="toggleSelectAllActions(this)"></th>';
     const arrow = _actionsSortCol===i ? (_actionsSortDir==='asc'?' ▲':' ▼') : '';
@@ -1099,6 +1174,7 @@ function _renderActionsTableSorted() {
 
   el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px;gap:8px">
     <button class="btn btn-primary btn-sm" onclick="showAddToPlan()">Add to Plan</button>
+    <button class="btn btn-sm" onclick="showBatchStatus()">Set Status</button>
     <button class="btn btn-danger btn-sm" onclick="batchDeleteActions()">Delete Selected</button>
     <span id="batch-count" style="font-size:12px;color:var(--text-light);margin-left:8px"></span>
   </div>
@@ -1134,6 +1210,27 @@ async function batchDeleteActions() {
   const r = await api.post('/api/actions/batch-delete', {action_ids: ids});
   if(r.error) return toast(r.error, 'error');
   toast(r.deleted + ' actions deleted', 'success');
+  filterActions();
+}
+
+function showBatchStatus() {
+  const ids = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
+  if(!ids.length) return toast('No actions selected','error');
+  const opts = state.enums.statuses.map(s => `<option value="${s}">${s}</option>`).join('');
+  openModal(`Set Status for ${ids.length} Action(s)`, `
+    <div class="form-group"><label>New Status</label><select id="batch-status-val">${opts}</select></div>
+    <div class="form-group"><label>Changed By</label><input id="batch-status-by" placeholder="Your name"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitBatchStatus()">Apply</button>`);
+  window._batchStatusIds = ids;
+}
+
+async function submitBatchStatus() {
+  const status = document.getElementById('batch-status-val').value;
+  const changed_by = document.getElementById('batch-status-by').value;
+  const r = await api.post('/api/actions/batch-status', {action_ids:window._batchStatusIds, status, changed_by});
+  if(r.error) return toast(r.error,'error');
+  closeModal();
+  toast(r.updated + ' actions updated to ' + status, 'success');
   filterActions();
 }
 
@@ -1297,6 +1394,7 @@ function actionDetailHtml(a) {
     <div class="action-tabs">
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
+      <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
@@ -1370,6 +1468,13 @@ function actionDetailHtml(a) {
         <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${a.reference_id||'N/A'}</code></div></div>
       </div>
     </div>
+    <!-- Notes Tab -->
+    <div class="action-tab-content" id="atab-${uid}-notes">
+      <div style="margin-bottom:12px">
+        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${a.notes||''}</textarea>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
+    </div>
     <!-- History Tab -->
     ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
   </div>`;
@@ -1437,6 +1542,12 @@ async function updateAction(id) {
   const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, essential_eight_control:document.getElementById('ae-e8ctrl').value||null, essential_eight_maturity:document.getElementById('ae-e8ml').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
   await api.put(`/api/actions/${id}`, data);
   closeModal(); toast('Action updated','success'); filterActions();
+}
+
+async function saveActionNotes(id, uid) {
+  const notes = document.getElementById('notes-'+uid)?.value || '';
+  await api.put(`/api/actions/${id}`, {notes});
+  toast('Notes saved','success');
 }
 
 async function deleteAction(id) {
@@ -1833,7 +1944,14 @@ async function renderPlans() {
           </div>
         </div>
         <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${p.description||'No description'}</p>
-        <div style="font-size:13px">${p.item_count} actions &middot; Created ${p.created_at?.substring(0,10)} &middot; Updated ${p.updated_at?.substring(0,10)||'N/A'}</div>
+        <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
+          <span>${p.item_count} actions</span>
+          ${p.responsible_person?`<span>&#128100; ${p.responsible_person}</span>`:''}
+          ${p.priority?`<span>${priorityBadge(p.priority)}</span>`:''}
+          ${p.implementation_effort?`<span>Effort: ${p.implementation_effort}</span>`:''}
+          ${p.start_date?`<span>${p.start_date}${p.end_date?' → '+p.end_date:''}</span>`:''}
+          <span style="color:var(--text-light)">Created ${p.created_at?.substring(0,10)}</span>
+        </div>
       </div>`).join('');
   }
   document.getElementById('content').innerHTML = html;
@@ -1848,9 +1966,23 @@ async function showCreatePlan() {
 
   let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
 
+  const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e==='Medium'?' selected':''}>${e}</option>`).join('');
+  const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p==='Medium'?' selected':''}>${p}</option>`).join('');
+
   openModal('Create Remediation Plan', `
     <div class="form-group"><label>Plan Name</label><input id="p-name" placeholder="Q1 2026 Security Uplift"></div>
     <div class="form-group"><label>Description</label><textarea id="p-desc" rows="2"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible Person</label><input id="p-responsible" placeholder="e.g. John Smith"></div>
+      <div class="form-group"><label>Priority</label><select id="p-priority">${prioOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Start Date</label><input id="p-start" type="date"></div>
+      <div class="form-group"><label>End Date</label><input id="p-end" type="date"></div>
+    </div>
+    <div class="form-group"><label>Implementation Effort</label><select id="p-effort">${effortOpts}</select>
+      <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
+    </div>
     <div class="card-header">Select Actions (${allPending.length} pending)</div>
     <div style="max-height:300px;overflow-y:auto">
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-action-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
@@ -1863,7 +1995,14 @@ async function createPlan() {
   if(!name) return toast('Name required','error');
   const ids = [...document.querySelectorAll('.plan-action-cb:checked')].map(c=>c.value);
   if(!ids.length) return toast('Select at least one action','error');
-  const r = await api.post(`/api/tenants/${state.activeTenant.name}/plans`, {name, description:document.getElementById('p-desc').value, action_ids:ids});
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/plans`, {
+    name, description:document.getElementById('p-desc').value, action_ids:ids,
+    responsible_person:document.getElementById('p-responsible').value,
+    priority:document.getElementById('p-priority').value,
+    start_date:document.getElementById('p-start').value||null,
+    end_date:document.getElementById('p-end').value||null,
+    implementation_effort:document.getElementById('p-effort').value
+  });
   if(r.error) return toast(r.error,'error');
   closeModal();
   toast('Plan created','success');
@@ -1936,12 +2075,19 @@ async function viewPlan(planId) {
         <h2 style="margin:0">${plan.name}</h2>
         <div class="flex gap-8 items-center">
           <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
-          <button class="btn btn-sm" onclick="showEditPlan('${planId}', ${JSON.stringify(plan.name).replace(/"/g,'&quot;')}, ${JSON.stringify(plan.description||'').replace(/"/g,'&quot;')})">Edit</button>
+          <button class="btn btn-sm" onclick="showEditPlan('${planId}')">Edit</button>
           <button class="btn btn-sm" onclick="exportPlanPDF('${planId}')">PDF Report</button>
           <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
         </div>
       </div>
-      <p style="color:var(--text-light);margin:0">${plan.description||'No description'}</p>
+      <p style="color:var(--text-light);margin:0 0 8px">${plan.description||'No description'}</p>
+      <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap">
+        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${plan.responsible_person}</strong></div>`:''}
+        ${plan.priority?`<div><span style="color:var(--text-light)">Priority:</span> ${priorityBadge(plan.priority)}</div>`:''}
+        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${plan.implementation_effort}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
+        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${plan.start_date}</div>`:''}
+        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${plan.end_date}</div>`:''}
+      </div>
     </div>
 
     <div class="grid grid-4 mb-16">
@@ -1979,10 +2125,25 @@ async function updatePlanStatus(planId, status) {
   toast('Plan status updated to ' + status, 'success');
 }
 
-function showEditPlan(planId, name, desc) {
+async function showEditPlan(planId) {
+  const plan = await api.get(`/api/plans/${planId}`);
+  const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e===(plan.implementation_effort||'Medium')?' selected':''}>${e}</option>`).join('');
+  const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p===(plan.priority||'Medium')?' selected':''}>${p}</option>`).join('');
+
   openModal('Edit Plan', `
-    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${name.replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${desc||''}</textarea></div>`,
+    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${(plan.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${plan.description||''}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${plan.responsible_person||''}"></div>
+      <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${plan.start_date||''}"></div>
+      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${plan.end_date||''}"></div>
+    </div>
+    <div class="form-group"><label>Implementation Effort</label><select id="ep-effort">${effortOpts}</select>
+      <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
+    </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="submitEditPlan('${planId}')">Save</button>`);
 }
@@ -1990,7 +2151,14 @@ function showEditPlan(planId, name, desc) {
 async function submitEditPlan(planId) {
   const name = document.getElementById('ep-name').value;
   if(!name) return toast('Name required', 'error');
-  await api.put(`/api/plans/${planId}`, {name, description: document.getElementById('ep-desc').value});
+  await api.put(`/api/plans/${planId}`, {
+    name, description: document.getElementById('ep-desc').value,
+    responsible_person: document.getElementById('ep-responsible').value,
+    priority: document.getElementById('ep-priority').value,
+    start_date: document.getElementById('ep-start').value||null,
+    end_date: document.getElementById('ep-end').value||null,
+    implementation_effort: document.getElementById('ep-effort').value
+  });
   closeModal();
   toast('Plan updated', 'success');
   viewPlan(planId);

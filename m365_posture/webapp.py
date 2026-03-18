@@ -763,6 +763,15 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("name is required")
         plan = db.create_plan(name, data["name"], data.get("description", ""))
 
+        # Update additional plan metadata if provided
+        extra = {}
+        for field in ("responsible_person", "start_date", "end_date",
+                       "priority", "implementation_effort"):
+            if field in data:
+                extra[field] = data[field]
+        if extra:
+            db.update_plan(plan["id"], **extra)
+
         # If action_ids provided, add them
         action_ids = data.get("action_ids", [])
         for i, aid in enumerate(action_ids):
@@ -873,6 +882,111 @@ def create_app(db_path: str = None) -> Flask:
                     result["by_workload"][wl] = {}
                 result["by_workload"][wl][name] = data_w
 
+        return jsonify(result)
+
+    # ── Action comparison across tenants ──
+
+    @app.route("/api/compare-actions", methods=["POST"])
+    def api_compare_actions():
+        """Compare individual actions across tenants by matching source_id."""
+        data = request.get_json() or {}
+        tenant_names = data.get("tenants", [])
+        if len(tenant_names) < 2:
+            return _json_error("At least 2 tenants required")
+
+        # Gather all actions per tenant, keyed by source_id
+        tenant_actions = {}
+        for name in tenant_names:
+            actions = db.get_actions(name)
+            tenant_actions[name] = {a["source_id"]: a for a in actions if a.get("source_id")}
+
+        # Find all unique source_ids across tenants
+        all_source_ids = set()
+        for actions_map in tenant_actions.values():
+            all_source_ids.update(actions_map.keys())
+
+        # Build comparison rows
+        rows = []
+        for sid in sorted(all_source_ids):
+            row = {"source_id": sid, "title": "", "tenants": {}}
+            statuses = set()
+            for tname in tenant_names:
+                a = tenant_actions[tname].get(sid)
+                if a:
+                    row["tenants"][tname] = {
+                        "status": a["status"], "priority": a["priority"],
+                        "score": a.get("score"), "max_score": a.get("max_score"),
+                        "workload": a.get("workload", ""),
+                    }
+                    if not row["title"]:
+                        row["title"] = a["title"]
+                    statuses.add(a["status"])
+                else:
+                    row["tenants"][tname] = None
+            # Mark as different if statuses differ or action missing in some tenants
+            row["differs"] = len(statuses) > 1 or len(row["tenants"]) != len(
+                [v for v in row["tenants"].values() if v is not None]
+            )
+            rows.append(row)
+
+        # Sort: differing actions first, then by title
+        rows.sort(key=lambda r: (0 if r["differs"] else 1, r["title"]))
+        return jsonify({"tenants": tenant_names, "actions": rows,
+                        "total": len(rows), "differing": sum(1 for r in rows if r["differs"])})
+
+    # ── Pin/unpin actions on dashboard ──
+
+    @app.route("/api/actions/<action_id>/pin", methods=["POST"])
+    def api_pin_action(action_id):
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        db.update_action(action_id, {"pinned_priority": 1})
+        return jsonify({"pinned": True})
+
+    @app.route("/api/actions/<action_id>/unpin", methods=["POST"])
+    def api_unpin_action(action_id):
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        db.update_action(action_id, {"pinned_priority": 0})
+        return jsonify({"pinned": False})
+
+    # ── Batch status update ──
+
+    @app.route("/api/actions/batch-status", methods=["POST"])
+    def api_batch_status():
+        data = request.get_json() or {}
+        action_ids = data.get("action_ids", [])
+        status = data.get("status")
+        if not action_ids or not status:
+            return _json_error("action_ids and status required")
+        updated = 0
+        for aid in action_ids:
+            result = db.update_action(aid, {"status": status},
+                                       changed_by=data.get("changed_by", "batch"))
+            if result:
+                updated += 1
+        return jsonify({"updated": updated})
+
+    # ── Plan membership lookup ──
+
+    @app.route("/api/tenants/<name>/action-plans", methods=["GET"])
+    def api_action_plans(name):
+        """Return a mapping of action_id -> list of plan names for all actions in plans."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        plans = db.get_plans(name)
+        result = {}
+        for p in plans:
+            full = db.get_plan(p["id"])
+            if full:
+                for item in full.get("items", []):
+                    aid = item["action_id"]
+                    if aid not in result:
+                        result[aid] = []
+                    result[aid].append({"plan_id": p["id"], "plan_name": p["name"],
+                                        "plan_status": p["status"]})
         return jsonify(result)
 
     # ── GitLab Templates ──

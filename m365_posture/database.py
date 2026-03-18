@@ -323,6 +323,28 @@ class Database:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
+            # Add pinned_priority column to actions for dashboard pinning
+            for col, coltype, default in [
+                ("pinned_priority", "INTEGER", "0"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+            # Add plan metadata columns (responsible, dates, priority, effort)
+            for col, coltype, default in [
+                ("responsible_person", "TEXT", "''"),
+                ("start_date", "TEXT", "NULL"),
+                ("end_date", "TEXT", "NULL"),
+                ("priority", "TEXT", "'Medium'"),
+                ("implementation_effort", "TEXT", "'Medium'"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
             # Add Graph API overall scores and metadata to tenants (idempotent)
             for col, coltype, default in [
                 ("graph_current_score", "REAL", "NULL"),
@@ -838,6 +860,7 @@ class Database:
                 "notes", "reference_url", "correlation_group_id",
                 "risk_justification", "risk_owner", "risk_review_date",
                 "risk_expiry_date", "risk_accepted_at",
+                "pinned_priority",
             }
             updates = {}
             for k, v in data.items():
@@ -1247,7 +1270,8 @@ class Database:
             return plan
 
     def update_plan(self, plan_id: str, **kwargs) -> Optional[dict]:
-        allowed = {"name", "description", "status"}
+        allowed = {"name", "description", "status", "responsible_person",
+                   "start_date", "end_date", "priority", "implementation_effort"}
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if updates:
             updates["updated_at"] = datetime.utcnow().isoformat()
