@@ -935,6 +935,70 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"tenants": tenant_names, "actions": rows,
                         "total": len(rows), "differing": sum(1 for r in rows if r["differs"])})
 
+    # ── Snapshot comparison ──
+
+    @app.route("/api/tenants/<name>/compare-snapshot", methods=["POST"])
+    def api_compare_snapshot(name):
+        """Compare current tenant scores against a historical snapshot."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        snapshot_id = data.get("snapshot_id")
+        if not snapshot_id:
+            return _json_error("snapshot_id required")
+
+        # Get the snapshot
+        snapshots = db.get_score_snapshots(name, limit=500)
+        snapshot = next((s for s in snapshots if s["id"] == snapshot_id), None)
+        if not snapshot:
+            return _json_error("Snapshot not found", 404)
+
+        # Get current scores
+        current = db.get_scores(name)
+        snap_label = "Snapshot (" + snapshot["timestamp"][:10] + ")"
+        cur_label = "Current"
+
+        result = {
+            "tenant": name,
+            "snapshot_id": snapshot_id,
+            "snapshot_timestamp": snapshot["timestamp"],
+            "labels": [cur_label, snap_label],
+            "overall": {
+                cur_label: {
+                    "percentage": current.get("percentage", 0),
+                    "total_actions": current.get("total_actions", 0),
+                    "completed_actions": current.get("completed_actions", 0),
+                },
+                snap_label: {
+                    "percentage": snapshot.get("percentage", 0),
+                    "total_actions": snapshot.get("total_actions", 0),
+                    "completed_actions": snapshot.get("completed_actions", 0),
+                },
+            },
+            "by_tool": {},
+            "by_workload": {},
+        }
+
+        # Merge tool data
+        all_tools = set(list(current.get("by_tool", {}).keys()) +
+                        list(snapshot.get("by_tool", {}).keys()))
+        for tool in sorted(all_tools):
+            result["by_tool"][tool] = {
+                cur_label: current.get("by_tool", {}).get(tool, {}),
+                snap_label: snapshot.get("by_tool", {}).get(tool, {}),
+            }
+
+        # Merge workload data
+        all_wl = set(list(current.get("by_workload", {}).keys()) +
+                      list(snapshot.get("by_workload", {}).keys()))
+        for wl in sorted(all_wl):
+            result["by_workload"][wl] = {
+                cur_label: current.get("by_workload", {}).get(wl, {}),
+                snap_label: snapshot.get("by_workload", {}).get(wl, {}),
+            }
+
+        return jsonify(result)
+
     # ── Pin/unpin actions on dashboard ──
 
     @app.route("/api/actions/<action_id>/pin", methods=["POST"])

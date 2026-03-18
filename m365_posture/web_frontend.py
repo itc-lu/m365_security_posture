@@ -782,10 +782,120 @@ function showDashboardCompare() {
   let checks = state.tenants.map(t => {
     return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${t.display_name||t.name}</span></label>`;
   }).join('');
-  openModal('Compare Tenants', `
-    <p style="margin-bottom:12px;color:var(--text-light)">Select 2 or more tenants to compare side by side.</p>
-    <div style="display:flex;flex-direction:column">${checks}</div>`,
-    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doDashboardCompare()">Compare</button>');
+  openModal('Compare', `
+    <div class="action-tabs" style="margin:0 0 16px">
+      <div class="atab active" onclick="switchCmpTab('tenants',this)">Compare Tenants</div>
+      <div class="atab" onclick="switchCmpTab('snapshot',this)">Compare with Snapshot</div>
+    </div>
+    <div id="cmp-tab-tenants">
+      <p style="margin-bottom:12px;color:var(--text-light)">Select 2 or more tenants to compare side by side.</p>
+      <div style="display:flex;flex-direction:column">${checks}</div>
+    </div>
+    <div id="cmp-tab-snapshot" class="hidden">
+      <p style="margin-bottom:12px;color:var(--text-light)">Compare the current state of a tenant against a historical snapshot.</p>
+      <div class="form-group"><label>Tenant</label><select id="snap-cmp-tenant">${state.tenants.map(t=>'<option value="'+t.name+'"'+(t.is_active?' selected':'')+'>'+( t.display_name||t.name)+'</option>').join('')}</select></div>
+      <div class="form-group"><label>Snapshot</label><select id="snap-cmp-id"><option value="">Loading snapshots...</option></select></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="cmp-btn-tenants" onclick="doDashboardCompare()">Compare Tenants</button>
+     <button class="btn btn-primary hidden" id="cmp-btn-snapshot" onclick="doSnapshotCompare()">Compare with Snapshot</button>`);
+  // Trigger snapshot loading after modal is open
+  setTimeout(()=>loadSnapshotsForCompare(), 50);
+}
+
+function switchCmpTab(tab, el) {
+  el.parentElement.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('cmp-tab-tenants').classList.toggle('hidden', tab!=='tenants');
+  document.getElementById('cmp-tab-snapshot').classList.toggle('hidden', tab!=='snapshot');
+  document.getElementById('cmp-btn-tenants').classList.toggle('hidden', tab!=='tenants');
+  document.getElementById('cmp-btn-snapshot').classList.toggle('hidden', tab!=='snapshot');
+}
+
+async function loadSnapshotsForCompare() {
+  const sel = document.getElementById('snap-cmp-tenant');
+  const snapSel = document.getElementById('snap-cmp-id');
+  if(!sel || !snapSel) return;
+
+  async function refresh() {
+    const name = sel.value;
+    snapSel.innerHTML = '<option value="">Loading...</option>';
+    const snaps = await api.get(`/api/tenants/${name}/snapshots?limit=50`);
+    if(!snaps.length) {
+      snapSel.innerHTML = '<option value="">No snapshots available</option>';
+      return;
+    }
+    snapSel.innerHTML = snaps.map(s => {
+      const dt = s.timestamp?.substring(0,16).replace('T',' ') || '';
+      const trigger = s.trigger ? ' ('+s.trigger+')' : '';
+      return `<option value="${s.id}">${dt}${trigger} — ${(s.percentage||0).toFixed(1)}%</option>`;
+    }).join('');
+  }
+
+  sel.addEventListener('change', refresh);
+  await refresh();
+}
+
+async function doSnapshotCompare() {
+  const tenantName = document.getElementById('snap-cmp-tenant')?.value;
+  const snapshotId = parseInt(document.getElementById('snap-cmp-id')?.value);
+  if(!tenantName || !snapshotId) return toast('Select a tenant and snapshot','error');
+  closeModal();
+  document.getElementById('topbar-actions').innerHTML = '';
+
+  const r = await api.post(`/api/tenants/${tenantName}/compare-snapshot`, {snapshot_id: snapshotId});
+  const labels = r.labels || ['Current', 'Snapshot'];
+  const c = document.getElementById('content');
+
+  let rows = labels.map(l => {
+    const d = r.overall[l]||{};
+    const delta = l === labels[0] ? '' : (() => {
+      const cur = r.overall[labels[0]]?.percentage||0;
+      const snap = d.percentage||0;
+      const diff = cur - snap;
+      if(Math.abs(diff) < 0.01) return '';
+      return diff > 0 ? ' <span style="color:var(--success);font-size:12px">&#9650; +'+diff.toFixed(1)+'%</span>'
+                       : ' <span style="color:var(--danger);font-size:12px">&#9660; '+diff.toFixed(1)+'%</span>';
+    })();
+    return `<tr><td><strong>${l}</strong></td><td>${gauge(d.percentage||0,80)}${delta}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+  }).join('');
+
+  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
+    let cells = labels.map(l => {
+      const pct = (data[l]?.percentage||0).toFixed(2);
+      return `<td>${pct}%</td>`;
+    }).join('');
+    return `<tr><td>${tool}</td>${cells}</tr>`;
+  }).join('');
+
+  let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
+    let cells = labels.map(l => {
+      const pct = (data[l]?.percentage||0).toFixed(2);
+      return `<td>${pct}%</td>`;
+    }).join('');
+    return `<tr><td>${wl}</td>${cells}</tr>`;
+  }).join('');
+
+  const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
+
+  c.innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${tenantDisplay}</h2>
+      <div class="flex gap-8">
+        <button class="btn btn-sm btn-primary" onclick="downloadComparisonPDF()">PDF Report</button>
+        <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
+      </div>
+    </div>
+    <div id="comparison-report">
+    <div class="card mb-16"><div class="card-header">Overall</div>
+      <table><thead><tr><th>State</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="grid grid-2 mb-16">
+      <div class="card"><div class="card-header">By Source Tool</div>
+        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+      <div class="card"><div class="card-header">By Workload</div>
+        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>
+    </div>`;
 }
 
 async function doDashboardCompare() {
@@ -916,7 +1026,7 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
     document.getElementById(_cmpExpandedRow)?.classList.add('hidden');
   }
 
-  // Toggle this row
+  // Toggle this row - collapse if same tenant already shown
   if(!row.classList.contains('hidden') && contentEl.dataset.loadedTenant === tenantName) {
     row.classList.add('hidden');
     _cmpExpandedRow = null;
@@ -931,53 +1041,15 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
     const a = await api.get(`/api/actions/${actionId}`);
     contentEl.dataset.loadedTenant = tenantName;
 
-    const scorePct = a.max_score > 0 ? (a.score/a.max_score*100) : 0;
-    const scoreDisplay = a.max_score > 0 ? a.score + '/' + a.max_score + ' (' + scorePct.toFixed(0) + '%)' : 'N/A';
-
-    // Remediation steps
-    let remHtml = '';
-    const remText = a.remediation_steps || '';
-    if(remText.includes('Prerequisites:') && remText.includes('Next steps:')) {
-      const parts = remText.split('Next steps:');
-      const prereq = parts[0].replace('Prerequisites:', '').trim();
-      const steps = parts[1]?.trim() || '';
-      if(prereq) remHtml += '<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">' + prereq + '</div></div>';
-      if(steps) remHtml += '<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">' + steps + '</div></div>';
-    } else if(remText) {
-      remHtml = '<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">' + remText + '</div></div>';
-    }
-
+    // Reuse the full action detail panel with all tabs (General, Implementation, Notes, History)
     contentEl.innerHTML = `
-      <div class="detail-panel" style="margin:0">
-        <div class="flex justify-between items-center mb-16">
-          <div><strong style="font-size:14px">${a.title}</strong></div>
-          <div>
-            <span class="badge badge-info">${tenantName}</span>
-            ${statusBadge(a.status)}
-            <span class="badge ${{'Microsoft Secure Score':'badge-info','SCuBA (CISA)':'badge-purple','Zero Trust Report':'badge-cyan','Manual':'badge-gray'}[a.source_tool]||'badge-gray'}">${a.source_tool}</span>
-          </div>
-        </div>
-        <div class="action-detail-layout">
-          <div>
-            ${a.description?'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">'+a.description+'</div></div>':''}
-            ${remHtml}
-            ${a.remediation_impact?'<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">'+a.remediation_impact+'</div></div>':''}
-            ${a.notes?'<div class="field mb-16"><div class="field-label">Notes</div><div class="field-value" style="white-space:pre-wrap">'+a.notes+'</div></div>':''}
-          </div>
-          <div>
-            <div class="action-sidebar-card">
-              <div class="sidebar-field"><div class="field-label">Status</div><div class="field-value">${statusBadge(a.status)}</div></div>
-              <div class="sidebar-field"><div class="field-label">Score</div><div class="field-value">${scoreDisplay}</div></div>
-              <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
-              <div class="sidebar-field"><div class="field-label">Workload</div><div class="field-value">${a.workload||'N/A'}</div></div>
-              <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level||'N/A'}</div></div>
-              <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort||'N/A'}</div></div>
-              ${a.responsible?'<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">'+a.responsible+'</div></div>':''}
-              ${a.reference_url?'<div class="sidebar-field"><div class="field-label">Reference</div><div class="field-value"><a href="'+a.reference_url+'" target="_blank" style="font-size:12px">Documentation</a></div></div>':''}
-            </div>
-          </div>
-        </div>
-      </div>`;
+      <div style="padding:8px 0 4px;margin-bottom:4px;border-bottom:1px solid var(--border)">
+        <span class="badge badge-info" style="font-size:12px">${tenantName}</span>
+        <strong style="font-size:14px;margin-left:8px">${a.title}</strong>
+      </div>
+      ${actionDetailHtml(a)}`;
+    // Load dependencies for this action
+    loadActionDeps(actionId);
   } catch(e) {
     contentEl.innerHTML = '<div style="padding:16px;color:var(--danger)">Failed to load action details.</div>';
   }
