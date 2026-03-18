@@ -301,10 +301,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
       Trending
     </a>
-    <a href="#compare" data-page="compare">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      Compare
-    </a>
     <a href="#export" data-page="export">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export
@@ -523,12 +519,12 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',compare:'Compare Tenants',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
+  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
@@ -796,6 +792,8 @@ async function doDashboardCompare() {
   const tenants = [...document.querySelectorAll('.dash-cmp:checked')].map(c=>c.value);
   if(tenants.length < 2) return toast('Select at least 2 tenants','error');
   closeModal();
+  // Hide dashboard topbar buttons during comparison
+  document.getElementById('topbar-actions').innerHTML = '';
   const [r, actionCmp] = await Promise.all([
     api.post('/api/compare', {tenants}),
     api.post('/api/compare-actions', {tenants})
@@ -820,13 +818,14 @@ async function doDashboardCompare() {
   // Action-level comparison
   const diffActions = (actionCmp.actions||[]).filter(a => a.differs);
   const sameActions = (actionCmp.actions||[]).filter(a => !a.differs);
-  let actionDiffRows = diffActions.slice(0,100).map(a => {
+  let actionDiffRows = diffActions.slice(0,100).map((a, idx) => {
     let cells = tenants.map(t => {
       const d = a.tenants[t];
       if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
-      return `<td><a href="#" onclick="switchTenantAndViewAction('${t}','${d.id}');event.preventDefault()" style="text-decoration:none">${statusBadge(d.status)}</a></td>`;
+      return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details for ${t}">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>`;
+    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>
+      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+1}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
   c.innerHTML = `
@@ -906,15 +905,82 @@ function downloadComparisonPDF() {
   printWin.document.close();
 }
 
-async function switchTenantAndViewAction(tenantName, actionId) {
-  await api.post(`/api/tenants/${tenantName}/activate`);
-  const active = await api.get('/api/active-tenant');
-  state.activeTenant = active && active.name ? active : null;
-  state.tenants = await api.get('/api/tenants');
-  updateTenantIndicator();
-  navigate('actions');
-  // Wait for actions to load then expand the target action
-  setTimeout(() => { toggleActionDetail(actionId); }, 500);
+let _cmpExpandedRow = null;
+async function toggleCompareActionDetail(tenantName, actionId, rowId) {
+  const row = document.getElementById(rowId);
+  const contentEl = document.getElementById(rowId.replace('cmp-detail-','cmp-detail-content-'));
+  if(!row || !contentEl) return;
+
+  // Collapse previously expanded row
+  if(_cmpExpandedRow && _cmpExpandedRow !== rowId) {
+    document.getElementById(_cmpExpandedRow)?.classList.add('hidden');
+  }
+
+  // Toggle this row
+  if(!row.classList.contains('hidden') && contentEl.dataset.loadedTenant === tenantName) {
+    row.classList.add('hidden');
+    _cmpExpandedRow = null;
+    return;
+  }
+
+  contentEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-light)">Loading action details...</div>';
+  row.classList.remove('hidden');
+  _cmpExpandedRow = rowId;
+
+  try {
+    const a = await api.get(`/api/actions/${actionId}`);
+    contentEl.dataset.loadedTenant = tenantName;
+
+    const scorePct = a.max_score > 0 ? (a.score/a.max_score*100) : 0;
+    const scoreDisplay = a.max_score > 0 ? a.score + '/' + a.max_score + ' (' + scorePct.toFixed(0) + '%)' : 'N/A';
+
+    // Remediation steps
+    let remHtml = '';
+    const remText = a.remediation_steps || '';
+    if(remText.includes('Prerequisites:') && remText.includes('Next steps:')) {
+      const parts = remText.split('Next steps:');
+      const prereq = parts[0].replace('Prerequisites:', '').trim();
+      const steps = parts[1]?.trim() || '';
+      if(prereq) remHtml += '<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">' + prereq + '</div></div>';
+      if(steps) remHtml += '<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">' + steps + '</div></div>';
+    } else if(remText) {
+      remHtml = '<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">' + remText + '</div></div>';
+    }
+
+    contentEl.innerHTML = `
+      <div class="detail-panel" style="margin:0">
+        <div class="flex justify-between items-center mb-16">
+          <div><strong style="font-size:14px">${a.title}</strong></div>
+          <div>
+            <span class="badge badge-info">${tenantName}</span>
+            ${statusBadge(a.status)}
+            <span class="badge ${{'Microsoft Secure Score':'badge-info','SCuBA (CISA)':'badge-purple','Zero Trust Report':'badge-cyan','Manual':'badge-gray'}[a.source_tool]||'badge-gray'}">${a.source_tool}</span>
+          </div>
+        </div>
+        <div class="action-detail-layout">
+          <div>
+            ${a.description?'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">'+a.description+'</div></div>':''}
+            ${remHtml}
+            ${a.remediation_impact?'<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">'+a.remediation_impact+'</div></div>':''}
+            ${a.notes?'<div class="field mb-16"><div class="field-label">Notes</div><div class="field-value" style="white-space:pre-wrap">'+a.notes+'</div></div>':''}
+          </div>
+          <div>
+            <div class="action-sidebar-card">
+              <div class="sidebar-field"><div class="field-label">Status</div><div class="field-value">${statusBadge(a.status)}</div></div>
+              <div class="sidebar-field"><div class="field-label">Score</div><div class="field-value">${scoreDisplay}</div></div>
+              <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
+              <div class="sidebar-field"><div class="field-label">Workload</div><div class="field-value">${a.workload||'N/A'}</div></div>
+              <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level||'N/A'}</div></div>
+              <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort||'N/A'}</div></div>
+              ${a.responsible?'<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">'+a.responsible+'</div></div>':''}
+              ${a.reference_url?'<div class="sidebar-field"><div class="field-label">Reference</div><div class="field-value"><a href="'+a.reference_url+'" target="_blank" style="font-size:12px">Documentation</a></div></div>':''}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    contentEl.innerHTML = '<div style="padding:16px;color:var(--danger)">Failed to load action details.</div>';
+  }
 }
 
 // ── PDF Report Download ──
@@ -2309,6 +2375,7 @@ async function exportPlanPDF(planId) {
   let actionRows = (plan.items||[]).map((a,i) => `<tr>
     <td>${i+1}</td><td>${a.title||''}</td><td>${a.status||''}</td><td>${a.priority||''}</td>
     <td>${a.workload||''}</td><td>${a.implementation_effort||''}</td>
+    <td>${a.responsible||''}</td>
     <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
   </tr>`).join('');
 
@@ -2329,7 +2396,18 @@ async function exportPlanPDF(planId) {
   </style></head><body>
   <h1>${plan.name}</h1>
   <div class="meta">${tenant.display_name||tenant.name} &middot; ${today} &middot; Status: ${plan.status}</div>
-  <p>${plan.description||''}</p>
+  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${plan.description}</p>`:''}
+
+  <h2>Plan Details</h2>
+  <table>
+    <tbody>
+      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${plan.responsible_person}</td></tr>`:''}
+      ${plan.start_date?`<tr><td style="font-weight:600">Start Date</td><td>${plan.start_date}</td></tr>`:''}
+      ${plan.end_date?`<tr><td style="font-weight:600">End Date</td><td>${plan.end_date}</td></tr>`:''}
+      ${plan.start_date&&plan.end_date?`<tr><td style="font-weight:600">Duration</td><td>${Math.ceil((new Date(plan.end_date)-new Date(plan.start_date))/(1000*60*60*24))} days</td></tr>`:''}
+      <tr><td style="font-weight:600">Implementation Effort</td><td>${(()=>{const efforts={};(plan.items||[]).forEach(a=>{const e=a.implementation_effort||'Unknown';efforts[e]=(efforts[e]||0)+1;});return Object.entries(efforts).map(([e,n])=>e+': '+n).join(', ')||'N/A';})()}</td></tr>
+    </tbody>
+  </table>
 
   <h2>Key Performance Indicators</h2>
   <div class="kpi-row">
@@ -2353,7 +2431,7 @@ async function exportPlanPDF(planId) {
   </tbody></table>
 
   <h2>All Planned Actions</h2>
-  <table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th></tr></thead>
+  <table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Responsible</th><th>Score</th></tr></thead>
   <tbody>${actionRows}</tbody></table>
 
   <div style="margin-top:30px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:8px">
@@ -3108,45 +3186,6 @@ async function showScubaReportDetail(reportId) {
       <strong>Results:</strong> ${r.passed_controls} passed, ${r.failed_controls} failed, ${r.warning_controls} warnings out of ${r.total_controls} total controls
     </div>
   `);
-}
-
-// ── Compare ──
-async function renderCompare() {
-  state.tenants = await api.get('/api/tenants');
-  if(state.tenants.length < 2) {
-    document.getElementById('content').innerHTML = '<div class="card text-center" style="padding:60px"><h3>Need at least 2 tenants</h3></div>';
-    return;
-  }
-
-  let checks = state.tenants.map(t => `<label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" value="${t.name}" class="cmp-tenant" ${t.is_active?'checked':''}> ${t.display_name||t.name}</label>`).join('');
-
-  document.getElementById('content').innerHTML = `
-    <div class="card mb-16"><div class="card-header">Select Tenants to Compare</div>
-      <div class="flex gap-8 flex-wrap mb-16">${checks}</div>
-      <button class="btn btn-primary" onclick="doCompare()">Compare</button>
-    </div><div id="compare-result"></div>`;
-}
-
-async function doCompare() {
-  const tenants = [...document.querySelectorAll('.cmp-tenant:checked')].map(c=>c.value);
-  if(tenants.length < 2) return toast('Select at least 2 tenants','error');
-  const r = await api.post('/api/compare', {tenants});
-
-  let overallRows = tenants.map(t => {
-    const d = r.overall[t]||{};
-    return `<tr><td><strong>${t}</strong></td><td>${gauge(d.percentage||0, 80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
-  }).join('');
-
-  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
-  }).join('');
-
-  document.getElementById('compare-result').innerHTML = `
-    <div class="card mb-16"><div class="card-header">Overall Comparison</div>
-      <table><thead><tr><th>Tenant</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${overallRows}</tbody></table></div>
-    <div class="card"><div class="card-header">By Source Tool</div>
-      <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows}</tbody></table></div>`;
 }
 
 // ── Export ──
