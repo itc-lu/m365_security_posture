@@ -114,7 +114,7 @@ class ScubaParser:
         return None
 
     def _parse_json(self, path: Path) -> list[Action]:
-        with open(path) as f:
+        with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
 
         # Detect rich ScubaResults format (has MetaData + Results + Summary)

@@ -129,6 +129,18 @@ def fetch_secure_scores(access_token: str) -> dict:
             return json.loads(resp.read())
     except HTTPError as e:
         body = e.read().decode()
+        if e.code == 403:
+            raise RuntimeError(
+                f"Graph API error 403: {body}\n\n"
+                "This usually means the app registration is missing the required "
+                "permissions. To fix:\n"
+                "1. In Entra ID > App registrations > your app > API permissions\n"
+                "2. Add Microsoft Graph > Application permission > "
+                "SecurityEvents.Read.All\n"
+                "3. Click 'Grant admin consent' for your tenant\n"
+                "Note: For client-credentials (app-only) auth you need "
+                "*Application* permissions, not Delegated."
+            )
         raise RuntimeError(f"Graph API error ({e.code}): {body}")
 
 
@@ -150,6 +162,19 @@ def fetch_control_profiles(access_token: str) -> dict:
                 data = json.loads(resp.read())
         except HTTPError as e:
             body = e.read().decode()
+            if e.code == 403:
+                raise RuntimeError(
+                    f"Graph API error 403: {body}\n\n"
+                    "This usually means the app registration is missing the "
+                    "required permissions. To fix:\n"
+                    "1. In Entra ID > App registrations > your app > "
+                    "API permissions\n"
+                    "2. Add Microsoft Graph > Application permission > "
+                    "SecurityEvents.Read.All\n"
+                    "3. Click 'Grant admin consent' for your tenant\n"
+                    "Note: For client-credentials (app-only) auth you need "
+                    "*Application* permissions, not Delegated."
+                )
             raise RuntimeError(f"Graph API error ({e.code}): {body}")
 
         all_profiles.extend(data.get("value", []))
