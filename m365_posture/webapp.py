@@ -997,6 +997,54 @@ def create_app(db_path: str = None) -> Flask:
                 snap_label: snapshot.get("by_workload", {}).get(wl, {}),
             }
 
+        # Action-level comparison: reconstruct status at snapshot time
+        # by reversing history entries that occurred after the snapshot
+        snap_ts = snapshot["timestamp"]
+        actions = db.get_actions(name)
+        action_diffs = []
+        same_count = 0
+        for a in actions:
+            current_status = a["status"]
+            # Walk history backwards to find status at snapshot time
+            status_at_snap = current_status
+            # History entries after snapshot, newest first
+            changes_after = sorted(
+                [h for h in (a.get("history") or []) if h.get("timestamp", "") > snap_ts],
+                key=lambda h: h["timestamp"], reverse=True
+            )
+            for h in changes_after:
+                if h.get("old_status"):
+                    status_at_snap = h["old_status"]
+
+            # Actions created after snapshot didn't exist then
+            created_after = a.get("created_at", "") > snap_ts if a.get("created_at") else False
+
+            if created_after:
+                action_diffs.append({
+                    "title": a["title"], "source_id": a.get("source_id", ""),
+                    "differs": True,
+                    "current": {"id": a["id"], "status": current_status,
+                                "priority": a["priority"], "workload": a.get("workload", "")},
+                    "snapshot": None,
+                })
+            elif status_at_snap != current_status:
+                action_diffs.append({
+                    "title": a["title"], "source_id": a.get("source_id", ""),
+                    "differs": True,
+                    "current": {"id": a["id"], "status": current_status,
+                                "priority": a["priority"], "workload": a.get("workload", "")},
+                    "snapshot": {"id": a["id"], "status": status_at_snap,
+                                 "priority": a["priority"], "workload": a.get("workload", "")},
+                })
+            else:
+                same_count += 1
+
+        # Sort: differing first, then by title
+        action_diffs.sort(key=lambda r: r["title"])
+        result["action_diffs"] = action_diffs
+        result["actions_same"] = same_count
+        result["actions_differing"] = len(action_diffs)
+
         return jsonify(result)
 
     # ── Pin/unpin actions on dashboard ──

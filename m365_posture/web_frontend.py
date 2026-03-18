@@ -878,6 +878,18 @@ async function doSnapshotCompare() {
 
   const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
 
+  // Action differences between current and snapshot
+  const actionDiffs = r.action_diffs || [];
+  const sameCount = r.actions_same || 0;
+  let snapActionRows = actionDiffs.slice(0,200).map((a, idx) => {
+    const snapCell = a.snapshot
+      ? `<td>${statusBadge(a.snapshot.status)}</td>`
+      : '<td style="color:var(--text-light);font-style:italic;font-size:12px">Did not exist</td>';
+    const curCell = `<td><a href="#" onclick="toggleCompareActionDetail('${tenantName}','${a.current.id}','snap-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details">${statusBadge(a.current.status)}</a></td>`;
+    return `<tr><td style="font-size:12px">${a.title}</td>${snapCell}${curCell}</tr>
+      <tr id="snap-detail-${idx}" class="hidden"><td colspan="3" style="padding:0"><div id="snap-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+  }).join('');
+
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
       <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${tenantDisplay}</h2>
@@ -894,6 +906,15 @@ async function doSnapshotCompare() {
         <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
         <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">Action Changes <span class="badge badge-danger">${r.actions_differing||0} changed</span> <span class="badge badge-success">${sameCount} unchanged</span></div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions whose status changed since the snapshot, or new actions added after the snapshot. Click current status to view details.</div>
+      ${snapActionRows ? `
+        <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+          <table><thead><tr><th>Action</th><th>${labels[1]}</th><th>${labels[0]}</th></tr></thead>
+          <tbody>${snapActionRows}</tbody></table>
+        </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No changes found - all actions have the same status as the snapshot.</div>'}
     </div>
     </div>`;
 }
@@ -1018,7 +1039,7 @@ function downloadComparisonPDF() {
 let _cmpExpandedRow = null;
 async function toggleCompareActionDetail(tenantName, actionId, rowId) {
   const row = document.getElementById(rowId);
-  const contentEl = document.getElementById(rowId.replace('cmp-detail-','cmp-detail-content-'));
+  const contentEl = document.getElementById(rowId.replace('cmp-detail-','cmp-detail-content-').replace('snap-detail-','snap-detail-content-'));
   if(!row || !contentEl) return;
 
   // Collapse previously expanded row
