@@ -696,12 +696,20 @@ async function renderDashboard(sourceFilter) {
     for(const [s, n] of Object.entries(scores.by_status||{})) statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
   }
 
-  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => `<tr>
-    <td style="max-width:300px">${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
+  // Build lookup of full action objects for detail expansion
+  const _allActionsMap = {};
+  (allActions||[]).forEach(a => _allActionsMap[a.id] = a);
+
+  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => {
+    const full = _allActionsMap[a.id] || a;
+    return `<tr onclick="toggleActionDetail('dash-${a.id}')" style="cursor:pointer">
+    <td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="unpinDashAction('${a.id}');event.stopPropagation()" title="${a.pinned_priority?'Unpin from dashboard':'Remove from list'}" style="padding:2px 6px;font-size:11px">${a.pinned_priority?'&#9733;':'&times;'}</button>
     </td>
-  </tr>`).join('');
+  </tr>
+  <tr id="detail-dash-${a.id}" class="hidden"><td colspan="5" style="padding:0">${actionDetailHtml(full)}</td></tr>`;
+  }).join('');
 
   // Mini trend sparkline
   let trendHtml = '';
