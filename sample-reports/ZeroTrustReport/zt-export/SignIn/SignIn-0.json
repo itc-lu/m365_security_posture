@@ -1,0 +1,4409 @@
+{
+  "value": [
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Mobile Apps and Desktop clients",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 532,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:42:45Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T08:42:45Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "deviceCode",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "DKVJxv74gkKCURzXrRAVAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "c649a50c-f8fe-4282-8251-1cd7ad101500",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "c649a50c-f8fe-4282-8251-1cd7ad101500",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "29c2a180-ad9f-4ac8-861e-7c2c67b7ff13",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Mobile Apps and Desktop clients",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 230,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:42:40Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "none",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "Password in the cloud",
+          "authenticationMethod": "Password",
+          "authenticationStepResultDetail": "For security reasons, user confirmation is required for this request. Please repeat the request allowing user interaction.",
+          "authenticationStepDateTime": "2026-03-13T08:42:40Z",
+          "authenticationStepRequirement": "",
+          "succeeded": false
+        },
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Mobile app notification",
+          "authenticationStepResultDetail": "MFA completed in Azure AD",
+          "authenticationStepDateTime": "2026-03-13T08:42:40Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "kPqSTRVVrUyM1tzx2x86AA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "91180b93-bb97-452b-8af3-10a321821200",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": {
+        "appVersion": "6.2602.0889",
+        "operatingSystem": "Android",
+        "clientApp": "Authenticator",
+        "deviceId": "e62d320c-b1bb-4f88-9a45-7490541e20af"
+      },
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": {
+        "authMethod": "Mobile app notification",
+        "authDetail": null
+      },
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "91180b93-bb97-452b-8af3-10a321821200",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [
+        {
+          "adminConfiguration": "enabled",
+          "authenticationEvaluation": "success",
+          "policyName": "Number Match",
+          "status": "numberMatchCorrectNumberEntered"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "success",
+          "policyName": "App Lock",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Application Context",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Location Context",
+          "status": "unknown"
+        }
+      ],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 50199,
+        "failureReason": "For security reasons, user confirmation is required for this request. Please repeat the request allowing user interaction.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": "userPrincipalName",
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "29c2a180-ad9f-4ac8-861e-7c2c67b7ff13",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 546,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:41:08Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T08:41:08Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "deviceCode",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "WAdcshi23Eq9nk_xXCoQAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "b25c0758-b618-4adc-bd9e-4ff15c2a1000",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "b25c0758-b618-4adc-bd9e-4ff15c2a1000",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "542ed03b-a7b2-4905-997e-2032ec137884",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 164,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:41:05Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "none",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "Password in the cloud",
+          "authenticationMethod": "Password",
+          "authenticationStepResultDetail": "For security reasons, user confirmation is required for this request. Please repeat the request allowing user interaction.",
+          "authenticationStepDateTime": "2026-03-13T08:41:05Z",
+          "authenticationStepRequirement": "",
+          "succeeded": false
+        },
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Mobile app notification",
+          "authenticationStepResultDetail": "MFA completed in Azure AD",
+          "authenticationStepDateTime": "2026-03-13T08:41:05Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "IRm0RWvVrUmBkxdJBhAOAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "91327c6d-5a78-4f56-8255-42a73d6f1200",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": {
+        "appVersion": "6.2602.0889",
+        "operatingSystem": "Android",
+        "clientApp": "Authenticator",
+        "deviceId": "e62d320c-b1bb-4f88-9a45-7490541e20af"
+      },
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": {
+        "authMethod": "Mobile app notification",
+        "authDetail": null
+      },
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "91327c6d-5a78-4f56-8255-42a73d6f1200",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [
+        {
+          "adminConfiguration": "enabled",
+          "authenticationEvaluation": "success",
+          "policyName": "Number Match",
+          "status": "numberMatchCorrectNumberEntered"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "success",
+          "policyName": "App Lock",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Application Context",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Location Context",
+          "status": "unknown"
+        }
+      ],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 50199,
+        "failureReason": "For security reasons, user confirmation is required for this request. Please repeat the request allowing user interaction.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": "userPrincipalName",
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "542ed03b-a7b2-4905-997e-2032ec137884",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 897,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:39:44Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T08:39:44Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "deviceCode",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "qmEDMPlkk0meqWBq__IRAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "300361aa-64f9-4993-9ea9-606afff21100",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "300361aa-64f9-4993-9ea9-606afff21100",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "14b3d2c7-47e2-4119-9a34-471730e4c1d8",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 437,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:39:40Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "none",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "Password in the cloud",
+          "authenticationMethod": "Password",
+          "authenticationStepResultDetail": "User approved",
+          "authenticationStepDateTime": "2026-03-13T08:39:40Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Mobile app notification",
+          "authenticationStepResultDetail": "MFA completed in Azure AD",
+          "authenticationStepDateTime": "2026-03-13T08:39:40Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "5dhkobkir0GKnska01g_AA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "6b4cc1b3-0101-4a16-84a6-03cd6afb3900",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": {
+        "appVersion": "6.2602.0889",
+        "operatingSystem": "Android",
+        "clientApp": "Authenticator",
+        "deviceId": "e62d320c-b1bb-4f88-9a45-7490541e20af"
+      },
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": {
+        "authMethod": "Mobile app notification",
+        "authDetail": null
+      },
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "6b4cc1b3-0101-4a16-84a6-03cd6afb3900",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [
+        {
+          "adminConfiguration": "enabled",
+          "authenticationEvaluation": "success",
+          "policyName": "Number Match",
+          "status": "numberMatchCorrectNumberEntered"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "success",
+          "policyName": "App Lock",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Application Context",
+          "status": "unknown"
+        },
+        {
+          "adminConfiguration": "disabled",
+          "authenticationEvaluation": "failure",
+          "policyName": "Location Context",
+          "status": "unknown"
+        }
+      ],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 65001,
+        "failureReason": "The user or administrator has not consented to use the application with ID '{identifier}'{namePhrase}. Send an interactive authorization request for this user and resource.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": "userPrincipalName",
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "14b3d2c7-47e2-4119-9a34-471730e4c1d8",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 478,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:38:50Z",
+      "sessionId": "",
+      "incomingTokenType": "none",
+      "authenticationDetails": [],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "singleFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "vhuoE-sVaEmUWBWqHE4SAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "13a81bbe-15eb-4968-9458-15aa1c4e1200",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [],
+      "originalRequestId": "13a81bbe-15eb-4968-9458-15aa1c4e1200",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 50089,
+        "failureReason": "Authentication failed due to flow token expired.",
+        "additionalDetails": "Expected - auth codes, refresh tokens, and sessions expire over time or are revoked by the user or an admin. The app will request a new login from the user."
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "de1059c4-b0f5-43b4-be3e-fd5b42bff3c9",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 402,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T08:38:40Z",
+      "sessionId": "",
+      "incomingTokenType": "none",
+      "authenticationDetails": [],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "singleFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "KjfQu2HtlEWh_Z6ah9g8AA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "bbd0372a-ed61-4594-a1fd-9e9a87d83c00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [],
+      "originalRequestId": "bbd0372a-ed61-4594-a1fd-9e9a87d83c00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 50089,
+        "failureReason": "Authentication failed due to flow token expired.",
+        "additionalDetails": "Expected - auth codes, refresh tokens, and sessions expire over time or are revoked by the user or an admin. The app will request a new login from the user."
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "de1059c4-b0f5-43b4-be3e-fd5b42bff3c9",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [],
+      "resourceOwnerTenantId": null,
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Unknown",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 6,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows",
+        "displayName": "",
+        "trustType": null,
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": ""
+      },
+      "createdDateTime": "2026-03-13T08:38:27Z",
+      "sessionId": "",
+      "incomingTokenType": "none",
+      "authenticationDetails": [],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "singleFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "LRJXopiy0kCr2htkX6YQAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "a257122d-b298-40d2-abda-1b645fa61000",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": {
+        "authMethod": "Mobile app notification",
+        "authDetail": null
+      },
+      "authenticationRequirementPolicies": [],
+      "originalRequestId": "a257122d-b298-40d2-abda-1b645fa61000",
+      "userPrincipalName": "",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 0.0,
+          "altitude": null,
+          "latitude": 0.0
+        },
+        "city": "",
+        "countryOrRegion": "",
+        "state": ""
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 50089,
+        "failureReason": "Authentication failed due to flow token expired.",
+        "additionalDetails": "Expected - auth codes, refresh tokens, and sessions expire over time or are revoked by the user or an admin. The app will request a new login from the user."
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "",
+      "userType": "member",
+      "userDisplayName": "",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 0,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "",
+      "riskEventTypes_v2": [],
+      "correlationId": "de1059c4-b0f5-43b4-be3e-fd5b42bff3c9",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": null,
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000002-0000-0000-c000-000000000000",
+        "1b912ec3-a9dd-4c4d-a53e-76aa7adb28d7",
+        "0000000a-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "810dcf14-1858-4bf2-8134-4c369fa3235b",
+        "a3dfc3c6-2c7d-4f42-aeec-b2877f9bce97",
+        "01fc33a7-78ba-4d2f-a4b7-768e336e890e",
+        "ba26d027-990d-468f-9bd1-576e149408fc",
+        "ea890292-c8c8-4433-b5ea-b09d0668e1a6"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "failure",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "deviceCodeFlow",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "SECURITY-ASSESSMENT",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 1006,
+        "signInSessionStatus": "none"
+      },
+      "processingTimeInMilliseconds": 227,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:23:20Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "none",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": "Password in the cloud",
+          "authenticationMethod": "Password",
+          "authenticationStepResultDetail": "Authentication failed during strong authentication request.",
+          "authenticationStepDateTime": "2026-03-13T06:23:20Z",
+          "authenticationStepRequirement": "",
+          "succeeded": false
+        },
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Mobile app notification",
+          "authenticationStepResultDetail": "MFA denied; user did not respond to mobile app notification",
+          "authenticationStepDateTime": "2026-03-13T06:23:20Z",
+          "authenticationStepRequirement": "",
+          "succeeded": false
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "xKgJSlF_SkmoTEIWFzgOAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "2525d9d8-f2cf-433f-b415-b733225b0a00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "none",
+      "mfaDetail": {
+        "authMethod": "Mobile app notification",
+        "authDetail": null
+      },
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "2525d9d8-f2cf-433f-b415-b733225b0a00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c177d709-7e71-4b51-9ea3-075b230c635c",
+      "status": {
+        "errorCode": 500121,
+        "failureReason": "Authentication failed during strong authentication request.",
+        "additionalDetails": "The user didn't complete the MFA prompt. They may have decided not to authenticate, timed out while doing other work, or has an issue with their authentication setup."
+      },
+      "servicePrincipalId": "9d9c159e-dff6-4439-b21c-60649ce9d70b",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": "userPrincipalName",
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        }
+      ],
+      "signInIdentifier": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "de1059c4-b0f5-43b4-be3e-fd5b42bff3c9",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "c0ab8ce9-e9a0-42e7-b064-33d422df41f1",
+        "7c99d979-3b9c-4342-97dd-3239678fb300",
+        "fb8d773d-7ef8-4ec0-a117-179f88add510",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "00000002-0000-0000-c000-000000000000",
+        "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": null,
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "M365ChatClient",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 147,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:23:07Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:23:07Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:23:07Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "kNlt8xEYaE-VY_WxUKkMAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "f36dd990-1811-4f68-9563-f5b150a90c00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "fb8d773d-7ef8-4ec0-a117-179f88add510",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "f36dd990-1811-4f68-9563-f5b150a90c00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c0ab8ce9-e9a0-42e7-b064-33d422df41f1",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Enterprise Copilot Platform",
+      "riskEventTypes_v2": [],
+      "correlationId": "516920e6-102d-5703-f064-931c7b36f663",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "797f4846-ba00-4fd7-ba43-dac1f8f63013"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Azure Portal",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 118,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:21:58Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:21:58Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:21:58Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "EbWaL7pfpEOEENKZGBQKAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "2f9ab511-5fba-43a4-8410-d29918140a00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "797f4846-ba00-4fd7-ba43-dac1f8f63013",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "2f9ab511-5fba-43a4-8410-d29918140a00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "c44b4083-3bb0-49c1-b47d-974e53cbdf3c",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "1670f0fc-fa29-458e-8dcd-63e6ff2ab6ab",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "57444268-e5bf-4254-8ca2-a4d1e4ea9999",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Azure Resource Manager",
+      "riskEventTypes_v2": [],
+      "correlationId": "019ce5db-e17d-760f-8cb5-8b8a8fd3fe74",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "5f09333a-842c-47da-a157-57da27fcbca5"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": null,
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 132,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:13:19Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "kNlt8xEYaE-VY_WxwGYMAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "f36dd990-1811-4f68-9563-f5b1c0660c00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "5f09333a-842c-47da-a157-57da27fcbca5",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "f36dd990-1811-4f68-9563-f5b1c0660c00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Office365 Shell WCSS-Server",
+      "riskEventTypes_v2": [],
+      "correlationId": "224f8c44-707f-4187-8b74-add15ff80a12",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "00000002-0000-0000-c000-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 120,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:13:19Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "j0sMxmIDRUeSXc1kXXIIAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "c60c4b8f-0362-4745-925d-cd645d720800",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "c60c4b8f-0362-4745-925d-cd645d720800",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "00000000-0000-0000-0000-000000000000",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "3e658f3c-6dfe-45e7-87d6-105596d987dd",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "00000002-0000-0000-c000-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 103,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:13:19Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:19Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "ixAAV1WFgE-84V_rlkoMAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "5700108b-8555-4f80-bce1-5feb964a0c00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "5700108b-8555-4f80-bce1-5feb964a0c00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "00000000-0000-0000-0000-000000000000",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "48ca8750-1714-4b54-9077-526c758003d1",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "618dd325-23f6-4b6f-8380-4df78026e39b",
+        "00000002-0000-0000-c000-000000000000",
+        "00000002-0000-0ff1-ce00-000000000000",
+        "00000003-0000-0ff1-ce00-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Microsoft 365 Admin portal",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 118,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:13:02Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:02Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:13:02Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "mMABzsCpK0SynliXvPMLAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "ce01c098-a9c0-442b-b29e-5897bcf30b00",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "ce01c098-a9c0-442b-b29e-5897bcf30b00",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "618dd325-23f6-4b6f-8380-4df78026e39b",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Is CAE Token"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "cb46ba85-f0b3-4a05-9e66-76da231df210",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "00000006-0000-0ff1-ce00-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Microsoft Office 365 Portal",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 129,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "pc-ewerlst",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "86dc234c-8df5-4dc9-a554-ac90a22691a1"
+      },
+      "createdDateTime": "2026-03-13T06:12:45Z",
+      "sessionId": "00111eea-1838-333f-e309-2150a0816bfe",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:12:45Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-13T06:12:45Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "48.209.19.175",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "b-y9iyR2VUa0v3AoBkM1AA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "8bbdec6f-7624-4655-b4bf-702806433500",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000002-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "8bbdec6f-7624-4655-b4bf-702806433500",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "00000006-0000-0ff1-ce00-000000000000",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "f9afda43-9375-40b9-b807-730ac6c8cfe4",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "5b2b9135-89f5-47bb-953e-9a9df3a8f539",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Is CAE Token"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Windows Azure Active Directory",
+      "riskEventTypes_v2": [],
+      "correlationId": "9dda9cec-f082-413a-8545-afcaa7d072de",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0 OS/10.0.26200",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "16aeb910-ce68-41d1-9ac3-9e1673ac9575"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": null,
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 264,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "VPAW-LL050",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "7dfad1e6-3fe7-441f-bc0f-c61f1fec7b85"
+      },
+      "createdDateTime": "2026-03-02T09:29:11Z",
+      "sessionId": "0011941a-7260-17bb-3b09-0ce82b073ec9",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "23.100.4.123",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "4-Q1IAiYCk-EPiq_s_MFAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "2035e4e3-9808-4f0a-843e-2abfb3f30500",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "16aeb910-ce68-41d1-9ac3-9e1673ac9575",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "2035e4e3-9808-4f0a-843e-2abfb3f30500",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "IrisSelectionFrontDoor",
+      "riskEventTypes_v2": [],
+      "correlationId": "ec76bc9e-2450-4fd6-8ab6-7a23231b5bc7",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "00000002-0000-0000-c000-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 265,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "VPAW-LL050",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "7dfad1e6-3fe7-441f-bc0f-c61f1fec7b85"
+      },
+      "createdDateTime": "2026-03-02T09:29:11Z",
+      "sessionId": "0011941a-7260-17bb-3b09-0ce82b073ec9",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "23.100.4.123",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "bGMeKPmSZUaXt-CibpIFAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "281e636c-92f9-4665-97b7-e0a26e920500",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "281e636c-92f9-4665-97b7-e0a26e920500",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "810648e5-a0d9-488f-9cda-f2b1de9411b7",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "00000003-0000-0ff1-ce00-000000000000",
+        "00000002-0000-0000-c000-000000000000"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        }
+      ],
+      "resourceOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 255,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "VPAW-LL050",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "7dfad1e6-3fe7-441f-bc0f-c61f1fec7b85"
+      },
+      "createdDateTime": "2026-03-02T09:29:11Z",
+      "sessionId": "0011941a-7260-17bb-3b09-0ce82b073ec9",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "23.100.4.123",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "ZDMDBWUxckWgSskAjsAIAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "05033364-3165-4572-a04a-c9008ec00800",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "00000003-0000-0000-c000-000000000000",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "05033364-3165-4572-a04a-c9008ec00800",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "fce86ef7-603f-40fc-ab7f-cd181a354cfa",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Microsoft Graph",
+      "riskEventTypes_v2": [],
+      "correlationId": "deeb4a15-b6ef-4406-900d-d4a483d9f2ca",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    },
+    {
+      "conditionalAccessAudiences": [
+        "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+        "5f09333a-842c-47da-a157-57da27fcbca5"
+      ],
+      "riskDetail": "none",
+      "appliedConditionalAccessPolicies": [
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "SecurityDefaults",
+          "conditionsSatisfied": "application,users",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [
+            {
+              "conditionalAccessCondition": "application",
+              "ruleSatisfied": "allApps"
+            },
+            {
+              "conditionalAccessCondition": "users",
+              "ruleSatisfied": "allUsers"
+            }
+          ],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [
+            "Mfa"
+          ],
+          "result": "success",
+          "displayName": "Security Defaults"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "ddc7a20a-b04e-4728-9c27-617807e750fe",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Block legacy authentication"
+        },
+        {
+          "conditionsNotSatisfied": "none",
+          "authenticationStrength": null,
+          "enforcedSessionControls": [],
+          "id": "440f2569-9d93-4996-b92b-9aeb4109636b",
+          "conditionsSatisfied": "none",
+          "sessionControlsNotSatisfied": [],
+          "includeRulesSatisfied": [],
+          "excludeRulesSatisfied": [],
+          "enforcedGrantControls": [],
+          "result": "notEnabled",
+          "displayName": "Microsoft-managed: Require phishing-resistant multifactor authentication for admins"
+        }
+      ],
+      "resourceOwnerTenantId": null,
+      "originalTransferMethod": "none",
+      "clientAppUsed": "Browser",
+      "signInEventTypes": [
+        "interactiveUser"
+      ],
+      "appDisplayName": "Office365 Shell WCSS-Client",
+      "conditionalAccessStatus": "notApplied",
+      "agent": {
+        "agentSubjectParentId": "",
+        "parentAppId": "",
+        "agentType": "notAgentic",
+        "agentSubjectType": "notAgentic"
+      },
+      "riskLevelDuringSignIn": "none",
+      "riskLevelAggregated": "none",
+      "federatedCredentialId": null,
+      "tokenProtectionStatusDetails": {
+        "signInSessionStatusCode": 0,
+        "signInSessionStatus": "bound"
+      },
+      "processingTimeInMilliseconds": 228,
+      "deviceDetail": {
+        "isCompliant": false,
+        "operatingSystem": "Windows10",
+        "displayName": "VPAW-LL050",
+        "trustType": "Azure AD registered",
+        "browser": "Edge 145.0.0",
+        "isManaged": false,
+        "deviceId": "7dfad1e6-3fe7-441f-bc0f-c61f1fec7b85"
+      },
+      "createdDateTime": "2026-03-02T09:29:11Z",
+      "sessionId": "0011941a-7260-17bb-3b09-0ce82b073ec9",
+      "incomingTokenType": "primaryRefreshToken",
+      "authenticationDetails": [
+        {
+          "authenticationMethodDetail": null,
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "First factor requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        },
+        {
+          "authenticationMethodDetail": "",
+          "authenticationMethod": "Previously satisfied",
+          "authenticationStepResultDetail": "MFA requirement satisfied by claim in the token",
+          "authenticationStepDateTime": "2026-03-02T09:29:11Z",
+          "authenticationStepRequirement": "",
+          "succeeded": true
+        }
+      ],
+      "authenticationProtocol": "none",
+      "isInteractive": true,
+      "ipAddress": "23.100.4.123",
+      "authenticationContextClassReferences": [],
+      "authenticationRequirement": "multiFactorAuthentication",
+      "homeTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "ipAddressFromResourceProvider": null,
+      "privateLinkDetails": {
+        "policyTenantId": null,
+        "policyId": "",
+        "policyName": "",
+        "resourceId": ""
+      },
+      "uniqueTokenIdentifier": "6RnEOLCUE0ufeIFFp0cIAA",
+      "resourceTenantId": "17a40581-56e1-4ef1-ac2e-041652b769f4",
+      "id": "38c419e9-94b0-4b13-9f78-8145a7470800",
+      "servicePrincipalCredentialThumbprint": "",
+      "resourceId": "5f09333a-842c-47da-a157-57da27fcbca5",
+      "tokenIssuerName": "",
+      "homeTenantName": "",
+      "authenticationAppDeviceDetails": null,
+      "signInTokenProtectionStatus": "bound",
+      "mfaDetail": null,
+      "authenticationRequirementPolicies": [
+        {
+          "requirementProvider": "user",
+          "detail": "Per-user MFA"
+        },
+        {
+          "requirementProvider": "securityDefaults",
+          "detail": "Security Defaults"
+        }
+      ],
+      "originalRequestId": "38c419e9-94b0-4b13-9f78-8145a7470800",
+      "userPrincipalName": "t1-ewerlst@4fk82f.onmicrosoft.com",
+      "location": {
+        "geoCoordinates": {
+          "longitude": 4.917,
+          "altitude": null,
+          "latitude": 52.35
+        },
+        "city": "Amsterdam",
+        "countryOrRegion": "NL",
+        "state": "Noord-Holland"
+      },
+      "authenticationAppPolicyEvaluationDetails": [],
+      "crossTenantAccessType": "none",
+      "appId": "89bee1f7-5e6e-4d8a-9f3d-ecd601259da7",
+      "status": {
+        "errorCode": 0,
+        "failureReason": "Other.",
+        "additionalDetails": null
+      },
+      "servicePrincipalId": "",
+      "globalSecureAccessIpAddress": "",
+      "signInIdentifierType": null,
+      "isThroughGlobalSecureAccess": false,
+      "servicePrincipalName": null,
+      "resourceServicePrincipalId": "",
+      "userType": "member",
+      "userDisplayName": "Stephane EWERLING",
+      "appliedEventListeners": [],
+      "networkLocationDetails": [],
+      "sessionLifetimePolicies": [],
+      "servicePrincipalCredentialKeyId": null,
+      "managedServiceIdentity": {
+        "federatedTokenIssuer": null,
+        "msiType": "none",
+        "federatedTokenId": null,
+        "associatedResourceId": null
+      },
+      "authenticationProcessingDetails": [
+        {
+          "value": "True",
+          "key": "Login Hint Present"
+        },
+        {
+          "value": "0",
+          "key": "Is Legacy Store Used"
+        },
+        {
+          "value": "",
+          "key": "Legacy Store Use Information"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Attempted"
+        },
+        {
+          "value": "True",
+          "key": "Token Binding Satisfied"
+        },
+        {
+          "value": "SessionKey",
+          "key": "Root Key Type"
+        }
+      ],
+      "signInIdentifier": "",
+      "clientCredentialType": "none",
+      "riskState": "none",
+      "autonomousSystemNumber": 8075,
+      "flaggedForReview": false,
+      "tokenIssuerType": "AzureAD",
+      "resourceDisplayName": "Office365 Shell WCSS-Server",
+      "riskEventTypes_v2": [],
+      "correlationId": "d8a40005-8eaf-42b2-af73-4709a519f068",
+      "isTenantRestricted": false,
+      "appOwnerTenantId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "userId": "b02c8c77-250a-471d-a0fb-f706ec1dd38d",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+      "authenticationMethodsUsed": []
+    }
+  ],
+  "@odata.context": "https://graph.microsoft.com/beta/$metadata#auditLogs/signIns"
+}

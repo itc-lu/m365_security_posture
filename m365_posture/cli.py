@@ -408,12 +408,17 @@ def cmd_e8(args):
     store.save_actions(actions)  # persist E8 mapping
 
     e8 = get_e8_summary(actions)
+    controls = e8.get("controls", e8)
+    overall = e8.get("overall", {})
 
     print(f"\n{'='*60}")
     print("  Essential Eight Compliance Summary")
     print(f"{'='*60}\n")
 
-    for control, data in e8.items():
+    if overall:
+        print(f"  Overall: {overall.get('overall_percentage', 0):.1f}% | Achieved: {overall.get('overall_achieved_maturity', 'N/A')} | {overall.get('controls_mapped', 0)}/8 controls mapped\n")
+
+    for control, data in controls.items():
         bar = "█" * int(data["percentage"] / 5) + "░" * (20 - int(data["percentage"] / 5))
         print(f"  {control:<45} {bar} {data['percentage']:5.1f}%")
         print(f"    Achieved: {data['achieved_maturity']} | {data['completed_actions']}/{data['total_actions']} actions")

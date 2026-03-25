@@ -281,8 +281,12 @@ def get_prioritized_actions(db: Database, tenant_name: str,
         ActionStatus.THIRD_PARTY.value,
     )]
 
+    # Filter out explicitly hidden actions (pinned_priority = -1)
+    pending = [a for a in pending if a.get("pinned_priority", 0) >= 0]
+
     for a in pending:
         a["roi_score"] = calculate_action_roi(a)
 
-    pending.sort(key=lambda a: -a["roi_score"])
+    # Pinned actions come first, then sort by ROI
+    pending.sort(key=lambda a: (-a.get("pinned_priority", 0), -a["roi_score"]))
     return pending[:limit]

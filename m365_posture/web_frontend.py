@@ -152,10 +152,12 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
 
 /* Phase card */
-.phase-card { border-left:4px solid var(--primary); }
+.phase-card { border-left:4px solid var(--primary); padding-left:16px; }
 .phase-card.phase-1 { border-left-color:var(--success); }
 .phase-card.phase-2 { border-left-color:var(--warning); }
 .phase-card.phase-3 { border-left-color:var(--purple); }
+.phase-card table { table-layout:fixed; width:100%; }
+.phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
 
 /* Correlation badge */
 .corr-badge { display:inline-flex; gap:4px; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--purple-light); color:#5b21b6; }
@@ -299,10 +301,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
       Trending
     </a>
-    <a href="#compare" data-page="compare">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      Compare
-    </a>
     <a href="#export" data-page="export">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export
@@ -347,17 +345,22 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 <script>
 // ── API Client ──
 const api = {
-  async get(url) { const r = await fetch(url); return r.json(); },
+  async _handle(r) {
+    const data = await r.json().catch(()=>({error:'Invalid response'}));
+    if(!r.ok && !data.error) data.error = `HTTP ${r.status}`;
+    return data;
+  },
+  async get(url) { const r = await fetch(url); return this._handle(r); },
   async post(url, data) {
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    return r.json();
+    return this._handle(r);
   },
   async put(url, data) {
     const r = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    return r.json();
+    return this._handle(r);
   },
-  async del(url) { const r = await fetch(url, {method:'DELETE'}); return r.json(); },
-  async upload(url, formData) { const r = await fetch(url, {method:'POST', body:formData}); return r.json(); },
+  async del(url) { const r = await fetch(url, {method:'DELETE'}); return this._handle(r); },
+  async upload(url, formData) { const r = await fetch(url, {method:'POST', body:formData}); return this._handle(r); },
   async download(url, data) {
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
     return r;
@@ -377,7 +380,7 @@ function toast(msg, type='info') {
 }
 
 function statusBadge(s) {
-  const m = {'Completed':'success','In Progress':'info','In Planning':'purple','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
+  const m = {'Completed':'success','In Progress':'info','In Planning':'purple','Warning':'warning','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
   return `<span class="badge badge-${m[s]||'gray'}">${s}</span>`;
 }
 
@@ -386,12 +389,38 @@ function priorityBadge(p) {
   return `<span class="badge badge-${m[p]||'gray'}">${p}</span>`;
 }
 
+function ztStatusBadge(a) {
+  // Show the original ZT test status from tags
+  const ztTag = (a.tags||[]).find(t => t.startsWith('ZT: '));
+  const ztStatus = ztTag ? ztTag.replace('ZT: ', '') : '';
+  const m = {'Passed':'success','Failed':'danger','Investigate':'warning','Planned':'purple','Skipped':'gray'};
+  return ztStatus ? `<span class="badge badge-${m[ztStatus]||'gray'}">${ztStatus}</span>` : '';
+}
+
 function pctColor(p) {
   if(p>=80) return 'var(--success)';
   if(p>=60) return '#84cc16';
   if(p>=40) return 'var(--warning)';
   if(p>=20) return '#f97316';
   return 'var(--danger)';
+}
+
+function mdToHtml(text) {
+  // Convert markdown links [text](url) to clickable HTML, bold **text**, and headings
+  if(!text) return '';
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Markdown links: [label](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  // Bare URLs not already in an <a> tag
+  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"&]+)/g, '<a href="$1" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  // Bold **text**
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Headings
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:8px 0 4px">$1</h4>');
+  s = s.replace(/^## (.+)$/gm, '<h3 style="margin:10px 0 6px">$1</h3>');
+  // List items
+  s = s.replace(/^- (.+)$/gm, '&bull; $1');
+  return s;
 }
 
 function gauge(pct, size=120, label='') {
@@ -490,12 +519,12 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',compare:'Compare Tenants',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,compare:renderCompare,export:renderExport,history:renderHistory};
+  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
@@ -558,6 +587,7 @@ function requireTenant() {
 // ── Dashboard ──
 // Store dashboard data for source filter switching
 let _dashData = {};
+let _dashExcludeNA = false;
 
 async function renderDashboard(sourceFilter) {
   const c = document.getElementById('content');
@@ -576,9 +606,11 @@ async function renderDashboard(sourceFilter) {
 
   // Fetch data on first load or full refresh; reuse when just switching source filter
   const isFilterSwitch = (sourceFilter !== undefined) && Object.keys(_dashData).length > 0;
-  if(!isFilterSwitch) {
+  const excludeParam = _dashExcludeNA ? '?exclude_na=1' : '';
+  const needsRefresh = !isFilterSwitch || (_dashData.scores && _dashData.scores.exclude_na !== _dashExcludeNA);
+  if(!isFilterSwitch || needsRefresh) {
     const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
-      api.get(`/api/tenants/${t}/scores`),
+      api.get(`/api/tenants/${t}/scores${excludeParam}`),
       api.get(`/api/tenants/${t}/prioritized?limit=10`),
       api.get(`/api/tenants/${t}/snapshots?limit=20`),
       api.get(`/api/tenants/${t}/risk-summary`),
@@ -664,7 +696,20 @@ async function renderDashboard(sourceFilter) {
     for(const [s, n] of Object.entries(scores.by_status||{})) statusPills += `${statusBadge(s)} <strong>${n}</strong>&nbsp;&nbsp;`;
   }
 
-  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => `<tr><td>${a.title.substring(0,60)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td></tr>`).join('');
+  // Build lookup of full action objects for detail expansion
+  const _allActionsMap = {};
+  (allActions||[]).forEach(a => _allActionsMap[a.id] = a);
+
+  let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => {
+    const full = _allActionsMap[a.id] || a;
+    return `<tr onclick="toggleActionDetail('dash-${a.id}')" style="cursor:pointer">
+    <td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="unpinDashAction('${a.id}');event.stopPropagation()" title="${a.pinned_priority?'Unpin from dashboard':'Remove from list'}" style="padding:2px 6px;font-size:11px">${a.pinned_priority?'&#9733;':'&times;'}</button>
+    </td>
+  </tr>
+  <tr id="detail-dash-${a.id}" class="hidden"><td colspan="5" style="padding:0">${actionDetailHtml(full)}</td></tr>`;
+  }).join('');
 
   // Mini trend sparkline
   let trendHtml = '';
@@ -707,6 +752,12 @@ async function renderDashboard(sourceFilter) {
       <label style="font-size:13px;font-weight:600;margin:0;width:auto">Score Source:</label>
       <select id="dash-source-filter" onchange="renderDashboard(this.value)" style="max-width:280px">${sourceOpts}</select>
       ${sf?`<button class="btn btn-sm" onclick="renderDashboard('')">Show All</button>`:''}
+      ${sf==='SCuBA (CISA)'?`<button class="btn btn-sm" onclick="navigate('scuba')" style="margin-left:4px">SCuBA Dashboard</button>`:''}
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:auto;cursor:pointer" title="Exclude Not Applicable and Risk Accepted actions from score calculations">
+        <input type="checkbox" id="dash-exclude-na" ${_dashExcludeNA?'checked':''} onchange="_dashExcludeNA=this.checked;_dashData={};renderDashboard(document.getElementById('dash-source-filter')?.value||'')">
+        Exclude N/A &amp; Risk Accepted
+      </label>
+      ${scores.excluded_count?`<span style="font-size:11px;color:var(--text-light)">(${scores.excluded_count} excluded)</span>`:''}
     </div>
     <div id="dashboard-report">
     <div class="grid grid-4 mb-16">
@@ -720,8 +771,8 @@ async function renderDashboard(sourceFilter) {
       <div class="card"><div class="card-header">Score by Workload${sf?' ('+sf+')':''}</div>${wlBars||'<div style="color:var(--text-light);padding:8px">No workload data</div>'}</div>
     </div>
     <div class="card mb-16"><div class="card-header">Status Distribution${sf?' ('+sf+')':''}</div><div style="padding:8px">${statusPills||'No data'}</div></div>
-    <div class="card"><div class="card-header">Top Priority Actions (by ROI)</div>
-      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th></tr></thead><tbody>${topActions||'<tr><td colspan="4" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
+    <div class="card"><div class="card-header">Top Priority Actions (by ROI) <button class="btn btn-sm" onclick="showPinActionModal()" style="font-size:11px">+ Add</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th><th style="width:40px"></th></tr></thead><tbody>${topActions||'<tr><td colspan="5" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
     </div>
     </div>`;
 }
@@ -737,20 +788,155 @@ async function switchTenantFromDashboard(name) {
 
 function showDashboardCompare() {
   let checks = state.tenants.map(t => {
-    const checked = t.is_active || t.name === state.tenants.find(x=>!x.is_active)?.name;
-    return `<label style="display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''}> ${t.display_name||t.name}</label>`;
+    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${t.display_name||t.name}</span></label>`;
   }).join('');
-  openModal('Compare Tenants', `
-    <p style="margin-bottom:12px;color:var(--text-light)">Select 2 tenants to compare side by side.</p>
-    <div style="display:flex;flex-direction:column;gap:4px">${checks}</div>`,
-    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doDashboardCompare()">Compare</button>');
+  openModal('Compare', `
+    <div class="action-tabs" style="margin:0 0 16px">
+      <div class="atab active" onclick="switchCmpTab('tenants',this)">Compare Tenants</div>
+      <div class="atab" onclick="switchCmpTab('snapshot',this)">Compare with Snapshot</div>
+    </div>
+    <div id="cmp-tab-tenants">
+      <p style="margin-bottom:12px;color:var(--text-light)">Select 2 or more tenants to compare side by side.</p>
+      <div style="display:flex;flex-direction:column">${checks}</div>
+    </div>
+    <div id="cmp-tab-snapshot" class="hidden">
+      <p style="margin-bottom:12px;color:var(--text-light)">Compare the current state of a tenant against a historical snapshot.</p>
+      <div class="form-group"><label>Tenant</label><select id="snap-cmp-tenant">${state.tenants.map(t=>'<option value="'+t.name+'"'+(t.is_active?' selected':'')+'>'+( t.display_name||t.name)+'</option>').join('')}</select></div>
+      <div class="form-group"><label>Snapshot</label><select id="snap-cmp-id"><option value="">Loading snapshots...</option></select></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="cmp-btn-tenants" onclick="doDashboardCompare()">Compare Tenants</button>
+     <button class="btn btn-primary hidden" id="cmp-btn-snapshot" onclick="doSnapshotCompare()">Compare with Snapshot</button>`);
+  // Trigger snapshot loading after modal is open
+  setTimeout(()=>loadSnapshotsForCompare(), 50);
+}
+
+function switchCmpTab(tab, el) {
+  el.parentElement.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('cmp-tab-tenants').classList.toggle('hidden', tab!=='tenants');
+  document.getElementById('cmp-tab-snapshot').classList.toggle('hidden', tab!=='snapshot');
+  document.getElementById('cmp-btn-tenants').classList.toggle('hidden', tab!=='tenants');
+  document.getElementById('cmp-btn-snapshot').classList.toggle('hidden', tab!=='snapshot');
+}
+
+async function loadSnapshotsForCompare() {
+  const sel = document.getElementById('snap-cmp-tenant');
+  const snapSel = document.getElementById('snap-cmp-id');
+  if(!sel || !snapSel) return;
+
+  async function refresh() {
+    const name = sel.value;
+    snapSel.innerHTML = '<option value="">Loading...</option>';
+    const snaps = await api.get(`/api/tenants/${name}/snapshots?limit=50`);
+    if(!snaps.length) {
+      snapSel.innerHTML = '<option value="">No snapshots available</option>';
+      return;
+    }
+    snapSel.innerHTML = snaps.map(s => {
+      const dt = s.timestamp?.substring(0,16).replace('T',' ') || '';
+      const trigger = s.trigger ? ' ('+s.trigger+')' : '';
+      return `<option value="${s.id}">${dt}${trigger} — ${(s.percentage||0).toFixed(1)}%</option>`;
+    }).join('');
+  }
+
+  sel.addEventListener('change', refresh);
+  await refresh();
+}
+
+async function doSnapshotCompare() {
+  const tenantName = document.getElementById('snap-cmp-tenant')?.value;
+  const snapshotId = parseInt(document.getElementById('snap-cmp-id')?.value);
+  if(!tenantName || !snapshotId) return toast('Select a tenant and snapshot','error');
+  closeModal();
+  document.getElementById('topbar-actions').innerHTML = '';
+
+  const r = await api.post(`/api/tenants/${tenantName}/compare-snapshot`, {snapshot_id: snapshotId});
+  const labels = r.labels || ['Current', 'Snapshot'];
+  const c = document.getElementById('content');
+
+  let rows = labels.map(l => {
+    const d = r.overall[l]||{};
+    const delta = l === labels[0] ? '' : (() => {
+      const cur = r.overall[labels[0]]?.percentage||0;
+      const snap = d.percentage||0;
+      const diff = cur - snap;
+      if(Math.abs(diff) < 0.01) return '';
+      return diff > 0 ? ' <span style="color:var(--success);font-size:12px">&#9650; +'+diff.toFixed(1)+'%</span>'
+                       : ' <span style="color:var(--danger);font-size:12px">&#9660; '+diff.toFixed(1)+'%</span>';
+    })();
+    return `<tr><td><strong>${l}</strong></td><td>${gauge(d.percentage||0,80)}${delta}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+  }).join('');
+
+  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
+    let cells = labels.map(l => {
+      const pct = (data[l]?.percentage||0).toFixed(2);
+      return `<td>${pct}%</td>`;
+    }).join('');
+    return `<tr><td>${tool}</td>${cells}</tr>`;
+  }).join('');
+
+  let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
+    let cells = labels.map(l => {
+      const pct = (data[l]?.percentage||0).toFixed(2);
+      return `<td>${pct}%</td>`;
+    }).join('');
+    return `<tr><td>${wl}</td>${cells}</tr>`;
+  }).join('');
+
+  const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
+
+  // Action differences between current and snapshot
+  const actionDiffs = r.action_diffs || [];
+  const sameCount = r.actions_same || 0;
+  let snapActionRows = actionDiffs.slice(0,200).map((a, idx) => {
+    const snapCell = a.snapshot
+      ? `<td>${statusBadge(a.snapshot.status)}</td>`
+      : '<td style="color:var(--text-light);font-style:italic;font-size:12px">Did not exist</td>';
+    const curCell = `<td><a href="#" onclick="toggleCompareActionDetail('${tenantName}','${a.current.id}','snap-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details">${statusBadge(a.current.status)}</a></td>`;
+    return `<tr><td style="font-size:12px">${a.title}</td>${snapCell}${curCell}</tr>
+      <tr id="snap-detail-${idx}" class="hidden"><td colspan="3" style="padding:0"><div id="snap-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${tenantDisplay}</h2>
+      <div class="flex gap-8">
+        <button class="btn btn-sm btn-primary" onclick="downloadComparisonPDF()">PDF Report</button>
+        <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
+      </div>
+    </div>
+    <div id="comparison-report">
+    <div class="card mb-16"><div class="card-header">Overall</div>
+      <table><thead><tr><th>State</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="grid grid-2 mb-16">
+      <div class="card"><div class="card-header">By Source Tool</div>
+        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+      <div class="card"><div class="card-header">By Workload</div>
+        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">Action Changes <span class="badge badge-danger">${r.actions_differing||0} changed</span> <span class="badge badge-success">${sameCount} unchanged</span></div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions whose status changed since the snapshot, or new actions added after the snapshot. Click current status to view details.</div>
+      ${snapActionRows ? `
+        <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+          <table><thead><tr><th>Action</th><th>${labels[1]}</th><th>${labels[0]}</th></tr></thead>
+          <tbody>${snapActionRows}</tbody></table>
+        </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No changes found - all actions have the same status as the snapshot.</div>'}
+    </div>
+    </div>`;
 }
 
 async function doDashboardCompare() {
   const tenants = [...document.querySelectorAll('.dash-cmp:checked')].map(c=>c.value);
   if(tenants.length < 2) return toast('Select at least 2 tenants','error');
   closeModal();
-  const r = await api.post('/api/compare', {tenants});
+  // Hide dashboard topbar buttons during comparison
+  document.getElementById('topbar-actions').innerHTML = '';
+  const [r, actionCmp] = await Promise.all([
+    api.post('/api/compare', {tenants}),
+    api.post('/api/compare-actions', {tenants})
+  ]);
   const c = document.getElementById('content');
 
   let rows = tenants.map(t => {
@@ -768,11 +954,28 @@ async function doDashboardCompare() {
     return `<tr><td>${wl}</td>${cells}</tr>`;
   }).join('');
 
+  // Action-level comparison
+  const diffActions = (actionCmp.actions||[]).filter(a => a.differs);
+  const sameActions = (actionCmp.actions||[]).filter(a => !a.differs);
+  let actionDiffRows = diffActions.slice(0,100).map((a, idx) => {
+    let cells = tenants.map(t => {
+      const d = a.tenants[t];
+      if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
+      return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details for ${t}">${statusBadge(d.status)}</a></td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>
+      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+1}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+  }).join('');
+
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
       <h2 style="font-size:18px;font-weight:600">Tenant Comparison</h2>
-      <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
+      <div class="flex gap-8">
+        <button class="btn btn-sm btn-primary" onclick="downloadComparisonPDF()">PDF Report</button>
+        <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
+      </div>
     </div>
+    <div id="comparison-report">
     <div class="card mb-16"><div class="card-header">Overall</div>
       <table><thead><tr><th>Tenant</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="grid grid-2 mb-16">
@@ -780,7 +983,105 @@ async function doDashboardCompare() {
         <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
         <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="card mb-16">
+      <div class="card-header">Action Differences <span class="badge badge-danger">${actionCmp.differing||0} differ</span> <span class="badge badge-success">${sameActions.length} same</span></div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or action exists in one but not the other.</div>
+      ${actionDiffRows ? `
+        <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+          <table><thead><tr><th>Action</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead>
+          <tbody>${actionDiffRows}</tbody></table>
+        </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No differences found - all actions have the same status across tenants.</div>'}
+    </div>
     </div>`;
+}
+
+function downloadComparisonPDF() {
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+  const reportEl = document.getElementById('comparison-report');
+  if(!reportEl) { toast('Comparison not loaded','error'); return; }
+
+  const printWin = window.open('','_blank','width=900,height=700');
+  printWin.document.write(`<!DOCTYPE html><html><head><title>Tenant Comparison Report</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; padding:40px; font-size:13px; }
+      .report-header { text-align:center; margin-bottom:32px; padding-bottom:24px; border-bottom:3px solid #3b82f6; }
+      .report-header h1 { font-size:24px; color:#0f172a; }
+      .report-header .subtitle { color:#64748b; font-size:13px; margin-top:8px; }
+      .card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px; break-inside:avoid; }
+      .card-header { font-size:14px; font-weight:600; margin-bottom:12px; }
+      .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th { text-align:left; padding:6px 8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; font-size:11px; text-transform:uppercase; }
+      td { padding:6px 8px; border-bottom:1px solid #e2e8f0; }
+      .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
+      .badge-success { background:#d1fae5; color:#065f46; }
+      .badge-warning { background:#fef3c7; color:#92400e; }
+      .badge-danger { background:#fee2e2; color:#991b1b; }
+      .badge-info { background:#dbeafe; color:#1e40af; }
+      .badge-purple { background:#ede9fe; color:#5b21b6; }
+      .badge-gray { background:#f1f5f9; color:#475569; }
+      .gauge svg { transform:rotate(-90deg); }
+      .gauge .track { fill:none; stroke:#e2e8f0; stroke-width:10; }
+      .gauge .fill { fill:none; stroke-width:10; stroke-linecap:round; }
+      .gauge { position:relative; width:80px; height:80px; display:inline-block; }
+      .gauge .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:16px; font-weight:700; }
+      a { color:inherit; text-decoration:none; }
+      .table-wrap { max-height:none !important; overflow:visible !important; }
+      .mb-16 { margin-bottom:16px; }
+      .footer { text-align:center; margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; }
+      @media print { body { padding:20px; } }
+    </style></head><body>
+    <div class="report-header">
+      <h1>Tenant Comparison Report</h1>
+      <div class="subtitle">${today}</div>
+    </div>
+    ${reportEl.innerHTML}
+    <div class="footer">Generated by M365 Security Posture Manager &middot; ${today}</div>
+    <scr`+`ipt>setTimeout(()=>{window.print();},400);<\/scr`+`ipt>
+  </body></html>`);
+  printWin.document.close();
+}
+
+let _cmpExpandedRow = null;
+async function toggleCompareActionDetail(tenantName, actionId, rowId) {
+  const row = document.getElementById(rowId);
+  const contentEl = document.getElementById(rowId.replace('cmp-detail-','cmp-detail-content-').replace('snap-detail-','snap-detail-content-'));
+  if(!row || !contentEl) return;
+
+  // Collapse previously expanded row
+  if(_cmpExpandedRow && _cmpExpandedRow !== rowId) {
+    document.getElementById(_cmpExpandedRow)?.classList.add('hidden');
+  }
+
+  // Toggle this row - collapse if same tenant already shown
+  if(!row.classList.contains('hidden') && contentEl.dataset.loadedTenant === tenantName) {
+    row.classList.add('hidden');
+    _cmpExpandedRow = null;
+    return;
+  }
+
+  contentEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-light)">Loading action details...</div>';
+  row.classList.remove('hidden');
+  _cmpExpandedRow = rowId;
+
+  try {
+    const a = await api.get(`/api/actions/${actionId}`);
+    contentEl.dataset.loadedTenant = tenantName;
+
+    // Reuse the full action detail panel with all tabs (General, Implementation, Notes, History)
+    contentEl.innerHTML = `
+      <div style="padding:8px 0 4px;margin-bottom:4px;border-bottom:1px solid var(--border)">
+        <span class="badge badge-info" style="font-size:12px">${tenantName}</span>
+        <strong style="font-size:14px;margin-left:8px">${a.title}</strong>
+      </div>
+      ${actionDetailHtml(a)}`;
+    // Load dependencies for this action
+    loadActionDeps(actionId);
+  } catch(e) {
+    contentEl.innerHTML = '<div style="padding:16px;color:var(--danger)">Failed to load action details.</div>';
+  }
 }
 
 // ── PDF Report Download ──
@@ -837,6 +1138,39 @@ function downloadDashboardPDF() {
     <scr`+`ipt>setTimeout(()=>{window.print();},400);<\/scr`+`ipt>
   </body></html>`);
   printWin.document.close();
+}
+
+async function unpinDashAction(actionId) {
+  // Set to -1 to explicitly hide from dashboard priority list
+  await api.put(`/api/actions/${actionId}`, {pinned_priority: -1});
+  _dashData = {};
+  renderDashboard(document.getElementById('dash-source-filter')?.value||'');
+}
+
+async function showPinActionModal() {
+  const t = state.activeTenant.name;
+  const actions = await api.get(`/api/tenants/${t}/actions`);
+  const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && !a.pinned_priority);
+  let rows = pending.slice(0,50).map(a => `<tr>
+    <td><input type="checkbox" value="${a.id}" class="pin-cb"></td>
+    <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+  openModal('Pin Actions to Dashboard', `
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Select actions to pin to the Top Priority list.</div>
+    <div style="max-height:400px;overflow-y:auto">
+      <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.pin-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="pinSelectedActions()">Pin Selected</button>');
+}
+
+async function pinSelectedActions() {
+  const ids = [...document.querySelectorAll('.pin-cb:checked')].map(c=>c.value);
+  if(!ids.length) return toast('Select at least one action','error');
+  for(const id of ids) await api.post(`/api/actions/${id}/pin`);
+  closeModal();
+  toast(ids.length + ' action(s) pinned','success');
+  _dashData = {};
+  renderDashboard(document.getElementById('dash-source-filter')?.value||'');
 }
 
 // ── Tenants ──
@@ -934,9 +1268,16 @@ async function renderActions() {
       <select id="f-source" onchange="filterActions()"><option value="">All Sources</option>${selectOptions(state.enums.source_tools)}</select>
       <select id="f-priority" onchange="filterActions()"><option value="">All Priorities</option>${selectOptions(state.enums.priorities)}</select>
     </div>
+    <div class="filter-bar" id="zt-filters" style="display:none;margin-top:-8px;padding-top:0">
+      <select id="f-pillar" onchange="applyZtFilters()"><option value="">All Pillars</option><option value="Identity">Identity</option><option value="Devices">Devices</option></select>
+      <select id="f-zt-status" onchange="applyZtFilters()"><option value="">All ZT Statuses</option><option value="Failed">Failed</option><option value="Passed">Passed</option><option value="Investigate">Investigate</option><option value="Planned">Planned</option><option value="Skipped">Skipped</option></select>
+      <select id="f-sfi" onchange="applyZtFilters()"><option value="">All SFI Pillars</option></select>
+    </div>
     <div class="card"><div class="table-wrap" id="actions-table"></div></div>`;
   await filterActions();
 }
+
+let _actionPlanMap = {};
 
 async function filterActions() {
   const t = state.activeTenant.name;
@@ -947,7 +1288,41 @@ async function filterActions() {
   const src = document.getElementById('f-source')?.value; if(src) params.set('source_tool', src);
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
-  const actions = await api.get(`/api/tenants/${t}/actions?${params}`);
+  const [actions, planMap] = await Promise.all([
+    api.get(`/api/tenants/${t}/actions?${params}`),
+    api.get(`/api/tenants/${t}/action-plans`)
+  ]);
+  _actionPlanMap = planMap || {};
+
+  // Show ZT filter row if ZT Report actions exist
+  const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
+  const ztFilters = document.getElementById('zt-filters');
+  if(ztFilters) {
+    ztFilters.style.display = hasZT ? 'flex' : 'none';
+    if(hasZT) {
+      // Populate SFI pillar options dynamically
+      const sfiEl = document.getElementById('f-sfi');
+      const currentSfi = sfiEl?.value || '';
+      const sfiValues = [...new Set(actions.filter(a=>a.subcategory).map(a=>a.subcategory))].sort();
+      sfiEl.innerHTML = '<option value="">All SFI Pillars</option>' + sfiValues.map(v => `<option value="${v}"${v===currentSfi?' selected':''}>${v}</option>`).join('');
+    }
+  }
+
+  _allFetchedActions = actions;
+  applyZtFilters();
+}
+
+let _allFetchedActions = [];
+function applyZtFilters() {
+  let actions = _allFetchedActions;
+  const pillar = document.getElementById('f-pillar')?.value;
+  const ztStatus = document.getElementById('f-zt-status')?.value;
+  const sfi = document.getElementById('f-sfi')?.value;
+
+  if(pillar) actions = actions.filter(a => (a.tags||[]).some(t => t === 'Pillar: '+pillar));
+  if(ztStatus) actions = actions.filter(a => (a.tags||[]).some(t => t === 'ZT: '+ztStatus));
+  if(sfi) actions = actions.filter(a => a.subcategory === sfi);
+
   renderActionsTable(actions);
 }
 
@@ -969,8 +1344,8 @@ function sortActionsBy(colIdx) {
     _actionsSortCol = colIdx;
     _actionsSortDir = 'asc';
   }
-  // Sort keys by column index (matching header order: checkbox,ID,Ref,Title,Status,Priority,Workload,Source,Score)
-  const keys = [null,'id','reference_id','title','status','priority','workload','source_tool','_score'];
+  // Sort keys by column index (matching header order: checkbox,ID,Ref,Title,Status,Priority,Workload,Source,Score,Plan)
+  const keys = [null,'id','reference_id','title','status','priority','workload','source_tool','_score','_plan'];
   const key = keys[colIdx];
   if(!key) return;
   const sorted = [..._actionsData].sort((a,b) => {
@@ -978,9 +1353,12 @@ function sortActionsBy(colIdx) {
     if(key === '_score') {
       aVal = a.score != null ? a.score : -1;
       bVal = b.score != null ? b.score : -1;
+    } else if(key === '_plan') {
+      aVal = (_actionPlanMap[a.id]||[]).length;
+      bVal = (_actionPlanMap[b.id]||[]).length;
     } else if(key === 'reference_id') {
-      aVal = parseInt(a[key]) || 0;
-      bVal = parseInt(b[key]) || 0;
+      aVal = (a[key]||'').toString().toLowerCase();
+      bVal = (b[key]||'').toString().toLowerCase();
     } else {
       aVal = (a[key]||'').toString().toLowerCase();
       bVal = (b[key]||'').toString().toLowerCase();
@@ -999,6 +1377,8 @@ function _renderActionsTableSorted() {
 
   let rows = actions.map(a => {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    const plans = _actionPlanMap[a.id] || [];
+    const planBadge = plans.length ? `<span class="badge badge-info" title="${plans.map(p=>p.plan_name).join(', ')}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
@@ -1010,12 +1390,13 @@ function _renderActionsTableSorted() {
       <td style="font-size:12px">${a.workload}</td>
       <td style="font-size:12px">${a.source_tool}</td>
       <td>${scoreDisplay}</td>
+      <td>${planBadge}</td>
     </tr>
-    <tr id="detail-${a.id}" class="hidden"><td colspan="9" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
+    <tr id="detail-${a.id}" class="hidden"><td colspan="10" style="padding:0">${actionDetailHtml(a)}</td></tr>`;
   }).join('');
 
   // Build sort indicators for headers
-  const cols = ['','ID','Ref','Title','Status','Priority','Workload','Source','Score'];
+  const cols = ['','ID','Ref','Title','Status','Priority','Workload','Source','Score','Plan'];
   const headers = cols.map((c,i) => {
     if(i===0) return '<th onclick="event.stopPropagation()"><input type="checkbox" id="select-all-actions" onchange="toggleSelectAllActions(this)"></th>';
     const arrow = _actionsSortCol===i ? (_actionsSortDir==='asc'?' ▲':' ▼') : '';
@@ -1024,6 +1405,7 @@ function _renderActionsTableSorted() {
 
   el.innerHTML = `<div id="batch-actions" style="display:none;padding:8px 0;margin-bottom:8px;gap:8px">
     <button class="btn btn-primary btn-sm" onclick="showAddToPlan()">Add to Plan</button>
+    <button class="btn btn-sm" onclick="showBatchStatus()">Set Status</button>
     <button class="btn btn-danger btn-sm" onclick="batchDeleteActions()">Delete Selected</button>
     <span id="batch-count" style="font-size:12px;color:var(--text-light);margin-left:8px"></span>
   </div>
@@ -1062,6 +1444,27 @@ async function batchDeleteActions() {
   filterActions();
 }
 
+function showBatchStatus() {
+  const ids = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
+  if(!ids.length) return toast('No actions selected','error');
+  const opts = state.enums.statuses.map(s => `<option value="${s}">${s}</option>`).join('');
+  openModal(`Set Status for ${ids.length} Action(s)`, `
+    <div class="form-group"><label>New Status</label><select id="batch-status-val">${opts}</select></div>
+    <div class="form-group"><label>Changed By</label><input id="batch-status-by" placeholder="Your name"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitBatchStatus()">Apply</button>`);
+  window._batchStatusIds = ids;
+}
+
+async function submitBatchStatus() {
+  const status = document.getElementById('batch-status-val').value;
+  const changed_by = document.getElementById('batch-status-by').value;
+  const r = await api.post('/api/actions/batch-status', {action_ids:window._batchStatusIds, status, changed_by});
+  if(r.error) return toast(r.error,'error');
+  closeModal();
+  toast(r.updated + ' actions updated to ' + status, 'success');
+  filterActions();
+}
+
 let _addToPlanIds = [];
 
 async function showAddToPlan(actionIds) {
@@ -1078,8 +1481,12 @@ async function showAddToPlan(actionIds) {
   // Store plan existing items for dedup at submit time
   const planData = [];
   for(const p of plans) {
-    const full = await api.get(`/api/plans/${p.id}`);
-    planData.push({...p, existingActionIds: full.items.map(i => i.action_id)});
+    try {
+      const full = await api.get(`/api/plans/${p.id}`);
+      planData.push({...p, existingActionIds: (full?.items||[]).map(i => i.action_id)});
+    } catch(e) {
+      planData.push({...p, existingActionIds: []});
+    }
   }
   window._atpPlanData = planData;
 
@@ -1109,6 +1516,15 @@ async function showAddToPlan(actionIds) {
       <div id="new-plan-section" style="${hasPlans?'display:none;':''}padding-left:24px">
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Plan Name</span><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Description</span><textarea id="atp-new-desc" rows="2"></textarea></div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span><input id="atp-new-responsible" placeholder="e.g. John Smith"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Priority</span><select id="atp-new-priority">${['Critical','High','Medium','Low'].map(p=>'<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>').join('')}</select></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Start Date</span><input id="atp-new-start" type="date"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">End Date</span><input id="atp-new-end" type="date"></div>
+        </div>
+        <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Effort</span><select id="atp-new-effort"><option value="Small">Small (within a day)</option><option value="Medium" selected>Medium (within a week)</option><option value="Large">Large (within a month)</option></select></div>
       </div>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
@@ -1124,7 +1540,14 @@ async function addToPlanSubmit() {
   if(mode === 'new') {
     const name = document.getElementById('atp-new-name').value;
     if(!name) return toast('Plan name required', 'error');
-    const r = await api.post(`/api/tenants/${t}/plans`, {name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds});
+    const r = await api.post(`/api/tenants/${t}/plans`, {
+      name, description: document.getElementById('atp-new-desc').value, action_ids: actionIds,
+      responsible_person: document.getElementById('atp-new-responsible')?.value||'',
+      priority: document.getElementById('atp-new-priority')?.value||'Medium',
+      start_date: document.getElementById('atp-new-start')?.value||null,
+      end_date: document.getElementById('atp-new-end')?.value||null,
+      implementation_effort: document.getElementById('atp-new-effort')?.value||'Medium'
+    });
     if(r.error) return toast(r.error, 'error');
     closeModal();
     toast(`Plan created with ${actionIds.length} action${actionIds.length>1?'s':''}`, 'success');
@@ -1142,12 +1565,14 @@ async function addToPlanSubmit() {
       return toast('All selected actions are already in this plan', 'error');
     }
 
+    let added = 0;
     for(const aid of newIds) {
-      await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+      const r = await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+      if(!r.error) added++;
     }
     closeModal();
     const dupeMsg = dupes ? ` (${dupes} already in plan, skipped)` : '';
-    toast(`${newIds.length} action${newIds.length>1?'s':''} added to plan${dupeMsg}`, 'success');
+    toast(`${added} action${added>1?'s':''} added to plan${dupeMsg}`, 'success');
   }
 }
 
@@ -1180,7 +1605,9 @@ function actionDetailHtml(a) {
   const scoreDisplay = a.score != null ? `${a.score} / ${a.max_score}` : 'N/A';
 
   // Source badge color
-  const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Manual':'badge-gray'};
+  const isZTR = a.source_tool === 'Zero Trust Report';
+  const isSCuBA = a.source_tool === 'SCuBA (CISA)';
+  const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
 
   // Remediation steps - split into structured parts if possible
@@ -1191,10 +1618,10 @@ function actionDetailHtml(a) {
     const parts = remText.split('Next steps:');
     const prereq = parts[0].replace('Prerequisites:', '').trim();
     const steps = parts[1]?.trim() || '';
-    prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${prereq}</div></div>` : '';
-    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${steps}</div></div>` : '';
+    prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${isZTR?mdToHtml(prereq):prereq}</div></div>` : '';
+    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
   } else if(remText) {
-    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${remText}</div></div>`;
+    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${isZTR?mdToHtml(remText):remText}</div></div>`;
   }
 
   const uid = a.id.replace(/[^a-zA-Z0-9]/g,'');
@@ -1214,28 +1641,50 @@ function actionDetailHtml(a) {
     <div class="action-tabs">
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
+      <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
     <div class="action-tab-content active" id="atab-${uid}-general">
       <div class="action-detail-layout">
         <div>
+          ${isZTR ? `
+          ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
+          ` : `
           ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
           ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+t+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
+          `}
           <div id="deps-${a.id}" class="mb-8"></div>
         </div>
         <div>
           <div class="action-sidebar-card">
+            ${isZTR ? `
+            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${a.reference_id||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
+            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${(a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            ` : isSCuBA ? `
+            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${a.reference_id||a.source_id?.replace('scuba_','')||'N/A'}</div></div>
+            <div class="sidebar-field">
+              <div class="field-label">Result</div>
+              <div class="field-value">${statusBadge(a.status)}</div>
+            </div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Criticality</div><div class="field-value">${_scubaCritBadge(a.subcategory)}</div></div>
+            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+g+'</div></div>':'';})()}
+            ` : `
             <div class="sidebar-field">
               <div class="field-label">Score</div>
               <div class="score-label">${scoreDisplay}</div>
               <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
             </div>
-            <div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            `}
+            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>` : ''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
@@ -1248,6 +1697,7 @@ function actionDetailHtml(a) {
             ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
             ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
             ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity}</div></div>`:''}
+            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${a.notes}</div></div>`:''}
           </div>
         </div>
       </div>
@@ -1264,6 +1714,13 @@ function actionDetailHtml(a) {
         <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${a.source_id||'N/A'}</code></div></div>
         <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${a.reference_id||'N/A'}</code></div></div>
       </div>
+    </div>
+    <!-- Notes Tab -->
+    <div class="action-tab-content" id="atab-${uid}-notes">
+      <div style="margin-bottom:12px">
+        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${a.notes||''}</textarea>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
     <!-- History Tab -->
     ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
@@ -1321,15 +1778,23 @@ async function showEditAction(id) {
     <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${a.responsible||''}"></div>
     <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${a.planned_date||''}"></div></div>
+    <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
+    <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
     <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
     <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
 }
 
 async function updateAction(id) {
-  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
+  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, essential_eight_control:document.getElementById('ae-e8ctrl').value||null, essential_eight_maturity:document.getElementById('ae-e8ml').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
   await api.put(`/api/actions/${id}`, data);
   closeModal(); toast('Action updated','success'); filterActions();
+}
+
+async function saveActionNotes(id, uid) {
+  const notes = document.getElementById('notes-'+uid)?.value || '';
+  await api.put(`/api/actions/${id}`, {notes});
+  toast('Notes saved','success');
 }
 
 async function deleteAction(id) {
@@ -1357,9 +1822,10 @@ async function renderImport() {
           <p style="margin-bottom:8px">To import directly from Microsoft Graph, configure your tenant with:</p>
           <ol style="margin-left:20px;font-size:13px;line-height:1.8">
             <li>Register an app in <strong>Entra ID > App registrations</strong></li>
-            <li>Set <strong>Allow public client flows</strong> to <strong>Yes</strong></li>
-            <li>Add API permission: <strong>Microsoft Graph > SecurityEvents.Read.All</strong> (delegated)</li>
-            <li>Set the <strong>Tenant ID</strong> and <strong>Client ID</strong> on your tenant configuration</li>
+            <li>Add API permission: <strong>Microsoft Graph > SecurityEvents.Read.All</strong></li>
+            <li>Either: add a <strong>Client Secret</strong> and grant <strong>admin consent</strong> for <strong>application</strong> permissions,<br>
+                or: set <strong>Allow public client flows = Yes</strong> and use <strong>delegated</strong> permissions with device code</li>
+            <li>Set the <strong>Tenant ID</strong>, <strong>Client ID</strong>, and optionally <strong>Client Secret</strong> on your tenant configuration</li>
           </ol>
           <button class="btn btn-sm mt-16" onclick="navigate('tenants')">Go to Tenant Settings</button>
         </div>
@@ -1379,11 +1845,20 @@ async function renderImport() {
         <div id="graph-result" style="margin-top:12px"></div>
       </div>`;
   } else {
+    const hasSecret = !!(state.activeTenant.client_secret);
     graphSection = `
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
+        ${hasSecret ? `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively with device code (uses <strong>delegated</strong> permissions).</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>
+          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+        </div>
+        ` : `
         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. No credentials are stored.</p>
         <button class="btn btn-primary" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Microsoft</button>
+        `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
       </div>`;
   }
@@ -1393,17 +1868,22 @@ async function renderImport() {
     <div class="card mb-16">
       <div class="card-header">Import from File</div>
       <div class="form-group"><label>Source Tool</label>
-        <select id="imp-source">${selectOptions(state.enums.import_sources)}</select></div>
+        <select id="imp-source" onchange="onSourceChange()">${selectOptions(state.enums.import_sources)}</select></div>
+      <div id="imp-source-hint" style="font-size:12px;color:var(--text-light);margin:-8px 0 8px 0;display:none"></div>
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('imp-file').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
         <div class="icon">&#128228;</div>
         <div><strong>Click to upload</strong> or drag and drop</div>
-        <div style="color:var(--text-light);font-size:13px;margin-top:4px">JSON or CSV file</div>
+        <div id="upload-hint" style="color:var(--text-light);font-size:13px;margin-top:4px">JSON or CSV file</div>
       </div>
-      <input type="file" id="imp-file" accept=".json,.csv" style="display:none" onchange="handleFileSelect(event)">
+      <input type="file" id="imp-file" accept=".json,.csv,.zip" style="display:none" onchange="handleFileSelect(event)">
       <div id="imp-file-name" style="margin-top:8px;font-size:13px"></div>
       <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import</button>
     </div>
-    <div id="imp-result"></div>`;
+    <div id="imp-result"></div>
+    <div id="zt-reports-section"></div>`;
+
+  // Load ZT reports if any exist
+  loadZtReports(t);
 }
 
 // ── Graph API Auth ──
@@ -1440,6 +1920,24 @@ async function startGraphAuth() {
   const interval = (r.interval || 5) * 1000;
   if(graphPollTimer) clearInterval(graphPollTimer);
   graphPollTimer = setInterval(() => pollGraphToken(), interval);
+}
+
+async function startClientAuth() {
+  const t = state.activeTenant.name;
+  const btn = document.getElementById('graph-client-auth-btn');
+  btn.disabled = true;
+  btn.textContent = 'Authenticating...';
+
+  const r = await api.post(`/api/tenants/${t}/graph/client-auth`);
+  if(r.error) {
+    btn.disabled = false;
+    btn.textContent = 'Sign in with Client Secret';
+    toast(r.error, 'error');
+    return;
+  }
+
+  toast('Authenticated with client credentials!', 'success');
+  renderImport();
 }
 
 async function pollGraphToken() {
@@ -1559,8 +2057,116 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
+      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
+  // Reload ZT reports after import
+  if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+}
+
+function onSourceChange() {
+  const src = document.getElementById('imp-source').value;
+  const hint = document.getElementById('imp-source-hint');
+  const uploadHint = document.getElementById('upload-hint');
+  if(src === 'zero-trust-report') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the full report directory as a <strong>ZIP file</strong> (containing ZeroTrustAssessmentReport.html and zt-export/), or just the ZeroTrustAssessmentReport.json file.';
+    uploadHint.textContent = 'ZIP file (recommended) or JSON file';
+  } else if(src === 'scuba') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the ScubaGear report directory as a <strong>ZIP file</strong> (containing BaselineReports.html, ScubaResults JSON, etc.), or just the ScubaResults JSON/CSV file.';
+    uploadHint.textContent = 'ZIP file (recommended), JSON, or CSV file';
+  } else {
+    hint.style.display = 'none';
+    uploadHint.textContent = 'JSON or CSV file';
+  }
+  // Reset file selection
+  selectedFile = null;
+  document.getElementById('imp-file-name').textContent = '';
+  document.getElementById('imp-btn').disabled = true;
+}
+
+async function loadZtReports(tenantName) {
+  const el = document.getElementById('zt-reports-section');
+  if(!el) return;
+  const reports = await api.get(`/api/tenants/${tenantName}/zt-reports`);
+  if(!reports.length) { el.innerHTML = ''; return; }
+
+  const rows = reports.map(r => {
+    const date = r.imported_at ? new Date(r.imported_at).toLocaleString() : '';
+    const execDate = r.executed_at ? new Date(r.executed_at).toLocaleString() : '';
+    const pct = r.total_tests > 0 ? Math.round(r.passed_tests / r.total_tests * 100) : 0;
+    const pctColor = pct >= 60 ? 'var(--success)' : pct >= 30 ? 'var(--warning)' : 'var(--danger)';
+    const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/zt-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+    const summary = r.test_result_summary || {};
+    const summaryParts = [];
+    if(summary.IdentityTotal) summaryParts.push(`Identity: ${summary.IdentityPassed}/${summary.IdentityTotal}`);
+    if(summary.DevicesTotal) summaryParts.push(`Devices: ${summary.DevicesPassed}/${summary.DevicesTotal}`);
+    if(summary.DataTotal) summaryParts.push(`Data: ${summary.DataPassed}/${summary.DataTotal}`);
+    const summaryText = summaryParts.join(' | ') || '';
+    return `<tr>
+      <td>${date}</td>
+      <td>${execDate}</td>
+      <td>${r.report_domain || r.report_tenant_name || ''}</td>
+      <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
+      <td style="font-size:12px">${summaryText}</td>
+      <td>${r.tool_version || ''}</td>
+      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">Zero Trust Assessment Reports</div>
+      <table class="data-table">
+        <thead><tr><th>Imported</th><th>Executed</th><th>Domain</th><th>Pass Rate</th><th>Summary</th><th>Version</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function showZtReportDetail(reportId) {
+  const r = await api.get(`/api/zt-reports/${reportId}`);
+  if(r.error) return toast(r.error, 'error');
+
+  const summary = r.test_result_summary || {};
+  const ti = r.tenant_info || {};
+
+  // Build tenant overview
+  const tenantOverview = ti.TenantOverview || {};
+  let overviewHtml = '';
+  if(Object.keys(tenantOverview).length) {
+    overviewHtml = '<div class="grid grid-4" style="margin:12px 0">' +
+      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k.replace(/([A-Z])/g,' $1').trim()}</div></div>`).join('') +
+      '</div>';
+  }
+
+  // Build summary stats
+  let summaryHtml = '<div class="grid grid-3" style="margin:12px 0">';
+  if(summary.IdentityTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.IdentityPassed}/${summary.IdentityTotal}</div><div class="label">Identity</div></div>`;
+  if(summary.DevicesTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.DevicesPassed}/${summary.DevicesTotal}</div><div class="label">Devices</div></div>`;
+  if(summary.DataTotal) summaryHtml += `<div class="stat-card"><div class="value">${summary.DataPassed}/${summary.DataTotal}</div><div class="label">Data</div></div>`;
+  summaryHtml += '</div>';
+
+  const htmlBtn = r.html_path ? `<button class="btn btn-primary" onclick="window.open('/api/zt-reports/${r.id}/html','_blank')">Open Full HTML Report</button>` : '';
+
+  openModal('Zero Trust Report Details', `
+    <div style="margin-bottom:16px">
+      <div class="grid grid-2" style="gap:8px;font-size:13px">
+        <div><strong>Domain:</strong> ${r.report_domain||'—'}</div>
+        <div><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
+        <div><strong>Account:</strong> ${r.report_account||'—'}</div>
+        <div><strong>Tool Version:</strong> ${r.tool_version||'—'}</div>
+        <div><strong>Executed:</strong> ${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</div>
+        <div><strong>Imported:</strong> ${new Date(r.imported_at).toLocaleString()}</div>
+      </div>
+    </div>
+    <div class="field-label">Test Results</div>
+    ${summaryHtml}
+    <div style="font-size:13px;margin:8px 0">Total: <strong>${r.total_tests}</strong> tests | Passed: <strong style="color:var(--success)">${r.passed_tests}</strong> | Failed: <strong style="color:var(--danger)">${r.failed_tests}</strong></div>
+    ${overviewHtml ? '<div class="field-label" style="margin-top:16px">Tenant Overview</div>' + overviewHtml : ''}
+    <div style="margin-top:16px">${htmlBtn}</div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
 }
 
 // ── Plans ──
@@ -1585,7 +2191,14 @@ async function renderPlans() {
           </div>
         </div>
         <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${p.description||'No description'}</p>
-        <div style="font-size:13px">${p.item_count} actions &middot; Created ${p.created_at?.substring(0,10)} &middot; Updated ${p.updated_at?.substring(0,10)||'N/A'}</div>
+        <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
+          <span>${p.item_count} actions</span>
+          ${p.responsible_person?`<span>&#128100; ${p.responsible_person}</span>`:''}
+          ${p.priority?`<span>${priorityBadge(p.priority)}</span>`:''}
+          ${p.implementation_effort?`<span>Effort: ${p.implementation_effort}</span>`:''}
+          ${p.start_date?`<span>${p.start_date}${p.end_date?' → '+p.end_date:''}</span>`:''}
+          <span style="color:var(--text-light)">Created ${p.created_at?.substring(0,10)}</span>
+        </div>
       </div>`).join('');
   }
   document.getElementById('content').innerHTML = html;
@@ -1600,9 +2213,23 @@ async function showCreatePlan() {
 
   let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
 
+  const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e==='Medium'?' selected':''}>${e}</option>`).join('');
+  const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p==='Medium'?' selected':''}>${p}</option>`).join('');
+
   openModal('Create Remediation Plan', `
     <div class="form-group"><label>Plan Name</label><input id="p-name" placeholder="Q1 2026 Security Uplift"></div>
     <div class="form-group"><label>Description</label><textarea id="p-desc" rows="2"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible Person</label><input id="p-responsible" placeholder="e.g. John Smith"></div>
+      <div class="form-group"><label>Priority</label><select id="p-priority">${prioOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Start Date</label><input id="p-start" type="date"></div>
+      <div class="form-group"><label>End Date</label><input id="p-end" type="date"></div>
+    </div>
+    <div class="form-group"><label>Implementation Effort</label><select id="p-effort">${effortOpts}</select>
+      <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
+    </div>
     <div class="card-header">Select Actions (${allPending.length} pending)</div>
     <div style="max-height:300px;overflow-y:auto">
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-action-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
@@ -1615,7 +2242,14 @@ async function createPlan() {
   if(!name) return toast('Name required','error');
   const ids = [...document.querySelectorAll('.plan-action-cb:checked')].map(c=>c.value);
   if(!ids.length) return toast('Select at least one action','error');
-  const r = await api.post(`/api/tenants/${state.activeTenant.name}/plans`, {name, description:document.getElementById('p-desc').value, action_ids:ids});
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/plans`, {
+    name, description:document.getElementById('p-desc').value, action_ids:ids,
+    responsible_person:document.getElementById('p-responsible').value,
+    priority:document.getElementById('p-priority').value,
+    start_date:document.getElementById('p-start').value||null,
+    end_date:document.getElementById('p-end').value||null,
+    implementation_effort:document.getElementById('p-effort').value
+  });
   if(r.error) return toast(r.error,'error');
   closeModal();
   toast('Plan created','success');
@@ -1688,11 +2322,19 @@ async function viewPlan(planId) {
         <h2 style="margin:0">${plan.name}</h2>
         <div class="flex gap-8 items-center">
           <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
-          <button class="btn btn-sm" onclick="showEditPlan('${planId}', ${JSON.stringify(plan.name).replace(/"/g,'&quot;')}, ${JSON.stringify(plan.description||'').replace(/"/g,'&quot;')})">Edit</button>
+          <button class="btn btn-sm" onclick="showEditPlan('${planId}')">Edit</button>
+          <button class="btn btn-sm" onclick="exportPlanPDF('${planId}')">PDF Report</button>
           <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
         </div>
       </div>
-      <p style="color:var(--text-light);margin:0">${plan.description||'No description'}</p>
+      <p style="color:var(--text-light);margin:0 0 8px">${plan.description||'No description'}</p>
+      <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap">
+        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${plan.responsible_person}</strong></div>`:''}
+        ${plan.priority?`<div><span style="color:var(--text-light)">Priority:</span> ${priorityBadge(plan.priority)}</div>`:''}
+        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${plan.implementation_effort}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
+        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${plan.start_date}</div>`:''}
+        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${plan.end_date}</div>`:''}
+      </div>
     </div>
 
     <div class="grid grid-4 mb-16">
@@ -1730,10 +2372,25 @@ async function updatePlanStatus(planId, status) {
   toast('Plan status updated to ' + status, 'success');
 }
 
-function showEditPlan(planId, name, desc) {
+async function showEditPlan(planId) {
+  const plan = await api.get(`/api/plans/${planId}`);
+  const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e===(plan.implementation_effort||'Medium')?' selected':''}>${e}</option>`).join('');
+  const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p===(plan.priority||'Medium')?' selected':''}>${p}</option>`).join('');
+
   openModal('Edit Plan', `
-    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${name.replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${desc||''}</textarea></div>`,
+    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${(plan.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${plan.description||''}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${plan.responsible_person||''}"></div>
+      <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${plan.start_date||''}"></div>
+      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${plan.end_date||''}"></div>
+    </div>
+    <div class="form-group"><label>Implementation Effort</label><select id="ep-effort">${effortOpts}</select>
+      <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
+    </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="submitEditPlan('${planId}')">Save</button>`);
 }
@@ -1741,7 +2398,14 @@ function showEditPlan(planId, name, desc) {
 async function submitEditPlan(planId) {
   const name = document.getElementById('ep-name').value;
   if(!name) return toast('Name required', 'error');
-  await api.put(`/api/plans/${planId}`, {name, description: document.getElementById('ep-desc').value});
+  await api.put(`/api/plans/${planId}`, {
+    name, description: document.getElementById('ep-desc').value,
+    responsible_person: document.getElementById('ep-responsible').value,
+    priority: document.getElementById('ep-priority').value,
+    start_date: document.getElementById('ep-start').value||null,
+    end_date: document.getElementById('ep-end').value||null,
+    implementation_effort: document.getElementById('ep-effort').value
+  });
   closeModal();
   toast('Plan updated', 'success');
   viewPlan(planId);
@@ -1790,6 +2454,95 @@ async function submitAddActionsToPlan(planId) {
   viewPlan(planId);
 }
 
+async function exportPlanPDF(planId) {
+  const t = state.activeTenant.name;
+  const [plan, sim] = await Promise.all([
+    api.get(`/api/plans/${planId}`),
+    api.post(`/api/tenants/${t}/simulate`, {action_ids: (await api.get(`/api/plans/${planId}`)).items.map(i=>i.action_id)}).catch(()=>({}))
+  ]);
+  const tenant = state.activeTenant;
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
+  // Group by priority
+  const byPriority = {};
+  (plan.items||[]).forEach(a => { const p=a.priority||'Medium'; if(!byPriority[p]) byPriority[p]=[]; byPriority[p].push(a); });
+  // Group by workload
+  const byWorkload = {};
+  (plan.items||[]).forEach(a => { const w=a.workload||'General'; if(!byWorkload[w]) byWorkload[w]=[]; byWorkload[w].push(a); });
+  // Status counts
+  const statusCounts = {};
+  (plan.items||[]).forEach(a => { statusCounts[a.status||'ToDo'] = (statusCounts[a.status||'ToDo']||0)+1; });
+
+  let actionRows = (plan.items||[]).map((a,i) => `<tr>
+    <td>${i+1}</td><td>${a.title||''}</td><td>${a.status||''}</td><td>${a.priority||''}</td>
+    <td>${a.workload||''}</td><td>${a.implementation_effort||''}</td>
+    <td>${a.responsible||''}</td>
+    <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+  </tr>`).join('');
+
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>${plan.name} - Plan Report</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:40px;color:#1e293b;font-size:13px}
+    h1{font-size:22px;margin-bottom:4px} h2{font-size:16px;margin-top:24px;border-bottom:2px solid #3b82f6;padding-bottom:4px}
+    .meta{color:#64748b;font-size:12px;margin-bottom:20px}
+    .kpi-row{display:flex;gap:16px;margin:16px 0}
+    .kpi{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
+    .kpi .val{font-size:24px;font-weight:700;color:#3b82f6} .kpi .lbl{font-size:11px;color:#64748b;margin-top:4px}
+    table{width:100%;border-collapse:collapse;margin:8px 0} th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;font-size:12px}
+    th{background:#f1f5f9;font-weight:600} tr:nth-child(even){background:#f8fafc}
+    .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+    .green{color:#10b981} .red{color:#ef4444} .yellow{color:#f59e0b}
+    @media print{body{margin:20px}}
+  </style></head><body>
+  <h1>${plan.name}</h1>
+  <div class="meta">${tenant.display_name||tenant.name} &middot; ${today} &middot; Status: ${plan.status}</div>
+  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${plan.description}</p>`:''}
+
+  <h2>Plan Details</h2>
+  <table>
+    <tbody>
+      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${plan.responsible_person}</td></tr>`:''}
+      ${plan.start_date?`<tr><td style="font-weight:600">Start Date</td><td>${plan.start_date}</td></tr>`:''}
+      ${plan.end_date?`<tr><td style="font-weight:600">End Date</td><td>${plan.end_date}</td></tr>`:''}
+      ${plan.start_date&&plan.end_date?`<tr><td style="font-weight:600">Duration</td><td>${Math.ceil((new Date(plan.end_date)-new Date(plan.start_date))/(1000*60*60*24))} days</td></tr>`:''}
+      <tr><td style="font-weight:600">Implementation Effort</td><td>${(()=>{const efforts={};(plan.items||[]).forEach(a=>{const e=a.implementation_effort||'Unknown';efforts[e]=(efforts[e]||0)+1;});return Object.entries(efforts).map(([e,n])=>e+': '+n).join(', ')||'N/A';})()}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Key Performance Indicators</h2>
+  <div class="kpi-row">
+    <div class="kpi"><div class="val">${plan.items?.length||0}</div><div class="lbl">Total Actions</div></div>
+    <div class="kpi"><div class="val green">+${(sim.percentage_gain||0).toFixed(1)}%</div><div class="lbl">Projected Score Gain</div></div>
+    <div class="kpi"><div class="val">${(sim.current_percentage||0).toFixed(1)}%</div><div class="lbl">Current Score</div></div>
+    <div class="kpi"><div class="val green">${(sim.projected_percentage||0).toFixed(1)}%</div><div class="lbl">Projected Score</div></div>
+  </div>
+
+  <h2>Status Breakdown</h2>
+  <div class="kpi-row">${Object.entries(statusCounts).map(([s,n])=>`<div class="kpi"><div class="val">${n}</div><div class="lbl">${s}</div></div>`).join('')}</div>
+
+  <h2>By Priority</h2>
+  <table><thead><tr><th>Priority</th><th>Count</th><th>Actions</th></tr></thead><tbody>
+  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${p}</td><td>${acts.length}</td><td style="font-size:11px">${acts.map(a=>a.title?.substring(0,40)).join(', ')}</td></tr>`).join('')}
+  </tbody></table>
+
+  <h2>By Workload</h2>
+  <table><thead><tr><th>Workload</th><th>Count</th></tr></thead><tbody>
+  ${Object.entries(byWorkload).map(([w,acts])=>`<tr><td>${w}</td><td>${acts.length}</td></tr>`).join('')}
+  </tbody></table>
+
+  <h2>All Planned Actions</h2>
+  <table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Responsible</th><th>Score</th></tr></thead>
+  <tbody>${actionRows}</tbody></table>
+
+  <div style="margin-top:30px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:8px">
+    Generated by M365 Security Posture Manager &middot; ${today}
+  </div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(), 500);
+}
+
 async function deletePlan(id) {
   if(!confirm('Delete this plan?')) return;
   await api.del(`/api/plans/${id}`);
@@ -1797,33 +2550,138 @@ async function deletePlan(id) {
 }
 
 // ── Correlations ──
+let _corrTab = 'results';
+
 async function renderCorrelations() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
   document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="runCorrelation()">Re-correlate</button>';
+
+  const tabClass = tab => `atab${_corrTab===tab?' active':''}`;
+
+  const tabBar = `<div class="card mb-16" style="padding:0">
+    <div class="action-tabs" style="margin:0">
+      <div class="${tabClass('results')}" onclick="_corrTab='results';renderCorrelations()">Correlation Results</div>
+      <div class="${tabClass('families')}" onclick="_corrTab='families';renderCorrelations()">Manage Control Families</div>
+    </div></div>`;
+
+  if(_corrTab === 'families') {
+    await renderControlFamilies(tabBar);
+    return;
+  }
+
   const corr = await api.get(`/api/tenants/${t}/correlations`);
 
   if(!corr.length) {
-    document.getElementById('content').innerHTML = '<div class="card text-center" style="padding:60px"><h3>No correlated actions</h3><p style="color:var(--text-light);margin:12px 0">Import data from multiple tools, then correlations will be detected automatically</p><button class="btn btn-primary" onclick="runCorrelation()">Run Correlation</button></div>';
+    document.getElementById('content').innerHTML = tabBar + '<div class="card text-center" style="padding:60px"><h3>No correlated actions</h3><p style="color:var(--text-light);margin:12px 0">Import data from multiple tools, then correlations will be detected automatically</p><button class="btn btn-primary" onclick="runCorrelation()">Run Correlation</button></div>';
     return;
   }
 
   let html = corr.map(g => `
     <div class="card mb-16">
-      <div class="card-header">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+      <div class="flex justify-between items-center">
+        <div class="card-header" style="margin:0">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+        <button class="btn btn-sm" onclick="showAddActionToGroup('${g.group_id}','${g.canonical_name.replace(/'/g,"\\'")}')">+ Add Action</button>
+      </div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${g.description}</p>
       <div style="font-size:13px;margin-bottom:8px">Found in ${g.source_count} tools: ${g.sources.join(', ')}</div>
-      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th></tr></thead><tbody>
-        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td></tr>`).join('')}
+      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>
+        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('content').innerHTML = `${tabBar}
     <div class="card mb-16"><div class="grid grid-3">
       <div class="stat-card"><div class="value">${corr.length}</div><div class="label">Control Families</div></div>
       <div class="stat-card"><div class="value">${corr.reduce((s,g)=>s+g.action_count,0)}</div><div class="label">Linked Actions</div></div>
       <div class="stat-card"><div class="value">${corr.filter(g=>g.source_count>1).length}</div><div class="label">Cross-tool Links</div></div>
     </div></div>${html}`;
+}
+
+async function renderControlFamilies(tabBar) {
+  const groups = await api.get('/api/correlation-groups');
+
+  let rows = groups.map(g => {
+    const kw = (g.keywords||[]).join(', ');
+    return `<tr>
+      <td style="font-weight:600">${g.canonical_name}</td>
+      <td style="font-size:12px;max-width:200px">${g.description||''}</td>
+      <td style="font-size:11px;max-width:400px;word-break:break-word">${kw}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="editControlFamily('${g.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteControlFamily('${g.id}','${g.canonical_name.replace(/'/g,"\\'")}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-16">
+        <div class="card-header" style="margin:0">Control Families (${groups.length})</div>
+        <div class="flex gap-8">
+          <button class="btn btn-sm" onclick="seedDefaultFamilies()">Seed Defaults</button>
+          <button class="btn btn-sm btn-primary" onclick="showAddFamily()">+ Add Family</button>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Control families define keyword patterns used to automatically group related actions across tools. Edit keywords to improve matching accuracy.</p>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Keywords</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="4" class="text-center">No families defined. Click "Seed Defaults" to load built-in families.</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+async function seedDefaultFamilies() {
+  const r = await api.post('/api/correlation-groups/seed-defaults');
+  toast(`Seeded ${r.seeded} default families`, 'success');
+  renderCorrelations();
+}
+
+function showAddFamily() {
+  openModal('Add Control Family', `
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" placeholder="e.g. MFA Enforcement"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" placeholder="Short description"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4" placeholder="mfa, multi-factor, authenticator, ..."></textarea></div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddFamily()">Save</button>');
+}
+
+async function submitAddFamily() {
+  const name = document.getElementById('cf-name').value.trim();
+  const desc = document.getElementById('cf-desc').value.trim();
+  const kw = document.getElementById('cf-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  if(!name) return toast('Name is required','error');
+  if(!kw.length) return toast('Add at least one keyword','error');
+  await api.post('/api/correlation-groups', {canonical_name:name, description:desc, keywords:kw});
+  closeModal();
+  toast('Family created','success');
+  renderCorrelations();
+}
+
+async function editControlFamily(id) {
+  const groups = await api.get('/api/correlation-groups');
+  const g = groups.find(x=>x.id===id);
+  if(!g) return toast('Family not found','error');
+  openModal('Edit Control Family', `
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${g.canonical_name}"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${g.description||''}"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>`);
+}
+
+async function submitEditFamily(id) {
+  const name = document.getElementById('cf-name').value.trim();
+  const desc = document.getElementById('cf-desc').value.trim();
+  const kw = document.getElementById('cf-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  if(!name) return toast('Name is required','error');
+  await api.put(`/api/correlation-groups/${id}`, {canonical_name:name, description:desc, keywords:kw});
+  closeModal();
+  toast('Family updated','success');
+  renderCorrelations();
+}
+
+async function deleteControlFamily(id, name) {
+  if(!confirm(`Delete "${name}"? This will unlink all associated actions.`)) return;
+  await api.del(`/api/correlation-groups/${id}`);
+  toast('Family deleted','success');
+  renderCorrelations();
 }
 
 async function runCorrelation() {
@@ -1832,73 +2690,631 @@ async function runCorrelation() {
   renderCorrelations();
 }
 
+async function unlinkActionFromGroup(actionId) {
+  if(!confirm('Remove this action from the correlation group?')) return;
+  await api.post(`/api/actions/${actionId}/unlink`);
+  toast('Action removed from group','success');
+  renderCorrelations();
+}
+
+async function showAddActionToGroup(groupId, groupName) {
+  const t = state.activeTenant.name;
+  const actions = await api.get(`/api/tenants/${t}/actions`);
+  const uncorrelated = actions.filter(a => !a.correlation_group_id);
+  if(!uncorrelated.length) return openModal('Add Action to Group', '<p style="padding:20px;text-align:center;color:var(--text-light)">All actions are already in correlation groups.</p>',
+    '<button class="btn" onclick="closeModal()">Close</button>');
+
+  let rows = uncorrelated.map(a => `<tr>
+    <td><input type="checkbox" value="${a.id}" class="corr-add-cb"></td>
+    <td style="font-size:12px">${a.source_tool}</td>
+    <td>${a.title.substring(0,55)}</td>
+    <td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+
+  openModal(`Add Actions to "${groupName}"`, `
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${uncorrelated.length} uncorrelated actions available</div>
+    <div style="max-height:400px;overflow-y:auto">
+      <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.corr-add-cb').forEach(c=>c.checked=this.checked)"></th><th>Source</th><th>Title</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddActionsToGroup('${groupId}')">Link Selected</button>`);
+}
+
+async function submitAddActionsToGroup(groupId) {
+  const ids = [...document.querySelectorAll('.corr-add-cb:checked')].map(c=>c.value);
+  if(!ids.length) return toast('Select at least one action','error');
+  for(const id of ids) {
+    await api.post(`/api/actions/${id}/link`, {group_id: groupId});
+  }
+  closeModal();
+  toast(`${ids.length} action(s) linked to group`,'success');
+  renderCorrelations();
+}
+
 // ── Essential Eight ──
+let _e8TargetML = 'Maturity Level 3';
+let _e8ExcludeNA = false;
+
 async function renderE8() {
   if(!requireTenant()) return;
-  const e8 = await api.get(`/api/tenants/${state.activeTenant.name}/e8`);
+  const params = `target=${encodeURIComponent(_e8TargetML)}&exclude_na=${_e8ExcludeNA?'1':'0'}`;
+  const e8 = await api.get(`/api/tenants/${state.activeTenant.name}/e8?${params}`);
 
-  let cards = Object.entries(e8).map(([ctrl, d]) => {
-    let mlBars = Object.entries(d.maturity_levels||{}).map(([ml, md]) =>
-      `<div class="mb-8"><div class="flex justify-between"><span style="font-size:12px">${ml}</span><span style="font-size:12px">${md.completed}/${md.total}</span></div>${progressBar(md.percentage)}</div>`
-    ).join('');
+  const ov = e8.overall || {};
+  const controls = e8.controls || {};
+  const entries = Object.entries(controls);
+  const mlDescs = e8.maturity_descriptions || {};
 
-    return `<div class="card">
-      <div class="card-header" style="font-size:14px">${ctrl}</div>
-      <div class="text-center mb-8">${gauge(d.percentage, 100)}</div>
-      <div style="font-size:13px;text-align:center;margin-bottom:8px">${d.completed_actions}/${d.total_actions} actions</div>
-      <div style="font-size:13px;text-align:center;margin-bottom:12px">Achieved: <strong>${d.achieved_maturity}</strong></div>
-      ${mlBars}
+  // Helper: maturity level color
+  function mlColor(ml) {
+    if(!ml) return 'var(--text-light)';
+    if(ml.includes('0')) return 'var(--danger)';
+    if(ml.includes('1')) return 'var(--warning)';
+    if(ml.includes('2')) return '#84cc16';
+    return 'var(--success)';
+  }
+  function mlBadge(ml) {
+    const n = ml ? ml.replace('Maturity ','') : 'Level 0';
+    return `<span class="badge" style="background:${mlColor(ml)};color:#fff">${n}</span>`;
+  }
+
+  // ── Spider/Radar chart (SVG) ──
+  // Short names for radar chart labels
+  const _e8Short = {
+    'Application Control':'App Control',
+    'Patch Applications':'Patch Apps',
+    'Configure Microsoft Office Macro Settings':'Office Macros',
+    'User Application Hardening':'App Hardening',
+    'Restrict Administrative Privileges':'Admin Privileges',
+    'Patch Operating Systems':'Patch OS',
+    'Multi-Factor Authentication':'MFA',
+    'Regular Backups':'Backups'
+  };
+
+  function renderRadarChart(controls) {
+    const cx=200,cy=200,r=130;
+    const names = Object.keys(controls);
+    const n = names.length;
+    if(n===0) return '';
+    const angleStep = (2*Math.PI)/n;
+
+    // Grid circles
+    let grid = '';
+    for(let lv=1;lv<=3;lv++){
+      const cr = r*(lv/3);
+      grid += `<circle cx="${cx}" cy="${cy}" r="${cr}" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>`;
+      grid += `<text x="${cx+3}" y="${cy-cr+4}" font-size="9" fill="var(--text-light)">ML${lv}</text>`;
+    }
+
+    // Axis lines and labels
+    let axes = '';
+    let labels = '';
+    names.forEach((name, i) => {
+      const angle = -Math.PI/2 + i*angleStep;
+      const x2 = cx + r*Math.cos(angle);
+      const y2 = cy + r*Math.sin(angle);
+      axes += `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="var(--border)" stroke-width="0.5"/>`;
+      const lx = cx + (r+45)*Math.cos(angle);
+      const ly = cy + (r+45)*Math.sin(angle);
+      const anchor = Math.abs(Math.cos(angle))<0.15?'middle':Math.cos(angle)>0?'start':'end';
+      const shortName = _e8Short[name] || name.substring(0,16);
+      labels += `<text x="${lx}" y="${ly}" font-size="11" fill="var(--text)" text-anchor="${anchor}" dominant-baseline="middle" font-weight="500">${shortName}</text>`;
+    });
+
+    // Compute continuous progress score (0-3) from per-ML completion percentages
+    // e.g. ML1=100% + ML2=50% + ML3=0% → 1.5
+    function progressScore(d) {
+      const mls = d.maturity_levels || {};
+      let score = 0;
+      for (const ml of ['Maturity Level 1','Maturity Level 2','Maturity Level 3']) {
+        const md = mls[ml] || {};
+        if (md.total > 0) score += Math.min(md.percentage || 0, 100) / 100;
+        else break; // no actions at this level, stop accumulating
+      }
+      return score;
+    }
+
+    // Achieved polygon (continuous progress)
+    let achievedPts = names.map((name, i) => {
+      const d = controls[name];
+      const angle = -Math.PI/2 + i*angleStep;
+      const pr = r*(progressScore(d)/3);
+      return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
+    }).join(' ');
+
+    // Target polygon
+    let targetPts = names.map((name, i) => {
+      const d = controls[name];
+      const angle = -Math.PI/2 + i*angleStep;
+      const pr = r*(d.target_maturity_num/3);
+      return `${cx+pr*Math.cos(angle)},${cy+pr*Math.sin(angle)}`;
+    }).join(' ');
+
+    return `<svg viewBox="0 0 400 400" style="width:100%;max-width:420px;height:auto">
+      ${grid}${axes}
+      <polygon points="${targetPts}" fill="rgba(59,130,246,0.08)" stroke="var(--primary)" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polygon points="${achievedPts}" fill="rgba(34,197,94,0.2)" stroke="var(--success)" stroke-width="2"/>
+      ${labels}
+    </svg>`;
+  }
+
+  // ── Control cards ──
+  let cards = entries.map(([ctrl, d], idx) => {
+    const achievedCol = mlColor(d.achieved_maturity);
+
+    // Maturity level progress bars
+    let mlBars = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+      const md = (d.maturity_levels||{})[ml] || {total:0,completed:0,percentage:0};
+      const isTarget = ml === _e8TargetML;
+      const short = ml.replace('Maturity ','');
+      return `<div class="mb-8">
+        <div class="flex justify-between"><span style="font-size:12px;${isTarget?'font-weight:600':''}">${short}${isTarget?' ★':''}</span><span style="font-size:12px">${md.completed}/${md.total}</span></div>
+        ${progressBar(md.percentage)}
+      </div>`;
+    }).join('');
+
+    // M365 products & features
+    const products = (d.m365_products||[]).map(p=>`<span class="badge badge-info" style="font-size:10px;margin:1px">${p}</span>`).join(' ');
+    const allFeatures = [...new Set([...(d.m365_features||[]), ...(d.asd_technologies||[])])];
+    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
+
+    // Gap analysis
+    let gapSection = '';
+    if(d.gap_action_count > 0) {
+      const gapRows = (d.gap_actions||[]).slice(0,10).map(a => `<tr>
+        <td style="font-size:11px">${a.maturity?.replace('Maturity ','')}</td>
+        <td style="font-size:12px">${(a.title||'').substring(0,50)}</td>
+        <td>${statusBadge(a.status)}</td>
+        <td style="font-size:11px">${a.source_tool||''}</td>
+      </tr>`).join('');
+      gapSection = `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="card-header" style="margin:0;font-size:13px;color:var(--danger)">Gap to Target: ${d.gap_action_count} actions needed</div>
+        <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Level</th><th>Action</th><th>Status</th><th>Source</th></tr></thead><tbody>${gapRows}</tbody></table></div>
+        ${d.gap_action_count>10?`<div style="font-size:11px;color:var(--text-light);margin-top:4px">... and ${d.gap_action_count-10} more</div>`:''}
+      </div>`;
+    }
+
+    // Maturity requirements (from seed data)
+    let reqSection = '';
+    const reqs = d.maturity_requirements || {};
+    if(Object.keys(reqs).length > 0) {
+      let reqPanels = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+        const r = reqs[ml];
+        if(!r || !r.requirements?.length) return '';
+        const items = r.requirements.map(req =>
+          `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--bg-hover)">
+            <code style="font-size:10px;color:var(--primary)">${req.id}</code> ${req.text.substring(0,120)}${req.text.length>120?'...':''}
+            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${req.ism.join(', ')}]</span>`:''}
+          </div>`
+        ).join('');
+        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${r.m365_implementation}</div>` : '';
+        return `<div style="margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${ml.replace('Maturity ','')} (${r.requirement_count} requirements)</div>
+          ${items}${implNote}
+        </div>`;
+      }).join('');
+      reqSection = `<div id="e8-reqs-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="card-header" style="margin:0 0 8px;font-size:13px">Maturity Requirements (ASD)</div>
+        ${reqPanels}
+      </div>`;
+    }
+
+    // Source tool coverage breakdown
+    const sourceBreakdown = {};
+    (d.actions||[]).forEach(a => {
+      const s = a.source_tool || 'Unknown';
+      if(!sourceBreakdown[s]) sourceBreakdown[s] = {total:0,completed:0};
+      sourceBreakdown[s].total++;
+      if(a.status === 'Completed') sourceBreakdown[s].completed++;
+    });
+    const sourceBadges = Object.entries(sourceBreakdown).map(([s,c]) =>
+      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${s} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
+    ).join(' ');
+
+    // Action table
+    let actionRows = (d.actions||[]).map(a => `<tr>
+      <td style="font-size:11px;font-family:monospace">${a.reference_id||''}</td>
+      <td style="font-size:12px">${a.source_tool||''}</td>
+      <td>${(a.title||'').substring(0,55)}</td>
+      <td>${statusBadge(a.status)}</td>
+      <td>${priorityBadge(a.priority)}</td>
+      <td style="font-size:12px">${a.maturity?.replace('Maturity ','')||'—'}</td>
+      <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+    </tr>`).join('');
+
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('e8-detail-${idx}').classList.toggle('hidden')">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="card-header" style="margin:0;font-size:14px">${ctrl}</span>
+            <span style="font-size:11px;color:var(--text-light)">${d.control_id||''}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">
+            ${d.completed_actions}/${d.total_actions} actions &middot;
+            Achieved: ${mlBadge(d.achieved_maturity)}
+            ${d.gap_to_target>0?` &middot; <span style="color:var(--danger)">${d.gap_action_count} gaps to target</span>`:''}
+          </div>
+          <div style="margin-top:4px">${products}</div>
+        </div>
+        <div style="flex-shrink:0">${gauge(d.percentage, 80)}</div>
+      </div>
+      <div id="e8-detail-${idx}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${d.objective?`<div style="font-size:12px;color:var(--text-light);margin-bottom:12px;font-style:italic">${d.objective}</div>`:''}
+        <div class="grid grid-2 mb-16" style="gap:16px">
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">Maturity Progress</div>
+            ${mlBars}
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">M365 Features</div>
+            ${features||'<div style="color:var(--text-light);font-size:12px">No M365 features mapped</div>'}
+          </div>
+        </div>
+        <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-reqs-${idx}').classList.toggle('hidden')">ASD Requirements</button>
+          <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('e8-ms-${idx}').classList.toggle('hidden')">Microsoft Guidance</button>
+          ${d.ms_doc_url?`<a class="btn btn-sm" href="${d.ms_doc_url}" target="_blank" onclick="event.stopPropagation()">Microsoft Docs</a>`:''}
+          ${d.asd_url?`<a class="btn btn-sm" href="${d.asd_url}" target="_blank" onclick="event.stopPropagation()">ASD Blueprint</a>`:''}
+        </div>
+        ${reqSection}
+        ${(()=>{
+          const msg = d.ms_guidance || {};
+          if(!Object.keys(msg).length) return '';
+          let panels = ['ML1','ML2','ML3'].map(ml => {
+            const g = msg[ml];
+            if(!g) return '';
+            const configs = (g.key_configurations||[]).map(c=>`<div style="font-size:11px;padding:2px 0">• ${typeof c==='string'?c:JSON.stringify(c)}</div>`).join('');
+            return '<div style="margin-bottom:10px;padding:8px;background:var(--bg-hover);border-radius:4px">'+
+              '<div style="font-size:12px;font-weight:600;margin-bottom:4px">'+ml+': '+g.primary_tool+'</div>'+
+              '<div style="font-size:11px;color:var(--text-light);margin-bottom:4px">'+g.description+'</div>'+
+              (configs?'<div style="margin-top:4px"><strong style="font-size:11px">Key Configurations:</strong>'+configs+'</div>':'')+
+            '</div>';
+          }).join('');
+          const lic = d.ms_licensing||{};
+          const licHtml = Object.keys(lic).length?'<div style="margin-top:8px;font-size:11px"><strong>Licensing:</strong> '+Object.entries(lic).map(([k,v])=>k+': '+(typeof v==='string'?v:JSON.stringify(v))).join(', ')+'</div>':'';
+          return '<div id="e8-ms-'+idx+'" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">'+
+            '<div class="card-header" style="margin:0 0 8px;font-size:13px">Microsoft Implementation Guidance</div>'+
+            panels+licHtml+'</div>';
+        })()}
+        ${gapSection}
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+          <div class="flex justify-between items-center mb-8">
+            <div>
+              <span style="font-size:13px;font-weight:600">Mapped Actions</span>
+              ${sourceBadges ? `<span style="margin-left:8px">${sourceBadges}</span>` : ''}
+            </div>
+            <button class="btn btn-sm" onclick="showE8AddAction('${ctrl.replace(/'/g,"\\'")}', '${d.control_id||''}')">+ Add Action</button>
+          </div>
+          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
+        </div>
+      </div>
     </div>`;
   }).join('');
 
-  document.getElementById('content').innerHTML = `<div class="grid grid-4">${cards}</div>`;
+  // ── Maturity summary table ──
+  let matSummaryRows = entries.map(([ctrl,d]) => {
+    const cells = ['Maturity Level 1','Maturity Level 2','Maturity Level 3'].map(ml => {
+      const md = (d.maturity_levels||{})[ml] || {percentage:0,total:0,completed:0};
+      const bg = md.percentage>=80?'var(--success)':md.percentage>=50?'var(--warning)':md.percentage>0?'var(--danger)':'var(--bg-hover)';
+      const txt = md.total>0?md.completed+'/'+md.total:'-';
+      const clr = md.total>0?'#fff':'var(--text-light)';
+      return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${clr};min-width:40px">${txt}</span></td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px">${ctrl}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
+  }).join('');
+
+  const radarChart = renderRadarChart(controls);
+
+  document.getElementById('content').innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <h2 style="margin:0">Essential Eight Assessment</h2>
+      <div style="display:flex;gap:12px;align-items:center">
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" ${_e8ExcludeNA?'checked':''} onchange="_e8ExcludeNA=this.checked;renderE8()"> Exclude N/A & Risk Accepted
+        </label>
+        <select class="input" style="width:auto;font-size:12px" onchange="_e8TargetML=this.value;renderE8()">
+          <option ${_e8TargetML==='Maturity Level 1'?'selected':''}>Maturity Level 1</option>
+          <option ${_e8TargetML==='Maturity Level 2'?'selected':''}>Maturity Level 2</option>
+          <option ${_e8TargetML==='Maturity Level 3'?'selected':''}>Maturity Level 3</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card mb-16"><div class="grid grid-4">
+      <div class="stat-card">${gauge(ov.overall_percentage||0, 100)}<div class="label">Overall E8</div></div>
+      <div class="stat-card"><div class="value">${ov.total_actions||0}</div><div class="label">Actions Mapped</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--success)">${ov.total_completed||0}</div><div class="label">Completed</div></div>
+      <div class="stat-card">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${mlBadge(ov.overall_achieved_maturity)}
+        </div>
+        <div class="label" style="margin-top:8px">Overall Achieved</div>
+        ${ov.total_gap_actions>0?`<div style="font-size:11px;color:var(--danger);margin-top:2px">${ov.total_gap_actions} gaps to target</div>`:''}
+      </div>
+    </div></div>
+
+    <div class="grid grid-2 mb-16" style="gap:16px">
+      <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:16px">
+        ${radarChart}
+        <div style="margin-top:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;justify-content:center">
+          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border:2px solid var(--success);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Progress</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:rgba(59,130,246,0.08);border:2px dashed var(--primary);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Target</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="font-size:14px">Maturity Summary</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Control</th><th>Achieved</th><th>ML1</th><th>ML2</th><th>ML3</th></tr></thead>
+          <tbody>${matSummaryRows}</tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="card mb-16">
+      <div class="card-header" style="font-size:14px">Tool Coverage</div>
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:8px">Shows which data sources provide actions for each E8 control. Empty cells indicate no actions from that tool.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Control</th><th>Secure Score</th><th>SCuBA</th><th>Zero Trust</th><th>Manual</th><th>Total</th></tr></thead>
+        <tbody>${entries.map(([ctrl,d]) => {
+          const src = {};
+          (d.actions||[]).forEach(a => { const s = a.source_tool||'?'; src[s] = (src[s]||0)+1; });
+          const total = d.total_actions || 0;
+          const _tb = (tool) => {
+            const c = src[tool] || 0;
+            return c > 0 ? '<td style="text-align:center"><span class="badge badge-success" style="min-width:28px">'+c+'</span></td>'
+                         : '<td style="text-align:center;color:var(--text-light)">—</td>';
+          };
+          return '<tr><td style="font-size:12px">'+ctrl+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
+            +'<td style="text-align:center;font-weight:600">'+(total||'<span style="color:var(--danger)">0</span>')+'</td></tr>';
+        }).join('')}</tbody>
+      </table></div>
+    </div>
+
+    ${cards}
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">About Essential Eight</div>
+      <p style="font-size:13px">The <a href="https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight" target="_blank">Essential Eight</a> is a set of baseline mitigation strategies from the Australian Signals Directorate (ASD) designed to protect Microsoft Windows-based internet-connected networks.</p>
+      <div class="grid grid-2" style="gap:12px;margin-top:12px">
+        ${Object.entries(mlDescs).map(([ml,desc])=>`<div style="font-size:12px"><strong>${ml}:</strong> ${desc}</div>`).join('')}
+      </div>
+      <div style="margin-top:12px;font-size:12px">
+        <a href="https://blueprint.asd.gov.au/security-and-governance/essential-eight/" target="_blank">ASD Blueprint - Essential Eight</a> &middot;
+        <a href="https://learn.microsoft.com/en-us/compliance/anz/e8-overview" target="_blank">Microsoft E8 Overview</a>
+      </div>
+    </div>`;
 }
 
-// ── Compare ──
-async function renderCompare() {
-  state.tenants = await api.get('/api/tenants');
-  if(state.tenants.length < 2) {
-    document.getElementById('content').innerHTML = '<div class="card text-center" style="padding:60px"><h3>Need at least 2 tenants</h3></div>';
+// ── E8 action management ──
+function showE8AddAction(controlName, controlId) {
+  openModal('Add Action to ' + controlName, `
+    <div class="form-group"><label>Title</label><input id="e8a-title" placeholder="e.g. Enable AppLocker on workstations"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Maturity Level</label>
+        <select id="e8a-ml">
+          <option value="Maturity Level 1">Maturity Level 1</option>
+          <option value="Maturity Level 2">Maturity Level 2</option>
+          <option value="Maturity Level 3">Maturity Level 3</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Status</label><select id="e8a-status">${selectOptions(state.enums.statuses,'ToDo')}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Priority</label><select id="e8a-priority">${selectOptions(state.enums.priorities,'Medium')}</select></div>
+      <div class="form-group"><label>Workload</label><select id="e8a-workload">${selectOptions(state.enums.workloads,'General')}</select></div>
+    </div>
+    <div class="form-group"><label>Description</label><textarea id="e8a-desc" rows="2"></textarea></div>
+    <div class="form-group"><label>Remediation Steps</label><textarea id="e8a-remed" rows="2"></textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="e8AddAction('${controlName.replace(/'/g,"\\'")}')">Create</button>`);
+}
+
+async function e8AddAction(controlName) {
+  const data = {
+    title: document.getElementById('e8a-title').value,
+    essential_eight_control: controlName,
+    essential_eight_maturity: document.getElementById('e8a-ml').value,
+    status: document.getElementById('e8a-status').value,
+    priority: document.getElementById('e8a-priority').value,
+    workload: document.getElementById('e8a-workload').value,
+    description: document.getElementById('e8a-desc').value,
+    remediation_steps: document.getElementById('e8a-remed').value,
+    source_tool: 'Manual'
+  };
+  if(!data.title) return toast('Title required','error');
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/actions`, data);
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Action created','success'); renderE8();
+}
+
+// ── SCuBA ──
+function _scubaCritBadge(crit) {
+  if(!crit) return '';
+  const cl = crit.toLowerCase();
+  if(cl.includes('shall') && !cl.includes('not-implemented') && !cl.includes('3rd')) return `<span class="badge badge-danger">Shall</span>`;
+  if(cl.includes('should')) return `<span class="badge badge-warning">Should</span>`;
+  if(cl.includes('3rd')) return `<span class="badge badge-info">3rd Party</span>`;
+  if(cl.includes('not-implemented')) return `<span class="badge badge-gray">Not Implemented</span>`;
+  return `<span class="badge badge-gray">${crit}</span>`;
+}
+
+async function renderScuba() {
+  if(!requireTenant()) return;
+  const data = await api.get(`/api/tenants/${state.activeTenant.name}/scuba`);
+  const reports = await api.get(`/api/tenants/${state.activeTenant.name}/scuba-reports`);
+
+  if(data.total_controls === 0) {
+    document.getElementById('content').innerHTML = `<div class="card text-center" style="padding:60px">
+      <h3>No SCuBA Data</h3><p style="color:var(--text-light);margin-top:8px">Import a ScubaGear report (ScubaResults JSON or CSV) from the Import page.</p>
+      <button class="btn btn-primary" style="margin-top:16px" onclick="navigate('import')">Go to Import</button></div>`;
     return;
   }
 
-  let checks = state.tenants.map(t => `<label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" value="${t.name}" class="cmp-tenant" ${t.is_active?'checked':''}> ${t.display_name||t.name}</label>`).join('');
+  const passRate = data.pass_rate;
+
+  // Product sections with groups
+  let pidx = 0;
+  let productSections = Object.entries(data.products).map(([prod, pd]) => {
+    const prodPct = pd.total > 0 ? Math.round(pd.pass / pd.total * 100) : 0;
+
+    // Group cards within product
+    let groupCards = Object.entries(pd.groups || {}).map(([grpName, grp]) => {
+      const gi = pidx++;
+      const grpPct = grp.total > 0 ? Math.round(grp.pass / grp.total * 100) : 0;
+
+      let rows = (grp.actions || []).map(a => {
+        const cid = a.reference_id || a.source_id?.replace('scuba_','') || '';
+        return `<tr>
+          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${cid}</td>
+          <td style="font-size:12px">${(a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90)}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td>${_scubaCritBadge(a.subcategory)}</td>
+          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
+        </tr>`;
+      }).join('');
+
+      const refLink = grp.reference_url ? `<a href="${grp.reference_url}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary)">Baseline</a>` : '';
+
+      return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px">
+        <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-grp-${gi}').classList.toggle('hidden')">
+          <div>
+            <div style="font-size:13px;font-weight:600">${grpName}</div>
+            <div style="font-size:11px;color:var(--text-light);margin-top:2px">
+              <span class="badge badge-success" style="font-size:10px">Pass ${grp.pass}</span>
+              <span class="badge badge-danger" style="font-size:10px">Fail ${grp.fail}</span>
+              ${grp.warning?`<span class="badge badge-warning" style="font-size:10px">Warn ${grp.warning}</span>`:''}
+              ${grp.na?`<span class="badge badge-gray" style="font-size:10px">N/A ${grp.na}</span>`:''}
+              ${refLink}
+            </div>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:${pctColor(grpPct)}">${grpPct}%</div>
+        </div>
+        <div id="scuba-grp-${gi}" class="hidden" style="margin-top:8px">
+          <div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Control ID</th><th>Requirement</th><th>Result</th><th>Criticality</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const pi = pidx++;
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-prod-${pi}').classList.toggle('hidden')">
+        <div>
+          <div class="card-header" style="margin:0;font-size:16px">${prod}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px">
+            ${pd.pass}/${pd.total} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings &middot; ${pd.na} N/A
+            &middot; ${Object.keys(pd.groups||{}).length} groups
+          </div>
+        </div>
+        <div style="flex-shrink:0">${gauge(prodPct, 80)}</div>
+      </div>
+      <div id="scuba-prod-${pi}" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${groupCards}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Reports history
+  let reportsHtml = '';
+  if(reports && reports.length > 0) {
+    let rptRows = reports.map(r => {
+      const products = (r.products_assessed || []).join(', ');
+      const pr = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
+      const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/scuba-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+      return `<tr>
+        <td>${r.imported_at?.substring(0,19) || ''}</td>
+        <td>${r.executed_at?.substring(0,19) || ''}</td>
+        <td>${r.report_tenant_name || ''}</td>
+        <td>${r.report_domain || ''}</td>
+        <td>${products}</td>
+        <td>${r.tool_version || ''}</td>
+        <td>${gauge(pr, 60)}</td>
+        <td>${r.passed_controls}/${r.total_controls}</td>
+        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
+      </tr>`;
+    }).join('');
+    reportsHtml = `<div class="card mb-16"><div class="card-header">Import History</div>
+      <div class="table-wrap"><table><thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Domain</th><th>Products</th><th>Version</th><th>Pass Rate</th><th>Results</th><th>Actions</th></tr></thead>
+      <tbody>${rptRows}</tbody></table></div></div>`;
+  }
 
   document.getElementById('content').innerHTML = `
-    <div class="card mb-16"><div class="card-header">Select Tenants to Compare</div>
-      <div class="flex gap-8 flex-wrap mb-16">${checks}</div>
-      <button class="btn btn-primary" onclick="doCompare()">Compare</button>
-    </div><div id="compare-result"></div>`;
+    <div class="card mb-16"><div class="grid grid-4" style="grid-template-columns: auto 1fr 1fr 1fr 1fr">
+      <div class="stat-card">${gauge(passRate, 100)}<div class="label">Pass Rate</div></div>
+      <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--success)">${data.passed}</div><div class="label">Passed</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--danger)">${data.failed}</div><div class="label">Failed</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--warning)">${data.warnings}</div><div class="label">Warnings</div></div>
+    </div></div>
+    ${reportsHtml}
+    ${productSections}`;
 }
 
-async function doCompare() {
-  const tenants = [...document.querySelectorAll('.cmp-tenant:checked')].map(c=>c.value);
-  if(tenants.length < 2) return toast('Select at least 2 tenants','error');
-  const r = await api.post('/api/compare', {tenants});
+async function showScubaReportDetail(reportId) {
+  const r = await api.get(`/api/scuba-reports/${reportId}`);
+  if(!r) return;
 
-  let overallRows = tenants.map(t => {
-    const d = r.overall[t]||{};
-    return `<tr><td><strong>${t}</strong></td><td>${gauge(d.percentage||0, 80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+  let summaryRows = Object.entries(r.product_summary || {}).map(([prod, s]) => {
+    const total = (s.Passes||0) + (s.Failures||0) + (s.Warnings||0) + (s.Manual||0) + (s.Errors||0) + (s.Omits||0);
+    return `<tr>
+      <td><strong>${prod}</strong></td>
+      <td style="color:var(--success)">${s.Passes||0}</td>
+      <td style="color:var(--danger)">${s.Failures||0}</td>
+      <td style="color:var(--warning)">${s.Warnings||0}</td>
+      <td>${s.Manual||0}</td>
+      <td>${s.Errors||0}</td>
+      <td>${total}</td>
+    </tr>`;
   }).join('');
 
-  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
-  }).join('');
+  const products = (r.products_assessed || []).join(', ');
 
-  document.getElementById('compare-result').innerHTML = `
-    <div class="card mb-16"><div class="card-header">Overall Comparison</div>
-      <table><thead><tr><th>Tenant</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${overallRows}</tbody></table></div>
-    <div class="card"><div class="card-header">By Source Tool</div>
-      <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows}</tbody></table></div>`;
+  openModal('SCuBA Report Details', `
+    <div class="grid grid-2 mb-16" style="gap:16px;font-size:13px">
+      <div>
+        <div class="mb-8"><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
+        <div class="mb-8"><strong>Domain:</strong> ${r.report_domain||'—'}</div>
+        <div class="mb-8"><strong>Tenant ID:</strong> <span style="font-family:monospace;font-size:11px">${r.report_tenant_id||'—'}</span></div>
+      </div>
+      <div>
+        <div class="mb-8"><strong>ScubaGear Version:</strong> ${r.tool_version||'—'}</div>
+        <div class="mb-8"><strong>Executed:</strong> ${r.executed_at||'—'}</div>
+        <div class="mb-8"><strong>Products:</strong> ${products||'—'}</div>
+        <div class="mb-8"><strong>Report UUID:</strong> <span style="font-family:monospace;font-size:11px">${r.report_uuid||'—'}</span></div>
+      </div>
+    </div>
+    <div class="card-header" style="margin-bottom:8px">Product Summary</div>
+    <table><thead><tr><th>Product</th><th>Passes</th><th>Failures</th><th>Warnings</th><th>Manual</th><th>Errors</th><th>Total</th></tr></thead>
+    <tbody>${summaryRows || '<tr><td colspan="7" style="text-align:center;color:var(--text-light)">No summary data</td></tr>'}</tbody></table>
+    <div style="margin-top:16px;font-size:12px;color:var(--text-light)">
+      <strong>Results:</strong> ${r.passed_controls} passed, ${r.failed_controls} failed, ${r.warning_controls} warnings out of ${r.total_controls} total controls
+    </div>
+  `);
 }
 
 // ── Export ──
+let _exportTab = 'quick';
+
 async function renderExport() {
   if(!requireTenant()) return;
-  document.getElementById('content').innerHTML = `
+  const t = state.activeTenant.name;
+
+  const tabClass = tab => `atab${_exportTab===tab?' active':''}`;
+  const tabBar = `<div class="card mb-16" style="padding:0"><div class="action-tabs" style="margin:0">
+    <div class="${tabClass('quick')}" onclick="_exportTab='quick';renderExport()">Quick Export</div>
+    <div class="${tabClass('templates')}" onclick="_exportTab='templates';renderExport()">GitLab Templates</div>
+    <div class="${tabClass('plan-export')}" onclick="_exportTab='plan-export';renderExport()">Export Plan to GitLab</div>
+  </div></div>`;
+
+  if(_exportTab === 'templates') {
+    await renderGitlabTemplates(tabBar);
+    return;
+  }
+  if(_exportTab === 'plan-export') {
+    await renderPlanExport(tabBar);
+    return;
+  }
+
+  document.getElementById('content').innerHTML = `${tabBar}
     <div class="card">
-      <div class="card-header">Export to GitLab</div>
+      <div class="card-header">Quick Export to GitLab</div>
       <div class="form-row">
         <div class="form-group"><label>Format</label><select id="exp-fmt"><option value="csv">CSV (Bulk Import)</option><option value="json">JSON (API)</option><option value="script">Shell Script (glab CLI)</option></select></div>
         <div class="form-group"><label>Filter Status (optional)</label><input id="exp-status" placeholder="ToDo,In Progress"></div>
@@ -1909,6 +3325,169 @@ async function renderExport() {
       </div>
       <button class="btn btn-primary" onclick="doExport()">Download Export</button>
     </div>`;
+}
+
+async function renderGitlabTemplates(tabBar) {
+  const t = state.activeTenant.name;
+  const templates = await api.get(`/api/tenants/${t}/gitlab-templates`);
+
+  let rows = templates.map(tpl => `<tr>
+    <td style="font-weight:600">${tpl.name}</td>
+    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${tpl.template_type}</span></td>
+    <td style="font-size:12px;max-width:300px">${tpl.title_template.substring(0,60)||'—'}</td>
+    <td style="font-size:11px">${(tpl.labels||[]).join(', ')||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editGitlabTemplate('${tpl.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteGitlabTemplate('${tpl.id}','${tpl.name.replace(/'/g,"\\'")}')">Delete</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card">
+      <div class="flex justify-between items-center mb-16">
+        <div class="card-header" style="margin:0">GitLab Issue Templates (${templates.length})</div>
+        <button class="btn btn-sm btn-primary" onclick="showAddGitlabTemplate()">+ New Template</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Define templates per tenant for exporting actions as GitLab issues. Use <code>{{variable}}</code> placeholders in title and body.<br>
+      Available variables: <code>action_title</code>, <code>action_status</code>, <code>action_priority</code>, <code>action_workload</code>, <code>action_effort</code>, <code>action_risk_level</code>, <code>action_description</code>, <code>action_remediation</code>, <code>action_current_value</code>, <code>action_reference_url</code>, <code>action_category</code>, <code>action_tags</code>, <code>plan_name</code>, <code>tenant_name</code>, <code>tenant_id</code></p>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Title Template</th><th>Labels</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="text-center">No templates yet. Create one to start exporting.</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+function showAddGitlabTemplate() {
+  openModal('New GitLab Template', `
+    <div class="form-group"><label>Template Name</label><input id="gt-name" placeholder="e.g. Security Assessment Issue"></div>
+    <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment">Assessment Issue</option><option value="implementation">Implementation Issue</option></select></div>
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" placeholder="[{{action_priority}}] {{action_title}}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px" placeholder="## Description\n{{action_description}}\n\n## Remediation\n{{action_remediation}}\n\n## Details\n- Priority: {{action_priority}}\n- Workload: {{action_workload}}"></textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" placeholder="security, assessment, {{action_workload}}"></div>`,
+    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddGitlabTemplate()">Create</button>');
+}
+
+async function submitAddGitlabTemplate() {
+  const name = document.getElementById('gt-name').value.trim();
+  if(!name) return toast('Name is required','error');
+  const data = {
+    name,
+    template_type: document.getElementById('gt-type').value,
+    title_template: document.getElementById('gt-title').value,
+    body_template: document.getElementById('gt-body').value,
+    labels: document.getElementById('gt-labels').value.split(',').map(l=>l.trim()).filter(Boolean),
+  };
+  const r = await api.post(`/api/tenants/${state.activeTenant.name}/gitlab-templates`, data);
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Template created','success');
+  renderExport();
+}
+
+async function editGitlabTemplate(id) {
+  const tpl = await api.get(`/api/gitlab-templates/${id}`);
+  if(!tpl||tpl.error) return toast('Template not found','error');
+  openModal('Edit GitLab Template', `
+    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${tpl.name||''}"></div>
+    <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment" ${tpl.template_type==='assessment'?'selected':''}>Assessment Issue</option><option value="implementation" ${tpl.template_type==='implementation'?'selected':''}>Implementation Issue</option></select></div>
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${(tpl.title_template||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${tpl.body_template||''}</textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${(tpl.labels||[]).join(', ')}"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditGitlabTemplate('${id}')">Save</button>`);
+}
+
+async function submitEditGitlabTemplate(id) {
+  const name = document.getElementById('gt-name').value.trim();
+  if(!name) return toast('Name is required','error');
+  const data = {
+    name,
+    template_type: document.getElementById('gt-type').value,
+    title_template: document.getElementById('gt-title').value,
+    body_template: document.getElementById('gt-body').value,
+    labels: document.getElementById('gt-labels').value.split(',').map(l=>l.trim()).filter(Boolean),
+  };
+  const r = await api.put(`/api/gitlab-templates/${id}`, data);
+  if(r.error) return toast(r.error, 'error');
+  closeModal();
+  toast('Template updated','success');
+  renderExport();
+}
+
+async function deleteGitlabTemplate(id, name) {
+  if(!confirm(`Delete template "${name}"?`)) return;
+  await api.del(`/api/gitlab-templates/${id}`);
+  toast('Template deleted','success');
+  renderExport();
+}
+
+async function renderPlanExport(tabBar) {
+  const t = state.activeTenant.name;
+  const [plans, templates] = await Promise.all([
+    api.get(`/api/tenants/${t}/plans`),
+    api.get(`/api/tenants/${t}/gitlab-templates`),
+  ]);
+
+  if(!plans.length) {
+    document.getElementById('content').innerHTML = `${tabBar}<div class="card text-center" style="padding:40px"><h3>No plans available</h3><p style="color:var(--text-light)">Create a plan first, then export it using a GitLab template.</p></div>`;
+    return;
+  }
+  if(!templates.length) {
+    document.getElementById('content').innerHTML = `${tabBar}<div class="card text-center" style="padding:40px"><h3>No templates defined</h3><p style="color:var(--text-light)">Create a GitLab template first on the "GitLab Templates" tab.</p></div>`;
+    return;
+  }
+
+  const planOpts = plans.map(p=>`<option value="${p.id}">${p.name} (${p.item_count} actions)</option>`).join('');
+  const tplOpts = templates.map(t=>`<option value="${t.id}">${t.name} (${t.template_type})</option>`).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16">
+      <div class="card-header">Export Plan as GitLab Issues</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select a plan and template to generate GitLab issue files. The output can be used to create issues in your GitLab project.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Plan</label><select id="pe-plan">${planOpts}</select></div>
+        <div class="form-group"><label>Template</label><select id="pe-tpl">${tplOpts}</select></div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-primary" onclick="doExportPlanGitlab()">Generate Issues</button>
+        <button class="btn" onclick="previewPlanExport()">Preview</button>
+      </div>
+    </div>
+    <div id="plan-export-result"></div>`;
+}
+
+async function previewPlanExport() {
+  const t = state.activeTenant.name;
+  const planId = document.getElementById('pe-plan').value;
+  const tplId = document.getElementById('pe-tpl').value;
+  const r = await api.post(`/api/tenants/${t}/plans/${planId}/export-gitlab`, {template_id: tplId});
+  if(r.error) return toast(r.error, 'error');
+
+  let preview = r.issues.slice(0,5).map((iss,i) => `
+    <div class="card mb-8" style="border-left:3px solid var(--primary)">
+      <div style="font-weight:600;margin-bottom:4px">${iss.title}</div>
+      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${iss.body.substring(0,500)}${iss.body.length>500?'...':''}</div>
+      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+l+'</span>').join(' ')}</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('plan-export-result').innerHTML = `
+    <div class="card"><div class="card-header">Preview (${r.issue_count} issues, showing first 5)</div>${preview}
+    ${r.issue_count>5?`<div style="color:var(--text-light);font-size:13px;padding:8px">... and ${r.issue_count-5} more</div>`:''}
+    </div>`;
+}
+
+async function doExportPlanGitlab() {
+  const t = state.activeTenant.name;
+  const planId = document.getElementById('pe-plan').value;
+  const tplId = document.getElementById('pe-tpl').value;
+  const r = await api.post(`/api/tenants/${t}/plans/${planId}/export-gitlab`, {template_id: tplId});
+  if(r.error) return toast(r.error, 'error');
+
+  // Download as JSON file
+  const blob = new Blob([JSON.stringify(r, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gitlab_issues_${r.plan.replace(/[^a-zA-Z0-9]/g,'_')}_${r.template_type}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast(`Exported ${r.issue_count} issues`,'success');
 }
 
 async function doExport() {
@@ -2102,8 +3681,23 @@ async function renderCompliance() {
     return;
   }
 
+  // Overall summary across all frameworks
+  let totalControls = 0, totalCompleted = 0;
+  frameworks.forEach(fw => { totalControls += compliance[fw].total_controls||0; totalCompleted += compliance[fw].completed_controls||0; });
+  const overallPct = totalControls > 0 ? Math.round(totalCompleted/totalControls*100) : 0;
+
+  // Framework summary cards
+  let fwSummary = frameworks.map(fw => {
+    const d = compliance[fw];
+    const pct = d.percentage||0;
+    return `<div class="stat-card" style="cursor:pointer" onclick="showFrameworkTab(document.querySelector('[data-fw=\\'${fw}\\']'),'fw-${fw}')">
+      ${gauge(pct, 80)}<div class="label" style="font-size:12px">${fw}</div>
+      <div style="font-size:11px;color:var(--text-light)">${d.completed_controls}/${d.total_controls} controls</div>
+    </div>`;
+  }).join('');
+
   // Framework tabs
-  let tabs = frameworks.map((fw,i) => `<div class="tab ${i===0?'active':''}" onclick="showFrameworkTab(this,'fw-${i}')">${fw}</div>`).join('');
+  let tabs = frameworks.map((fw,i) => `<div class="tab ${i===0?'active':''}" data-fw="${fw}" onclick="showFrameworkTab(this,'fw-${fw}')">${fw} (${compliance[fw].percentage||0}%)</div>`).join('');
 
   let frameworkPanels = frameworks.map((fw, i) => {
     const data = compliance[fw];
@@ -2111,30 +3705,33 @@ async function renderCompliance() {
     for(const [fam, famData] of Object.entries(data.families||{})) {
       let controlRows = Object.entries(famData.controls||{}).map(([ctrlId, ctrl]) => {
         const statusCls = ctrl.status==='Completed'?'success':ctrl.status==='In Progress'?'info':'danger';
-        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)}</div>`).join('');
+        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)} <span style="color:var(--text-light)">(${a.source_tool||''})</span></div>`).join('');
         return `<tr>
-          <td><code>${ctrlId}</code></td>
-          <td>${ctrl.control_name}</td>
+          <td><code style="font-size:12px">${ctrlId}</code></td>
+          <td style="font-size:13px">${ctrl.control_name}</td>
           <td><span class="badge badge-${statusCls}">${ctrl.status}</span></td>
-          <td>${ctrl.actions.length}</td>
+          <td style="text-align:center">${ctrl.actions.length}</td>
           <td>${actions}</td>
         </tr>`;
       }).join('');
 
-      familiesHtml += `<div class="compliance-family">
-        <div class="compliance-family-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
-          <span>${fam}</span>
-          <span>${famData.completed}/${famData.total} controls (${famData.percentage}%)</span>
+      const famPct = famData.percentage||0;
+      const barColor = famPct >= 80 ? 'var(--success)' : famPct >= 40 ? 'var(--warning)' : 'var(--danger)';
+
+      familiesHtml += `<div class="compliance-family" style="margin-bottom:8px">
+        <div class="compliance-family-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg);border-radius:6px" onclick="this.nextElementSibling.classList.toggle('hidden')">
+          <span style="font-weight:600;font-size:14px">${fam}</span>
+          <span style="font-size:13px;color:var(--text-light)">${famData.completed}/${famData.total} (${famPct}%)</span>
         </div>
-        <div class="compliance-family-body">
-          ${progressBar(famData.percentage)}
-          <table class="mt-16"><thead><tr><th>Control</th><th>Name</th><th>Status</th><th>Actions</th><th>Details</th></tr></thead>
-          <tbody>${controlRows}</tbody></table>
+        <div class="compliance-family-body hidden" style="padding:8px 0">
+          <div style="margin-bottom:8px">${progressBar(famPct, barColor)}</div>
+          <div class="table-wrap"><table><thead><tr><th>Control</th><th>Name</th><th>Status</th><th style="text-align:center">Actions</th><th>Details</th></tr></thead>
+          <tbody>${controlRows}</tbody></table></div>
         </div>
       </div>`;
     }
 
-    return `<div id="fw-${i}" class="card ${i>0?'hidden':''}">
+    return `<div id="fw-${fw}" class="card ${i>0?'hidden':''}">
       <div class="grid grid-3 mb-16">
         <div class="stat-card">${gauge(data.percentage, 100)}<div class="label">${fw}</div></div>
         <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
@@ -2145,14 +3742,21 @@ async function renderCompliance() {
   }).join('');
 
   document.getElementById('content').innerHTML = `
+    <div class="card mb-16"><div class="grid grid-${Math.min(frameworks.length+1, 5)}">
+      <div class="stat-card">${gauge(overallPct, 100)}<div class="label">Overall</div></div>
+      ${fwSummary}
+    </div></div>
     <div class="tabs">${tabs}</div>
     ${frameworkPanels}`;
 }
 
 function showFrameworkTab(el, tabId) {
-  el.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if(!el) return;
+  const tabBar = el.closest('.tabs');
+  if(tabBar) tabBar.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
-  document.querySelectorAll('[id^="fw-"]').forEach(p=>p.classList.add('hidden'));
+  // Hide all framework panels (match id starting with fw-)
+  document.querySelectorAll('[id^="fw-"].card').forEach(p=>p.classList.add('hidden'));
   document.getElementById(tabId)?.classList.remove('hidden');
 }
 

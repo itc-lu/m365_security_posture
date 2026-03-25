@@ -353,14 +353,26 @@ def _render_action_history(action: Action) -> str:
 
 
 def _render_e8(e8_summary: dict, actions: list[Action]) -> str:
+    # Handle both old flat format and new nested format
+    controls = e8_summary.get("controls", e8_summary) if isinstance(e8_summary, dict) and "controls" in e8_summary else e8_summary
+    overall = e8_summary.get("overall", {}) if isinstance(e8_summary, dict) and "overall" in e8_summary else {}
+
     parts = ['<h2>Essential Eight Compliance</h2>']
+
+    # Overall stats
+    if overall:
+        parts.append(f'''<div class="card" style="margin-bottom:16px;text-align:center">
+          <div style="font-size:24px;font-weight:700">{overall.get("overall_percentage", 0):.0f}%</div>
+          <div style="font-size:13px;color:var(--muted)">Overall E8 &middot; Achieved: <strong>{overall.get("overall_achieved_maturity", "Level 0")}</strong> &middot; {overall.get("controls_mapped", 0)}/8 controls mapped</div>
+        </div>''')
+
     parts.append('<div class="gauges">')
-    for control, data in e8_summary.items():
+    for control, data in controls.items():
         parts.append(_render_gauge(data["percentage"], control[:20], 100))
     parts.append('</div>')
 
     parts.append('<div class="grid grid-2">')
-    for control, data in e8_summary.items():
+    for control, data in controls.items():
         achieved = data.get("achieved_maturity", "Maturity Level 0")
         parts.append(f'''<div class="card">
           <div class="card-header">{control}</div>

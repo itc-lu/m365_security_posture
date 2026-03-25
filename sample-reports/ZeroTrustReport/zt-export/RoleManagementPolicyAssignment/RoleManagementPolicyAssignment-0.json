@@ -1,0 +1,964 @@
+{
+  "value": [
+    {
+      "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e1a3abf2-d711-4883-93f9-29c0a8fa833d_62e90394-69f5-4237-9190-012177145e10",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e1a3abf2-d711-4883-93f9-29c0a8fa833d"
+    },
+    {
+      "roleDefinitionId": "10dae51f-b6af-4016-8d66-8c2a99b929b3",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f8535e4f-7cfb-4002-9e0f-e7601c1a3ce9_10dae51f-b6af-4016-8d66-8c2a99b929b3",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f8535e4f-7cfb-4002-9e0f-e7601c1a3ce9"
+    },
+    {
+      "roleDefinitionId": "2af84b1e-32c8-42b7-82bc-daa82404023b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_73ae6aa4-807d-41e7-92e8-023163bf6bef_2af84b1e-32c8-42b7-82bc-daa82404023b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_73ae6aa4-807d-41e7-92e8-023163bf6bef"
+    },
+    {
+      "roleDefinitionId": "95e79109-95c0-4d8e-aee3-d01accf2d47b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55efcb38-2627-4a83-9dd3-a879d3b43544_95e79109-95c0-4d8e-aee3-d01accf2d47b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55efcb38-2627-4a83-9dd3-a879d3b43544"
+    },
+    {
+      "roleDefinitionId": "fe930be7-5e62-47db-91af-98c3a49a38b1",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b3dbcd90-a6ed-4eb1-98ff-fbfeb78bcc0c_fe930be7-5e62-47db-91af-98c3a49a38b1",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b3dbcd90-a6ed-4eb1-98ff-fbfeb78bcc0c"
+    },
+    {
+      "roleDefinitionId": "729827e3-9c14-49f7-bb1b-9608f156bbb8",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_22b80b08-43ce-45d9-913d-c3d82235dbef_729827e3-9c14-49f7-bb1b-9608f156bbb8",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_22b80b08-43ce-45d9-913d-c3d82235dbef"
+    },
+    {
+      "roleDefinitionId": "f023fd81-a637-4b56-95fd-791ac0226033",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_93a10071-6e0b-4da8-aeae-d461fd07867c_f023fd81-a637-4b56-95fd-791ac0226033",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_93a10071-6e0b-4da8-aeae-d461fd07867c"
+    },
+    {
+      "roleDefinitionId": "b0f54661-2d74-4c50-afa3-1ec803f12efe",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a9202eed-9481-4229-b4f1-7a474116e19c_b0f54661-2d74-4c50-afa3-1ec803f12efe",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a9202eed-9481-4229-b4f1-7a474116e19c"
+    },
+    {
+      "roleDefinitionId": "a0b1b346-4d3e-4e8b-98f8-753987be4970",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4f1787d3-8718-41fc-965a-4b87623f2319_a0b1b346-4d3e-4e8b-98f8-753987be4970",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4f1787d3-8718-41fc-965a-4b87623f2319"
+    },
+    {
+      "roleDefinitionId": "4ba39ca4-527c-499a-b93d-d9b492c50246",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_263c947f-bd91-425e-8644-12bf4732099c_4ba39ca4-527c-499a-b93d-d9b492c50246",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_263c947f-bd91-425e-8644-12bf4732099c"
+    },
+    {
+      "roleDefinitionId": "e00e864a-17c5-4a4b-9c06-f5b95a8d5bd8",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b251b03f-6baa-4a01-80f9-4224e90b112f_e00e864a-17c5-4a4b-9c06-f5b95a8d5bd8",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b251b03f-6baa-4a01-80f9-4224e90b112f"
+    },
+    {
+      "roleDefinitionId": "88d8e3e3-8f55-4a1e-953a-9b9898b8876b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4897d863-3eaa-402b-94bd-ae60d8c75a43_88d8e3e3-8f55-4a1e-953a-9b9898b8876b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4897d863-3eaa-402b-94bd-ae60d8c75a43"
+    },
+    {
+      "roleDefinitionId": "9360feb5-f418-4baa-8175-e2a00bac4301",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fdc75909-dc69-4acf-9260-df7e933a546a_9360feb5-f418-4baa-8175-e2a00bac4301",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fdc75909-dc69-4acf-9260-df7e933a546a"
+    },
+    {
+      "roleDefinitionId": "29232cdf-9323-42fd-ade2-1d097af3e4de",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3e9bd4d8-bb3e-4b7c-9a4c-d45fde75430e_29232cdf-9323-42fd-ade2-1d097af3e4de",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3e9bd4d8-bb3e-4b7c-9a4c-d45fde75430e"
+    },
+    {
+      "roleDefinitionId": "f28a1f50-f6e7-4571-818b-6a12f2af6b6c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7f9410e5-88be-4b7a-b07d-542ffdf22eb9_f28a1f50-f6e7-4571-818b-6a12f2af6b6c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7f9410e5-88be-4b7a-b07d-542ffdf22eb9"
+    },
+    {
+      "roleDefinitionId": "75941009-915a-4869-abe7-691bff18279e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_04e7e767-dfee-4c2f-b493-51dc407036d1_75941009-915a-4869-abe7-691bff18279e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_04e7e767-dfee-4c2f-b493-51dc407036d1"
+    },
+    {
+      "roleDefinitionId": "d405c6df-0af8-4e3b-95e4-4d06e542189e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d71fe995-a36b-48d3-b6d8-e1a79d3347f1_d405c6df-0af8-4e3b-95e4-4d06e542189e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d71fe995-a36b-48d3-b6d8-e1a79d3347f1"
+    },
+    {
+      "roleDefinitionId": "9f06204d-73c1-4d4c-880a-6edb90606fd8",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c577511d-2f48-4bd8-9d4c-4681f0fa720f_9f06204d-73c1-4d4c-880a-6edb90606fd8",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c577511d-2f48-4bd8-9d4c-4681f0fa720f"
+    },
+    {
+      "roleDefinitionId": "9c094953-4995-41c8-84c8-3ebb9b32c93f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c4f1bca6-4bb4-4cce-b9c7-333553050a17_9c094953-4995-41c8-84c8-3ebb9b32c93f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c4f1bca6-4bb4-4cce-b9c7-333553050a17"
+    },
+    {
+      "roleDefinitionId": "c34f683f-4d5a-4403-affd-6615e00e3a7f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_832b7f2e-bb5c-449b-b891-0f9fdf732000_c34f683f-4d5a-4403-affd-6615e00e3a7f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_832b7f2e-bb5c-449b-b891-0f9fdf732000"
+    },
+    {
+      "roleDefinitionId": "17315797-102d-40b4-93e0-432062caca18",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5733c0b2-3625-4bcd-90b3-95c67447fa47_17315797-102d-40b4-93e0-432062caca18",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5733c0b2-3625-4bcd-90b3-95c67447fa47"
+    },
+    {
+      "roleDefinitionId": "d29b2b05-8046-44ba-8758-1e26182fcf32",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6389d26d-b6dd-4760-bb2c-6ce77df2a995_d29b2b05-8046-44ba-8758-1e26182fcf32",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6389d26d-b6dd-4760-bb2c-6ce77df2a995"
+    },
+    {
+      "roleDefinitionId": "2b499bcd-da44-4968-8aec-78e1674fa64d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_60e033c0-a82e-47bf-aef2-95395a97429f_2b499bcd-da44-4968-8aec-78e1674fa64d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_60e033c0-a82e-47bf-aef2-95395a97429f"
+    },
+    {
+      "roleDefinitionId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a1e8bb79-ec1c-460c-b6bb-2e86f11ff12b_9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a1e8bb79-ec1c-460c-b6bb-2e86f11ff12b"
+    },
+    {
+      "roleDefinitionId": "cf1c38e5-3621-4004-a7cb-879624dced7c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_decc68c1-0928-4d83-8045-a3d9e5aeb908_cf1c38e5-3621-4004-a7cb-879624dced7c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_decc68c1-0928-4d83-8045-a3d9e5aeb908"
+    },
+    {
+      "roleDefinitionId": "5d6b6bb7-de71-4623-b4af-96380a352509",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_61d29798-664e-4d65-9ec7-3d7136e98447_5d6b6bb7-de71-4623-b4af-96380a352509",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_61d29798-664e-4d65-9ec7-3d7136e98447"
+    },
+    {
+      "roleDefinitionId": "194ae4cb-b126-40b2-bd5b-6091b380977d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ba96eef7-13a4-48f3-b907-cae419c10cd5_194ae4cb-b126-40b2-bd5b-6091b380977d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ba96eef7-13a4-48f3-b907-cae419c10cd5"
+    },
+    {
+      "roleDefinitionId": "e8611ab8-c189-46e8-94e1-60213ab1f814",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ed9e60ad-3619-462e-a5d1-dc06b674cf85_e8611ab8-c189-46e8-94e1-60213ab1f814",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ed9e60ad-3619-462e-a5d1-dc06b674cf85"
+    },
+    {
+      "roleDefinitionId": "3a2c62db-5318-420d-8d74-23affee5d9d5",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ccbed87d-adfe-459b-8cd3-10fa2c409acd_3a2c62db-5318-420d-8d74-23affee5d9d5",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ccbed87d-adfe-459b-8cd3-10fa2c409acd"
+    },
+    {
+      "roleDefinitionId": "158c047a-c907-4556-b7ef-446551a6b5f7",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8642da3e-f94b-45c9-a113-23ddd655ac4d_158c047a-c907-4556-b7ef-446551a6b5f7",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8642da3e-f94b-45c9-a113-23ddd655ac4d"
+    },
+    {
+      "roleDefinitionId": "5c4f9dcd-47dc-4cf7-8c9a-9e4207cbfc91",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ae7fc36c-aa90-4a06-97b9-60ff87ce0ce7_5c4f9dcd-47dc-4cf7-8c9a-9e4207cbfc91",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ae7fc36c-aa90-4a06-97b9-60ff87ce0ce7"
+    },
+    {
+      "roleDefinitionId": "44367163-eba1-44c3-98af-f5787879f96a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6a6d9a14-6c08-4b07-9622-7e6083f0539b_44367163-eba1-44c3-98af-f5787879f96a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6a6d9a14-6c08-4b07-9622-7e6083f0539b"
+    },
+    {
+      "roleDefinitionId": "a9ea8996-122f-4c74-9520-8edcd192826c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_42ecdd3b-9df2-4e1d-88d4-f2fe7df318d8_a9ea8996-122f-4c74-9520-8edcd192826c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_42ecdd3b-9df2-4e1d-88d4-f2fe7df318d8"
+    },
+    {
+      "roleDefinitionId": "b1be1c3e-b65d-4f19-8427-f6fa0d97feb9",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e36b3d68-8482-4c83-ba4d-d44f6cbe0f44_b1be1c3e-b65d-4f19-8427-f6fa0d97feb9",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e36b3d68-8482-4c83-ba4d-d44f6cbe0f44"
+    },
+    {
+      "roleDefinitionId": "4a5d8f65-41da-4de4-8968-e035b65339cf",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a371a716-6fb7-46ba-a2e9-c97a318ac285_4a5d8f65-41da-4de4-8968-e035b65339cf",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a371a716-6fb7-46ba-a2e9-c97a318ac285"
+    },
+    {
+      "roleDefinitionId": "790c1fb9-7f7d-4f88-86a1-ef1f95c05c1b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4d298a73-16d1-4064-ab84-b8bb01c91f11_790c1fb9-7f7d-4f88-86a1-ef1f95c05c1b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_4d298a73-16d1-4064-ab84-b8bb01c91f11"
+    },
+    {
+      "roleDefinitionId": "7495fdc4-34c4-4d15-a289-98788ce399fd",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_65110121-25cd-4deb-874d-1ce593c92916_7495fdc4-34c4-4d15-a289-98788ce399fd",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_65110121-25cd-4deb-874d-1ce593c92916"
+    },
+    {
+      "roleDefinitionId": "38a96431-2bdf-4b4c-8b6e-5d3d8abac1a4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_99b3cec7-51af-47d1-8f7d-cc5a74e4abfd_38a96431-2bdf-4b4c-8b6e-5d3d8abac1a4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_99b3cec7-51af-47d1-8f7d-cc5a74e4abfd"
+    },
+    {
+      "roleDefinitionId": "4d6ac14f-3453-41d0-bef9-a3e0c569773a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8e21e93b-45c1-4d15-9513-d90b95209c21_4d6ac14f-3453-41d0-bef9-a3e0c569773a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8e21e93b-45c1-4d15-9513-d90b95209c21"
+    },
+    {
+      "roleDefinitionId": "7698a772-787b-4ac8-901f-60d6b08affd2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f27c3789-731e-4344-a847-60b946c37fbe_7698a772-787b-4ac8-901f-60d6b08affd2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f27c3789-731e-4344-a847-60b946c37fbe"
+    },
+    {
+      "roleDefinitionId": "c4e39bd9-1100-46d3-8c65-fb160da0071f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_54f52754-cf19-484e-b5ad-d1890b0be966_c4e39bd9-1100-46d3-8c65-fb160da0071f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_54f52754-cf19-484e-b5ad-d1890b0be966"
+    },
+    {
+      "roleDefinitionId": "7be44c8a-adaf-4e2a-84d6-ab2649e08a13",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92893969-f1c0-44a5-b386-dd1aea3f86e0_7be44c8a-adaf-4e2a-84d6-ab2649e08a13",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92893969-f1c0-44a5-b386-dd1aea3f86e0"
+    },
+    {
+      "roleDefinitionId": "baf37b3a-610e-45da-9e62-d9d1e5e8914b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6f62257d-0dae-4613-ae08-0ff41a49a159_baf37b3a-610e-45da-9e62-d9d1e5e8914b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6f62257d-0dae-4613-ae08-0ff41a49a159"
+    },
+    {
+      "roleDefinitionId": "f70938a0-fc10-4177-9e90-2178f8765737",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2014e609-721a-4334-abae-f1f5099d108f_f70938a0-fc10-4177-9e90-2178f8765737",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2014e609-721a-4334-abae-f1f5099d108f"
+    },
+    {
+      "roleDefinitionId": "fcf91098-03e3-41a9-b5ba-6f0ec8188a12",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92dc681f-74be-4bbe-84ae-0685a3cde1b0_fcf91098-03e3-41a9-b5ba-6f0ec8188a12",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92dc681f-74be-4bbe-84ae-0685a3cde1b0"
+    },
+    {
+      "roleDefinitionId": "69091246-20e8-4a56-aa4d-066075b2a7a8",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c042484f-e136-41fe-ace1-9a97466261fe_69091246-20e8-4a56-aa4d-066075b2a7a8",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c042484f-e136-41fe-ace1-9a97466261fe"
+    },
+    {
+      "roleDefinitionId": "eb1f4a8d-243a-41f0-9fbd-c7cdf6c5ef7c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9ce24b90-7afe-46f5-b541-736fa3f3a2a5_eb1f4a8d-243a-41f0-9fbd-c7cdf6c5ef7c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9ce24b90-7afe-46f5-b541-736fa3f3a2a5"
+    },
+    {
+      "roleDefinitionId": "ac16e43d-7b2d-40e0-ac05-243ff356ab5b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ce39b957-cf65-447d-8b5f-25da2be05f2f_ac16e43d-7b2d-40e0-ac05-243ff356ab5b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ce39b957-cf65-447d-8b5f-25da2be05f2f"
+    },
+    {
+      "roleDefinitionId": "6e591065-9bad-43ed-90f3-e9424366d2f0",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_09ab7a8f-1054-4482-a721-d9ba1b584947_6e591065-9bad-43ed-90f3-e9424366d2f0",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_09ab7a8f-1054-4482-a721-d9ba1b584947"
+    },
+    {
+      "roleDefinitionId": "0f971eea-41eb-4569-a71e-57bb8a3eff1e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_42016d61-2fab-4d20-b75e-baa27dc74ba4_0f971eea-41eb-4569-a71e-57bb8a3eff1e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_42016d61-2fab-4d20-b75e-baa27dc74ba4"
+    },
+    {
+      "roleDefinitionId": "aaf43236-0c0d-4d5f-883a-6955382ac081",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2267c811-9988-4bd7-b7c7-2bebfe9e1f11_aaf43236-0c0d-4d5f-883a-6955382ac081",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2267c811-9988-4bd7-b7c7-2bebfe9e1f11"
+    },
+    {
+      "roleDefinitionId": "3edaf663-341e-4475-9f94-5c398ef6c070",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0d43fde8-3a99-4ea7-a481-abf63896cec6_3edaf663-341e-4475-9f94-5c398ef6c070",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0d43fde8-3a99-4ea7-a481-abf63896cec6"
+    },
+    {
+      "roleDefinitionId": "be2f45a1-457d-42af-a067-6ec1fa63bc45",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_40a12130-e72c-4fcb-805a-ba93bdc82686_be2f45a1-457d-42af-a067-6ec1fa63bc45",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_40a12130-e72c-4fcb-805a-ba93bdc82686"
+    },
+    {
+      "roleDefinitionId": "e6d1a23a-da11-4be4-9570-befc86d067a7",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_69a8b1ec-49ed-421d-92e4-26b459f54f31_e6d1a23a-da11-4be4-9570-befc86d067a7",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_69a8b1ec-49ed-421d-92e4-26b459f54f31"
+    },
+    {
+      "roleDefinitionId": "5f2222b1-57c3-48ba-8ad5-d4759f1fde6f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f9029201-61ae-4246-9545-b9c36d06dd76_5f2222b1-57c3-48ba-8ad5-d4759f1fde6f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f9029201-61ae-4246-9545-b9c36d06dd76"
+    },
+    {
+      "roleDefinitionId": "74ef975b-6605-40af-a5d2-b9539d836353",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_162684a7-613c-4bd1-be8c-5241f7ca9ba2_74ef975b-6605-40af-a5d2-b9539d836353",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_162684a7-613c-4bd1-be8c-5241f7ca9ba2"
+    },
+    {
+      "roleDefinitionId": "f2ef992c-3afb-46b9-b7cf-a126ee74c451",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_93aa07e2-9991-44ec-ac6f-798d91bdbccc_f2ef992c-3afb-46b9-b7cf-a126ee74c451",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_93aa07e2-9991-44ec-ac6f-798d91bdbccc"
+    },
+    {
+      "roleDefinitionId": "0964bb5e-9bdb-4d7b-ac29-58e794862a40",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3bdbefa6-be5e-4a05-929a-d89642667c3b_0964bb5e-9bdb-4d7b-ac29-58e794862a40",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3bdbefa6-be5e-4a05-929a-d89642667c3b"
+    },
+    {
+      "roleDefinitionId": "8835291a-918c-4fd7-a9ce-faa49f0cf7d9",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c8d8445c-2991-4e24-9766-60935d422ccd_8835291a-918c-4fd7-a9ce-faa49f0cf7d9",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c8d8445c-2991-4e24-9766-60935d422ccd"
+    },
+    {
+      "roleDefinitionId": "966707d0-3269-4727-9be2-8c3a10f19b9d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_79faeb20-f1c0-4c02-8a93-bdf504e6b6c3_966707d0-3269-4727-9be2-8c3a10f19b9d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_79faeb20-f1c0-4c02-8a93-bdf504e6b6c3"
+    },
+    {
+      "roleDefinitionId": "644ef478-e28f-4e28-b9dc-3fdde9aa0b1f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b8ed4ec4-cd45-48da-8dc4-8f667918b456_644ef478-e28f-4e28-b9dc-3fdde9aa0b1f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b8ed4ec4-cd45-48da-8dc4-8f667918b456"
+    },
+    {
+      "roleDefinitionId": "e8cef6f1-e4bd-4ea8-bc07-4b8d950f4477",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_cd776f0e-b97b-4858-9440-d2af9a741402_e8cef6f1-e4bd-4ea8-bc07-4b8d950f4477",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_cd776f0e-b97b-4858-9440-d2af9a741402"
+    },
+    {
+      "roleDefinitionId": "0526716b-113d-4c15-b2c8-68e3c22b9f80",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0fcb6699-5232-4ca2-93b9-edc78e59c8c8_0526716b-113d-4c15-b2c8-68e3c22b9f80",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0fcb6699-5232-4ca2-93b9-edc78e59c8c8"
+    },
+    {
+      "roleDefinitionId": "fdd7a751-b60b-444a-984c-02652fe8fa1c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3d79e639-0df6-416c-8cd0-1da516adcae2_fdd7a751-b60b-444a-984c-02652fe8fa1c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3d79e639-0df6-416c-8cd0-1da516adcae2"
+    },
+    {
+      "roleDefinitionId": "11648597-926c-4cf3-9c36-bcebb0ba8dcc",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_1a2eee65-dca6-422b-8841-8de8279b7d43_11648597-926c-4cf3-9c36-bcebb0ba8dcc",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_1a2eee65-dca6-422b-8841-8de8279b7d43"
+    },
+    {
+      "roleDefinitionId": "e3973bdf-4987-49ae-837a-ba8e231c7286",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9ef39c3c-f521-4faa-a66e-cbcc496c5b30_e3973bdf-4987-49ae-837a-ba8e231c7286",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9ef39c3c-f521-4faa-a66e-cbcc496c5b30"
+    },
+    {
+      "roleDefinitionId": "8ac3fc64-6eca-42ea-9e69-59f4c7b60eb2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f42d8da0-e56f-4b8b-a4ca-a2378b90acfa_8ac3fc64-6eca-42ea-9e69-59f4c7b60eb2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f42d8da0-e56f-4b8b-a4ca-a2378b90acfa"
+    },
+    {
+      "roleDefinitionId": "2b745bdf-0803-4d80-aa65-822c4493daac",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d0ce6c3e-de6c-42bb-8b77-85c24bdb5ec3_2b745bdf-0803-4d80-aa65-822c4493daac",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d0ce6c3e-de6c-42bb-8b77-85c24bdb5ec3"
+    },
+    {
+      "roleDefinitionId": "d37c8bed-0711-4417-ba38-b4abe66ce4c2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2405fedd-84d0-4ec9-bd4b-550bce2fd755_d37c8bed-0711-4417-ba38-b4abe66ce4c2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_2405fedd-84d0-4ec9-bd4b-550bce2fd755"
+    },
+    {
+      "roleDefinitionId": "31e939ad-9672-4796-9c2e-873181342d2d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d05d78ea-3fdf-4bbd-ac9c-84bfd3066896_31e939ad-9672-4796-9c2e-873181342d2d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d05d78ea-3fdf-4bbd-ac9c-84bfd3066896"
+    },
+    {
+      "roleDefinitionId": "3d762c5a-1b6c-493f-843e-55a3b42923d4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7fa0521c-76fa-4ca2-ba77-1fdc3652182b_3d762c5a-1b6c-493f-843e-55a3b42923d4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7fa0521c-76fa-4ca2-ba77-1fdc3652182b"
+    },
+    {
+      "roleDefinitionId": "c430b396-e693-46cc-96f3-db01bf8bb62a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_24d140a6-860a-423e-b1d9-d1f188d342cb_c430b396-e693-46cc-96f3-db01bf8bb62a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_24d140a6-860a-423e-b1d9-d1f188d342cb"
+    },
+    {
+      "roleDefinitionId": "9c6df0f2-1e7c-4dc3-b195-66dfbd24aa8f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5adc2a87-025c-4dfe-9ed3-9737b5da9ee6_9c6df0f2-1e7c-4dc3-b195-66dfbd24aa8f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5adc2a87-025c-4dfe-9ed3-9737b5da9ee6"
+    },
+    {
+      "roleDefinitionId": "75934031-6c7e-415a-99d7-48dbd49e875e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0ab28e2a-ba9a-4a05-9014-16ff23d2dd02_75934031-6c7e-415a-99d7-48dbd49e875e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0ab28e2a-ba9a-4a05-9014-16ff23d2dd02"
+    },
+    {
+      "roleDefinitionId": "b5a8dcf3-09d5-43a9-a639-8e29ef291470",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7175ed35-c670-4be0-bfcd-fb0ee83f94ce_b5a8dcf3-09d5-43a9-a639-8e29ef291470",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7175ed35-c670-4be0-bfcd-fb0ee83f94ce"
+    },
+    {
+      "roleDefinitionId": "744ec460-397e-42ad-a462-8b3f9747a02c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_453297af-e4d4-4555-bf2d-59f30ede7cfe_744ec460-397e-42ad-a462-8b3f9747a02c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_453297af-e4d4-4555-bf2d-59f30ede7cfe"
+    },
+    {
+      "roleDefinitionId": "8329153b-31d0-4727-b945-745eb3bc5f31",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d2e32a1c-618c-4729-ab8c-5c05399d1626_8329153b-31d0-4727-b945-745eb3bc5f31",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d2e32a1c-618c-4729-ab8c-5c05399d1626"
+    },
+    {
+      "roleDefinitionId": "d2562ede-74db-457e-a7b6-544e236ebb61",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_17712b61-42a1-4565-a231-a20fd632e5b7_d2562ede-74db-457e-a7b6-544e236ebb61",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_17712b61-42a1-4565-a231-a20fd632e5b7"
+    },
+    {
+      "roleDefinitionId": "8424c6f0-a189-499e-bbd0-26c1753c96d4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8b88fb88-aa00-4465-9638-340578f7187b_8424c6f0-a189-499e-bbd0-26c1753c96d4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8b88fb88-aa00-4465-9638-340578f7187b"
+    },
+    {
+      "roleDefinitionId": "58a13ea3-c632-46ae-9ee0-9c0d43cd7f3d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6450a0fc-5f5f-4d3d-8ec7-6b77c6100a6c_58a13ea3-c632-46ae-9ee0-9c0d43cd7f3d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_6450a0fc-5f5f-4d3d-8ec7-6b77c6100a6c"
+    },
+    {
+      "roleDefinitionId": "1d336d2c-4ae8-42ef-9711-b3604ce3fc2c",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7f180dc0-0bfe-4216-9673-c82985568be5_1d336d2c-4ae8-42ef-9711-b3604ce3fc2c",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7f180dc0-0bfe-4216-9673-c82985568be5"
+    },
+    {
+      "roleDefinitionId": "ffd52fa5-98dc-465c-991d-fc073eb59f8f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_260ba1a3-2233-478a-ad41-4f303c483b23_ffd52fa5-98dc-465c-991d-fc073eb59f8f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_260ba1a3-2233-478a-ad41-4f303c483b23"
+    },
+    {
+      "roleDefinitionId": "31392ffb-586c-42d1-9346-e59415a2cc4e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_66867f62-2934-4bb0-b5e2-40bc7ba9f96a_31392ffb-586c-42d1-9346-e59415a2cc4e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_66867f62-2934-4bb0-b5e2-40bc7ba9f96a"
+    },
+    {
+      "roleDefinitionId": "45d8d3c5-c802-45c6-b32a-1d70b5e1e86e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_05917daf-4b50-4449-a223-f6e1034798ab_45d8d3c5-c802-45c6-b32a-1d70b5e1e86e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_05917daf-4b50-4449-a223-f6e1034798ab"
+    },
+    {
+      "roleDefinitionId": "892c5842-a9a6-463a-8041-72aa08ca3cf6",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ed7411cd-af3a-4092-96c9-4861683bd4f7_892c5842-a9a6-463a-8041-72aa08ca3cf6",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ed7411cd-af3a-4092-96c9-4861683bd4f7"
+    },
+    {
+      "roleDefinitionId": "32696413-001a-46ae-978c-ce0f6b3620d2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f1ab2652-5dc0-42ce-aaa2-7db4d6b107e1_32696413-001a-46ae-978c-ce0f6b3620d2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f1ab2652-5dc0-42ce-aaa2-7db4d6b107e1"
+    },
+    {
+      "roleDefinitionId": "11451d60-acb2-45eb-a7d6-43d0f0125c13",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_1c8c5c86-b3f9-448b-bfdb-af7f8147ed79_11451d60-acb2-45eb-a7d6-43d0f0125c13",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_1c8c5c86-b3f9-448b-bfdb-af7f8147ed79"
+    },
+    {
+      "roleDefinitionId": "3f1acade-1e04-4fbc-9b69-f0302cd84aef",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f2731bdb-279a-4005-894d-05ba738638ef_3f1acade-1e04-4fbc-9b69-f0302cd84aef",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f2731bdb-279a-4005-894d-05ba738638ef"
+    },
+    {
+      "roleDefinitionId": "810a2642-a034-447f-a5e8-41beaa378541",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_daf84812-fe0c-419f-a04b-0e55fb849154_810a2642-a034-447f-a5e8-41beaa378541",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_daf84812-fe0c-419f-a04b-0e55fb849154"
+    },
+    {
+      "roleDefinitionId": "25a516ed-2fa0-40ea-a2d0-12923a21473a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b131d3ae-99b8-4e5a-b52f-8a25570b974f_25a516ed-2fa0-40ea-a2d0-12923a21473a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b131d3ae-99b8-4e5a-b52f-8a25570b974f"
+    },
+    {
+      "roleDefinitionId": "e300d9e7-4a2b-4295-9eff-f1c78b36cc98",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_58293d7d-f845-4c23-9052-886eac45ea15_e300d9e7-4a2b-4295-9eff-f1c78b36cc98",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_58293d7d-f845-4c23-9052-886eac45ea15"
+    },
+    {
+      "roleDefinitionId": "25df335f-86eb-4119-b717-0ff02de207e9",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_659190c9-fa55-4f22-aa2e-7e13797bcbd8_25df335f-86eb-4119-b717-0ff02de207e9",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_659190c9-fa55-4f22-aa2e-7e13797bcbd8"
+    },
+    {
+      "roleDefinitionId": "1501b917-7653-4ff9-a4b5-203eaf33784f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7b4f52f1-4912-4d46-8c78-e321ceb4b631_1501b917-7653-4ff9-a4b5-203eaf33784f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7b4f52f1-4912-4d46-8c78-e321ceb4b631"
+    },
+    {
+      "roleDefinitionId": "281fe777-fb20-4fbb-b7a3-ccebce5b0d96",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3faa1115-0aab-44a0-8498-34d1af4c62d3_281fe777-fb20-4fbb-b7a3-ccebce5b0d96",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3faa1115-0aab-44a0-8498-34d1af4c62d3"
+    },
+    {
+      "roleDefinitionId": "112ca1a2-15ad-4102-995e-45b0bc479a6a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9356e58b-4de7-46ae-807d-4e9185b4485f_112ca1a2-15ad-4102-995e-45b0bc479a6a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_9356e58b-4de7-46ae-807d-4e9185b4485f"
+    },
+    {
+      "roleDefinitionId": "59d46f88-662b-457b-bceb-5c3809e5908f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_cfdb48c9-fba5-4306-865b-17a22af6affa_59d46f88-662b-457b-bceb-5c3809e5908f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_cfdb48c9-fba5-4306-865b-17a22af6affa"
+    },
+    {
+      "roleDefinitionId": "92b086b3-e367-4ef2-b869-1de128fb986e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0b08a045-9e10-4d96-92a2-751304b9a7f1_92b086b3-e367-4ef2-b869-1de128fb986e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_0b08a045-9e10-4d96-92a2-751304b9a7f1"
+    },
+    {
+      "roleDefinitionId": "27460883-1df1-4691-b032-3b79643e5e63",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f7769821-9557-41a2-8479-11bdfd0aed52_27460883-1df1-4691-b032-3b79643e5e63",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f7769821-9557-41a2-8479-11bdfd0aed52"
+    },
+    {
+      "roleDefinitionId": "af78dc32-cf4d-46f9-ba4e-4428526346b5",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a56ebaef-7edb-41db-9e49-013d353c67cd_af78dc32-cf4d-46f9-ba4e-4428526346b5",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a56ebaef-7edb-41db-9e49-013d353c67cd"
+    },
+    {
+      "roleDefinitionId": "507f53e4-4e52-4077-abd3-d2e1558b6ea2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55be546c-22bb-4fe6-847e-717db6075d77_507f53e4-4e52-4077-abd3-d2e1558b6ea2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55be546c-22bb-4fe6-847e-717db6075d77"
+    },
+    {
+      "roleDefinitionId": "ac434307-12b9-4fa1-a708-88bf58caabc1",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8417ff7a-eefc-4edf-af64-306f1fbc8756_ac434307-12b9-4fa1-a708-88bf58caabc1",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8417ff7a-eefc-4edf-af64-306f1fbc8756"
+    },
+    {
+      "roleDefinitionId": "87761b17-1ed2-4af3-9acd-92a150038160",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d46e9ac3-b01c-49b5-be32-4dd5dd0a9371_87761b17-1ed2-4af3-9acd-92a150038160",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d46e9ac3-b01c-49b5-be32-4dd5dd0a9371"
+    },
+    {
+      "roleDefinitionId": "dd13091a-6207-4fc0-82ba-3641e056ab95",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c08d5e16-daf1-497c-9f28-5dd3f6affb52_dd13091a-6207-4fc0-82ba-3641e056ab95",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c08d5e16-daf1-497c-9f28-5dd3f6affb52"
+    },
+    {
+      "roleDefinitionId": "5b784334-f94b-471a-a387-e7219fc49ca2",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_323e65be-9bcc-4e6d-a1ff-3b7268f02711_5b784334-f94b-471a-a387-e7219fc49ca2",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_323e65be-9bcc-4e6d-a1ff-3b7268f02711"
+    },
+    {
+      "roleDefinitionId": "9c99539d-8186-4804-835f-fd51ef9e2dcd",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fa78d9d6-bcd6-4617-8c57-a3340fa30921_9c99539d-8186-4804-835f-fd51ef9e2dcd",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fa78d9d6-bcd6-4617-8c57-a3340fa30921"
+    },
+    {
+      "roleDefinitionId": "1076ac91-f3d9-41a7-a339-dcdf5f480acc",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3326b210-89e7-49bf-b298-f40119b60163_1076ac91-f3d9-41a7-a339-dcdf5f480acc",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3326b210-89e7-49bf-b298-f40119b60163"
+    },
+    {
+      "roleDefinitionId": "aa38014f-0993-46e9-9b45-30501a20909d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5d2e3c8d-a89f-4bf0-a77b-c952d4372d56_aa38014f-0993-46e9-9b45-30501a20909d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5d2e3c8d-a89f-4bf0-a77b-c952d4372d56"
+    },
+    {
+      "roleDefinitionId": "963797fb-eb3b-4cde-8ce3-5878b3f32a3f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5b3d7a40-29e4-417e-96ea-1f743d9a1cf5_963797fb-eb3b-4cde-8ce3-5878b3f32a3f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_5b3d7a40-29e4-417e-96ea-1f743d9a1cf5"
+    },
+    {
+      "roleDefinitionId": "8c8b803f-96e1-4129-9349-20738d9f9652",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_caeffc1f-5a50-4963-8012-821e4927246c_8c8b803f-96e1-4129-9349-20738d9f9652",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_caeffc1f-5a50-4963-8012-821e4927246c"
+    },
+    {
+      "roleDefinitionId": "1a7d78b6-429f-476b-b8eb-35fb715fffd4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3d644e23-5fb9-4ca4-890c-b7089689e864_1a7d78b6-429f-476b-b8eb-35fb715fffd4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_3d644e23-5fb9-4ca4-890c-b7089689e864"
+    },
+    {
+      "roleDefinitionId": "92ed04bf-c94a-4b82-9729-b799a7a4c178",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_bcb0d5b1-eed4-4429-8842-1d5265e39258_92ed04bf-c94a-4b82-9729-b799a7a4c178",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_bcb0d5b1-eed4-4429-8842-1d5265e39258"
+    },
+    {
+      "roleDefinitionId": "e48398e2-f4bb-4074-8f31-4586725e205b",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_11b53fbe-adbc-47d5-aa05-6312eff4708c_e48398e2-f4bb-4074-8f31-4586725e205b",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_11b53fbe-adbc-47d5-aa05-6312eff4708c"
+    },
+    {
+      "roleDefinitionId": "ee67aa9c-e510-4759-b906-227085a7fd4d",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fe0e0232-db1a-4b4d-a516-1e34e97a891a_ee67aa9c-e510-4759-b906-227085a7fd4d",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_fe0e0232-db1a-4b4d-a516-1e34e97a891a"
+    },
+    {
+      "roleDefinitionId": "1707125e-0aa2-4d4d-8655-a7c786c76a25",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c218de23-b1c7-4f4b-abcb-98ca25c0d4d7_1707125e-0aa2-4d4d-8655-a7c786c76a25",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c218de23-b1c7-4f4b-abcb-98ca25c0d4d7"
+    },
+    {
+      "roleDefinitionId": "a92aed5d-d78a-4d16-b381-09adb37eb3b0",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7d67aea6-950d-4aaa-bac6-3663beade77a_a92aed5d-d78a-4d16-b381-09adb37eb3b0",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7d67aea6-950d-4aaa-bac6-3663beade77a"
+    },
+    {
+      "roleDefinitionId": "422218e4-db15-4ef9-bbe0-8afb41546d79",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_eebbf88a-e7a1-43c1-b3f2-70dad32f4c75_422218e4-db15-4ef9-bbe0-8afb41546d79",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_eebbf88a-e7a1-43c1-b3f2-70dad32f4c75"
+    },
+    {
+      "roleDefinitionId": "ecb2c6bf-0ab6-418e-bd87-7986f8d63bbe",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c0cb02b6-1569-46c1-86b1-33f050af58eb_ecb2c6bf-0ab6-418e-bd87-7986f8d63bbe",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c0cb02b6-1569-46c1-86b1-33f050af58eb"
+    },
+    {
+      "roleDefinitionId": "843318fb-79a6-4168-9e6f-aa9a07481cc4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7c5fc186-3c12-43c8-90ca-7773349e1dd2_843318fb-79a6-4168-9e6f-aa9a07481cc4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_7c5fc186-3c12-43c8-90ca-7773349e1dd2"
+    },
+    {
+      "roleDefinitionId": "9d70768a-0cbc-4b4c-aea3-2e124b2477f4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_dd361dc7-8939-4153-b7a9-18d37b03dce0_9d70768a-0cbc-4b4c-aea3-2e124b2477f4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_dd361dc7-8939-4153-b7a9-18d37b03dce0"
+    },
+    {
+      "roleDefinitionId": "024906de-61e5-49c8-8572-40335f1e0e10",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c4aef068-6af0-4135-8c92-cf989634d7d0_024906de-61e5-49c8-8572-40335f1e0e10",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c4aef068-6af0-4135-8c92-cf989634d7d0"
+    },
+    {
+      "roleDefinitionId": "2ea5ce4c-b2d8-4668-bd81-3680bd2d227a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f2a18694-68b7-4e1b-98db-df74c6d8247b_2ea5ce4c-b2d8-4668-bd81-3680bd2d227a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f2a18694-68b7-4e1b-98db-df74c6d8247b"
+    },
+    {
+      "roleDefinitionId": "0ec3f692-38d6-4d14-9e69-0377ca7797ad",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ca77e9a5-aa92-4191-8eb1-4aba59c20e48_0ec3f692-38d6-4d14-9e69-0377ca7797ad",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_ca77e9a5-aa92-4191-8eb1-4aba59c20e48"
+    },
+    {
+      "roleDefinitionId": "78b0ccd1-afc2-4f92-9116-b41aedd09592",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8edcf7cc-d901-41b6-9519-e0a2300f7648_78b0ccd1-afc2-4f92-9116-b41aedd09592",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_8edcf7cc-d901-41b6-9519-e0a2300f7648"
+    },
+    {
+      "roleDefinitionId": "9d3e04ba-3ee4-4d1b-a3a7-9aef423a09be",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f684327e-7f02-4e7c-89d5-2309190fc910_9d3e04ba-3ee4-4d1b-a3a7-9aef423a09be",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_f684327e-7f02-4e7c-89d5-2309190fc910"
+    },
+    {
+      "roleDefinitionId": "49eb8f75-97e9-4e37-9b2b-6c3ebfcffa31",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_83813ab4-9034-4279-8cb1-b519a1b29e69_49eb8f75-97e9-4e37-9b2b-6c3ebfcffa31",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_83813ab4-9034-4279-8cb1-b519a1b29e69"
+    },
+    {
+      "roleDefinitionId": "e93e3737-fa85-474a-aee4-7d3fb86510f3",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_560753c9-83a3-4ae2-9f5b-dec0c6943ba0_e93e3737-fa85-474a-aee4-7d3fb86510f3",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_560753c9-83a3-4ae2-9f5b-dec0c6943ba0"
+    },
+    {
+      "roleDefinitionId": "99009c4a-3b3f-4957-82a9-9d35e12db77e",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e1209b3f-9459-4f43-8a13-15a547572f30_99009c4a-3b3f-4957-82a9-9d35e12db77e",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e1209b3f-9459-4f43-8a13-15a547572f30"
+    },
+    {
+      "roleDefinitionId": "adb2368d-a9be-41b5-8667-d96778e081b0",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c9137c65-8358-4a93-b57b-a6489ed91703_adb2368d-a9be-41b5-8667-d96778e081b0",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_c9137c65-8358-4a93-b57b-a6489ed91703"
+    },
+    {
+      "roleDefinitionId": "6b942400-691f-4bf0-9d12-d8a254a2baf5",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a7ca239c-9648-46da-bea7-6ca5effb6f88_6b942400-691f-4bf0-9d12-d8a254a2baf5",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a7ca239c-9648-46da-bea7-6ca5effb6f88"
+    },
+    {
+      "roleDefinitionId": "db506228-d27e-4b7d-95e5-295956d6615f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92e1c219-7150-4deb-bf73-74c430bb0e5d_db506228-d27e-4b7d-95e5-295956d6615f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_92e1c219-7150-4deb-bf73-74c430bb0e5d"
+    },
+    {
+      "roleDefinitionId": "e07494ad-1654-4dd2-922e-6f81a71bf00f",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d67aef1d-b876-4cb7-93ec-9a12c4ed3c52_e07494ad-1654-4dd2-922e-6f81a71bf00f",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_d67aef1d-b876-4cb7-93ec-9a12c4ed3c52"
+    },
+    {
+      "roleDefinitionId": "02d5655b-c1cf-4e5f-98da-5fb919085bf6",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_35b25164-8d54-4578-aeb4-12c33a74430c_02d5655b-c1cf-4e5f-98da-5fb919085bf6",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_35b25164-8d54-4578-aeb4-12c33a74430c"
+    },
+    {
+      "roleDefinitionId": "3f04f91a-4ad7-4bd3-bcfa-49882ea1a88a",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a79b2ee0-e2c6-4afb-aceb-616f1ace0c39_3f04f91a-4ad7-4bd3-bcfa-49882ea1a88a",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_a79b2ee0-e2c6-4afb-aceb-616f1ace0c39"
+    },
+    {
+      "roleDefinitionId": "2fe872fb-daa8-4afc-8f6c-53c4565cfef4",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b96a19f8-dd6f-4524-8961-a508312e8544_2fe872fb-daa8-4afc-8f6c-53c4565cfef4",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_b96a19f8-dd6f-4524-8961-a508312e8544"
+    },
+    {
+      "roleDefinitionId": "0b00bede-4072-4d22-b441-e7df02a1ef63",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e70eab02-8a69-4d94-a67f-59e9edca7eb2_0b00bede-4072-4d22-b441-e7df02a1ef63",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_e70eab02-8a69-4d94-a67f-59e9edca7eb2"
+    },
+    {
+      "roleDefinitionId": "f42252d9-5400-4d7b-b9ef-cc582dbb8577",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_036c7aa6-1967-4084-9107-f3dedbb1ae2e_f42252d9-5400-4d7b-b9ef-cc582dbb8577",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_036c7aa6-1967-4084-9107-f3dedbb1ae2e"
+    },
+    {
+      "roleDefinitionId": "b6a27b2b-f905-4b2e-81b5-0d90e0ef1fdb",
+      "scopeType": "DirectoryRole",
+      "scopeId": "/",
+      "id": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55297f56-a6b9-4b6c-9694-757ea922df60_b6a27b2b-f905-4b2e-81b5-0d90e0ef1fdb",
+      "policyId": "DirectoryRole_17a40581-56e1-4ef1-ac2e-041652b769f4_55297f56-a6b9-4b6c-9694-757ea922df60"
+    }
+  ],
+  "@odata.context": "https://graph.microsoft.com/beta/$metadata#policies/roleManagementPolicyAssignments"
+}

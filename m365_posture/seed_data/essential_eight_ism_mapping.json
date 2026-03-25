@@ -1,0 +1,975 @@
+{
+  "source": "ASD Essential Eight Maturity Model and ISM Mapping",
+  "official_urls": {
+    "maturity_model": "https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model",
+    "ism_mapping": "https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model-and-ism-mapping",
+    "faq": "https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model-faq",
+    "maturity_model_pdf_oct2024": "https://www.cyber.gov.au/sites/default/files/2025-03/Essential%20Eight%20maturity%20model%20and%20ISM%20mapping%20(October%202024).pdf",
+    "faq_pdf_oct2024": "https://www.cyber.gov.au/sites/default/files/2025-03/Essential%20Eight%20maturity%20model%20FAQ%20(October%202024).pdf",
+    "microsoft_learn_e8": "https://learn.microsoft.com/en-us/compliance/anz/e8-overview"
+  },
+  "last_updated": "2026-03-16",
+  "framework_overview": {
+    "full_name": "Essential Eight Maturity Model",
+    "publisher": "Australian Signals Directorate (ASD) / Australian Cyber Security Centre (ACSC)",
+    "first_published": "June 2017",
+    "purpose": "Prioritised mitigation strategies to help organisations protect themselves against various cyber threats. The most effective mitigation strategies from the Strategies to Mitigate Cyber Security Incidents.",
+    "mandatory_for": "All Australian noncorporate Commonwealth entities subject to the PGPA Act (per PSPF Section 14.2) must implement Maturity Level Two.",
+    "implementation_principle": "Organisations should implement the same maturity level across all eight controls before moving to higher levels. Partial implementation across levels may lead to gaps.",
+    "relationship_to_ism": "The ISM applicability is based on classification of data a system will store/process/communicate. The E8MM is based on prioritising controls to mitigate different levels of malicious actors tradecraft and targeting."
+  },
+  "maturity_levels": {
+    "ML0": {
+      "name": "Maturity Level Zero",
+      "definition": "Not aligned with the intent of the mitigation strategy",
+      "description": "Signals weak control alignment. Attackers can exploit basic gaps and compromise systems with minimal effort. Weaknesses at this level enable the tradecraft described at Maturity Level One.",
+      "threat_actor_profile": "N/A - represents absence of controls"
+    },
+    "ML1": {
+      "name": "Maturity Level One",
+      "definition": "Partly aligned with the intent of the mitigation strategy",
+      "description": "Focus is on malicious actors who leverage commodity tradecraft widely available to gain access to and control of a system. For example, opportunistically using a publicly-available exploit for an unpatched vulnerability. Generally, malicious actors are looking for any victim rather than a specific victim.",
+      "threat_actor_profile": "Adversaries using publicly available exploits and tools, commodity malware, stolen credentials. Opportunistic targeting - any victim rather than specific.",
+      "suitable_for": "Small to medium enterprises"
+    },
+    "ML2": {
+      "name": "Maturity Level Two",
+      "definition": "Mostly aligned with the intent of the mitigation strategy",
+      "description": "Focus is on malicious actors operating with a modest step-up in capability from Maturity Level One. These malicious actors are willing to invest more time in a target and are more selective in their targeting. Malicious actors will employ well-known tradecraft to better attempt to bypass security controls and evade detection.",
+      "threat_actor_profile": "Adversaries with moderate sophistication, willing to invest time, use more advanced tools and techniques to bypass security measures. More selective targeting.",
+      "suitable_for": "Large enterprises, Australian Government entities (PSPF minimum)"
+    },
+    "ML3": {
+      "name": "Maturity Level Three",
+      "definition": "Fully aligned with the intent of the mitigation strategy",
+      "description": "Focus is on malicious actors who are more adaptive and much less reliant on public tools and techniques. These malicious actors are able to exploit the opportunities provided by weaknesses in their target's cyber security posture. Malicious actors may target specific users or attempt to bypass MFA by stealing token values.",
+      "threat_actor_profile": "Highly targeted and persistent threats. Adversaries who employ lesser-known tools and techniques, target specific users, attempt to bypass MFA via token theft, pivot within networks, and actively cover their tracks.",
+      "suitable_for": "Critical infrastructure providers and organisations operating in high threat environments"
+    }
+  },
+  "assessment_methodology": {
+    "overall_maturity_determination": "An organisation's overall maturity level for the Essential Eight is the LOWEST maturity level achieved across all eight controls. All eight must be at the same level.",
+    "per_control_assessment": "Each control is assessed individually against ML0-ML3 criteria. All requirements for a maturity level must be met to achieve that level.",
+    "implementation_approach": "Organisations should identify a target maturity level, then progressively implement each level until that target is achieved. The same maturity level should be achieved across all eight strategies before moving to higher levels.",
+    "risk_based_exceptions": "Organisations should seek to minimise exceptions and their scope by implementing compensating controls. Any exceptions should be documented and approved through an appropriate process, subsequently monitored and reviewed on a regular basis.",
+    "assessment_frequency": "Regular assessment recommended. PSPF requires periodic reporting for Commonwealth entities.",
+    "reporting": "Organisations report their assessed maturity level for each of the eight controls plus an overall maturity level."
+  },
+  "controls": {
+    "application_control": {
+      "control_number": 1,
+      "name": "Application Control",
+      "description": "Application control ensures only approved and trusted programs can run on systems. It blocks unverified tools, prevents malicious code from executing, and restricts software that could harm systems or network resources.",
+      "ism_controls": {
+        "ISM-0843": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Application control is implemented on workstations."
+        },
+        "ISM-1490": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Application control is implemented on internet-facing servers."
+        },
+        "ISM-1656": {
+          "maturity_levels": ["3"],
+          "control_text": "Application control is implemented on non-internet-facing servers."
+        },
+        "ISM-1657": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set."
+        },
+        "ISM-1658": {
+          "maturity_levels": ["3"],
+          "control_text": "Application control restricts the execution of drivers to an organisation-approved set."
+        },
+        "ISM-1544": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft's recommended application blocklist is implemented."
+        },
+        "ISM-1659": {
+          "maturity_levels": ["3"],
+          "control_text": "Microsoft's vulnerable driver blocklist is implemented."
+        },
+        "ISM-1582": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Application control rulesets are validated on an annual or more frequent basis."
+        },
+        "ISM-1870": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Application control is applied to user profiles and temporary folders used by operating systems, web browsers and email clients."
+        },
+        "ISM-1871": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Application control is applied to all locations other than user profiles and temporary folders used by operating systems, web browsers and email clients."
+        },
+        "ISM-1660": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Allowed and blocked application control events are centrally logged."
+        },
+        "ISM-1815": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Event logs are protected from unauthorised modification and deletion."
+        },
+        "ISM-0109": {
+          "maturity_levels": ["3"],
+          "control_text": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-1228": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+        },
+        "ISM-1906": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-1907": {
+          "maturity_levels": ["3"],
+          "control_text": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-0123": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security incidents are reported to the Chief Information Security Officer, or one of their delegates, as soon as possible after they occur or are discovered."
+        },
+        "ISM-0140": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+        },
+        "ISM-1819": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Application control is implemented on workstations (ISM-0843)",
+          "Application control restricts execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set (ISM-1657)",
+          "Application control is applied to user profiles and temporary folders used by operating systems, web browsers and email clients (ISM-1870)",
+          "ML1 can be achieved using Microsoft AppLocker"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "Application control is implemented on internet-facing servers (ISM-1490)",
+          "Microsoft's recommended application blocklist is implemented (ISM-1544)",
+          "Application control is applied to all locations (ISM-1871)",
+          "Application control rulesets are validated on an annual or more frequent basis (ISM-1582)",
+          "Allowed and blocked application control events are centrally logged (ISM-1660)",
+          "Event logs are protected from unauthorised modification and deletion (ISM-1815)",
+          "Cyber security events analysed in timely manner (ISM-1228)",
+          "Event logs from internet-facing servers analysed (ISM-1906)",
+          "Cyber security incidents reported to CISO (ISM-0123) and ASD (ISM-0140)",
+          "Incident response plan enacted (ISM-1819)",
+          "ML2 requires Windows Defender Application Control (WDAC)"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "Application control is implemented on non-internet-facing servers (ISM-1656)",
+          "Application control restricts execution of drivers to organisation-approved set (ISM-1658)",
+          "Microsoft's vulnerable driver blocklist is implemented (ISM-1659)",
+          "Event logs from workstations analysed (ISM-0109)",
+          "Event logs from non-internet-facing servers analysed (ISM-1907)",
+          "Hypervisor-protected code integrity is enabled",
+          "ML3 requires Windows Defender Application Control (WDAC)"
+        ]
+      }
+    },
+    "patch_applications": {
+      "control_number": 2,
+      "name": "Patch Applications",
+      "description": "Application patching closes vulnerabilities in browsers, Office tools, PDF readers, and other applications. Attackers often exploit flaws within days of disclosure, making prompt updates essential.",
+      "ism_controls": {
+        "ISM-1807": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.",
+          "shared_with": "Patch Operating Systems"
+        },
+        "ISM-1808": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities.",
+          "shared_with": "Patch Operating Systems"
+        },
+        "ISM-1698": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in online services."
+        },
+        "ISM-1699": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner is used at least weekly to identify missing patches or updates for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+        },
+        "ISM-1700": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+        },
+        "ISM-1876": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1690": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within two weeks of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1691": {
+          "maturity_levels": ["1", "2"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release."
+        },
+        "ISM-1692": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1901": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1693": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within one month of release."
+        },
+        "ISM-1704": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed.",
+          "shared_with": "Patch Operating Systems"
+        },
+        "ISM-0304": {
+          "maturity_levels": ["3"],
+          "control_text": "Applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed."
+        },
+        "ISM-1905": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Online services that are no longer supported by vendors are removed."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Automated asset discovery at least fortnightly (ISM-1807)",
+          "Vulnerability scanner with up-to-date database (ISM-1808)",
+          "Vulnerability scanning of online services at least daily (ISM-1698)",
+          "Vulnerability scanning of core apps (office suites, browsers, email, PDF, security) at least weekly (ISM-1699)",
+          "Patches for online services within 48 hours for critical/exploited vulnerabilities (ISM-1876)",
+          "Patches for online services within 2 weeks for noncritical vulnerabilities (ISM-1690)",
+          "Patches for core apps within 2 weeks of release (ISM-1691)",
+          "Unsupported core apps removed (ISM-1704)",
+          "Unsupported online services removed (ISM-1905)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "Vulnerability scanning of other apps at least fortnightly (ISM-1700)",
+          "Patches for other apps within 1 month of release (ISM-1693)"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "Patches for core apps within 48 hours for critical/exploited (ISM-1692)",
+          "Patches for core apps within 2 weeks for noncritical (ISM-1901) - replaces ISM-1691 blanket 2-week requirement",
+          "Unsupported other applications also removed (ISM-0304)"
+        ]
+      },
+      "patching_timelines_summary": {
+        "online_services": {
+          "critical_exploited": {"ML1": "48 hours", "ML2": "48 hours", "ML3": "48 hours"},
+          "noncritical": {"ML1": "2 weeks", "ML2": "2 weeks", "ML3": "2 weeks"}
+        },
+        "core_applications": {
+          "critical_exploited": {"ML1": "2 weeks", "ML2": "2 weeks", "ML3": "48 hours"},
+          "noncritical": {"ML1": "2 weeks", "ML2": "2 weeks", "ML3": "2 weeks"}
+        },
+        "other_applications": {
+          "all_vulnerabilities": {"ML1": "N/A", "ML2": "1 month", "ML3": "1 month"}
+        }
+      },
+      "vulnerability_scanning_frequency": {
+        "online_services": {"ML1": "daily", "ML2": "daily", "ML3": "daily"},
+        "core_applications": {"ML1": "weekly", "ML2": "weekly", "ML3": "weekly"},
+        "other_applications": {"ML1": "N/A", "ML2": "fortnightly", "ML3": "fortnightly"},
+        "asset_discovery": {"all_levels": "fortnightly"}
+      }
+    },
+    "restrict_microsoft_office_macros": {
+      "control_number": 3,
+      "name": "Restrict Microsoft Office Macros",
+      "description": "Macros automate tasks through embedded code. Attackers use malicious macros in phishing documents to gain access or run harmful scripts. Blocking untrusted or unsigned macros removes a frequent initial access vector.",
+      "ism_controls": {
+        "ISM-1671": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement."
+        },
+        "ISM-1488": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Microsoft Office macros in files originating from the internet are blocked."
+        },
+        "ISM-1672": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Microsoft Office macro antivirus scanning is enabled."
+        },
+        "ISM-1673": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft Office macros are blocked from making Win32 API calls."
+        },
+        "ISM-1674": {
+          "maturity_levels": ["3"],
+          "control_text": "Only Microsoft Office macros running from within a sandboxed environment, a Trusted Location or that are digitally signed by a Trusted Publisher are allowed to execute."
+        },
+        "ISM-1487": {
+          "maturity_levels": ["3"],
+          "control_text": "Only privileged users responsible for checking that Microsoft Office macros are free of malicious code can write to and modify content within Trusted Locations."
+        },
+        "ISM-1890": {
+          "maturity_levels": ["3"],
+          "control_text": "Microsoft Office macros are checked to ensure they are free of malicious code before being digitally signed or placed within Trusted Locations."
+        },
+        "ISM-1675": {
+          "maturity_levels": ["3"],
+          "control_text": "Microsoft Office macros digitally signed by an untrusted publisher cannot be enabled via the Message Bar or Backstage View."
+        },
+        "ISM-1676": {
+          "maturity_levels": ["3"],
+          "control_text": "Microsoft Office's list of trusted publishers is validated on an annual or more frequent basis."
+        },
+        "ISM-1489": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Microsoft Office macro security settings cannot be changed by users."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement (ISM-1671)",
+          "Microsoft Office macros in files originating from the internet are blocked (ISM-1488)",
+          "Microsoft Office macro antivirus scanning is enabled (ISM-1672)",
+          "Microsoft Office macro security settings cannot be changed by users (ISM-1489)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "Microsoft Office macros are blocked from making Win32 API calls (ISM-1673)"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "Only macros in sandboxed environments, Trusted Locations, or digitally signed by Trusted Publishers can execute (ISM-1674)",
+          "Only privileged users can write to/modify Trusted Locations (ISM-1487)",
+          "Macros checked for malicious code before signing or placement in Trusted Locations (ISM-1890)",
+          "Macros signed by untrusted publishers cannot be enabled via Message Bar or Backstage View (ISM-1675)",
+          "Trusted publishers list validated annually or more frequently (ISM-1676)",
+          "V3 digital signatures required for macro signing"
+        ]
+      }
+    },
+    "user_application_hardening": {
+      "control_number": 4,
+      "name": "User Application Hardening",
+      "description": "User application hardening disables risky features in browsers, PDF readers, and similar tools. It blocks unnecessary plugins, restricts legacy components, and removes unused applications.",
+      "ism_controls": {
+        "ISM-1486": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Web browsers do not process Java from the internet."
+        },
+        "ISM-1485": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Web browsers do not process web advertisements from the internet."
+        },
+        "ISM-1666": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Internet Explorer 11 is disabled or removed."
+        },
+        "ISM-1412": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "ACSC or vendor hardening guidance for web browsers is implemented."
+        },
+        "ISM-1860": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Web browser security settings cannot be changed by users."
+        },
+        "ISM-1585": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Web browser, Microsoft Office and PDF software security settings cannot be changed by users."
+        },
+        "ISM-1667": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft Office is blocked from creating child processes."
+        },
+        "ISM-1668": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft Office is blocked from creating executable content."
+        },
+        "ISM-1669": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft Office is blocked from injecting code into other processes."
+        },
+        "ISM-1542": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Microsoft Office is configured to prevent activation of Object Linking and Embedding packages."
+        },
+        "ISM-1670": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "PDF software is blocked from creating child processes."
+        },
+        "ISM-1859": {
+          "maturity_levels": ["3"],
+          "control_text": "ACSC or vendor hardening guidance for Microsoft Office is implemented."
+        },
+        "ISM-1655": {
+          "maturity_levels": ["3"],
+          "control_text": ".NET Framework 3.5 (includes .NET 2.0 and 3.0) is disabled or removed."
+        },
+        "ISM-1612": {
+          "maturity_levels": ["3"],
+          "control_text": "Windows PowerShell 2.0 is disabled or removed."
+        },
+        "ISM-1664": {
+          "maturity_levels": ["3"],
+          "control_text": "PowerShell is configured to use Constrained Language Mode."
+        },
+        "ISM-1665": {
+          "maturity_levels": ["3"],
+          "control_text": "Blocked PowerShell script executions are centrally logged and protected from unauthorised modification and deletion, monitored for signs of compromise, and actioned when cyber security events are detected."
+        },
+        "ISM-1899": {
+          "maturity_levels": ["3"],
+          "control_text": "Command line process creation events are centrally logged."
+        },
+        "ISM-1405": {
+          "maturity_levels": ["3"],
+          "control_text": "PowerShell module logging, script block logging and transcription events are centrally logged."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Web browsers do not process Java from the internet (ISM-1486)",
+          "Web browsers do not process web advertisements from the internet (ISM-1485)",
+          "Internet Explorer 11 is disabled or removed (ISM-1666)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "ACSC or vendor hardening guidance for web browsers is implemented (ISM-1412)",
+          "Web browser security settings cannot be changed by users (ISM-1860)",
+          "Security settings for web browsers, Office, PDF cannot be changed by users (ISM-1585)",
+          "Microsoft Office is blocked from creating child processes (ISM-1667)",
+          "Microsoft Office is blocked from creating executable content (ISM-1668)",
+          "Microsoft Office is blocked from injecting code into other processes (ISM-1669)",
+          "Microsoft Office is configured to prevent activation of OLE packages (ISM-1542)",
+          "PDF software is blocked from creating child processes (ISM-1670)"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "ACSC or vendor hardening guidance for Microsoft Office is implemented (ISM-1859)",
+          ".NET Framework 3.5 (includes .NET 2.0 and 3.0) is disabled or removed (ISM-1655)",
+          "Windows PowerShell 2.0 is disabled or removed (ISM-1612)",
+          "PowerShell is configured to use Constrained Language Mode (ISM-1664)",
+          "Blocked PowerShell script executions are centrally logged, protected, monitored and actioned (ISM-1665)",
+          "Command line process creation events are centrally logged (ISM-1899)",
+          "PowerShell module logging, script block logging and transcription events centrally logged (ISM-1405)"
+        ]
+      }
+    },
+    "restrict_administrative_privileges": {
+      "control_number": 5,
+      "name": "Restrict Administrative Privileges",
+      "description": "Restricting and controlling administrative privileges to reduce the attack surface. A malicious actor's goal is to gain access to privileged credentials for widespread access and control over high value assets.",
+      "ism_controls": {
+        "ISM-0445": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Privileged users are assigned a dedicated privileged user account to be used solely for duties requiring privileged access."
+        },
+        "ISM-1175": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Privileged user accounts (excluding those explicitly authorised to access online services) are prevented from accessing the internet, email, and web services."
+        },
+        "ISM-1507": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Requests for privileged access to systems, applications, and data repositories are validated when first requested."
+        },
+        "ISM-1380": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Privileged users use separate privileged and unprivileged operating environments."
+        },
+        "ISM-1688": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Unprivileged user accounts cannot logon to privileged operating environments."
+        },
+        "ISM-1689": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Privileged user accounts (excluding local administrator accounts) cannot logon to unprivileged operating environments."
+        },
+        "ISM-1883": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Privileged user accounts explicitly authorised to access online services are strictly limited to only what is required for users and services to undertake their duties."
+        },
+        "ISM-1509": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged access events are centrally logged."
+        },
+        "ISM-1647": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged access to systems, applications, and data repositories is disabled after 12 months unless revalidated."
+        },
+        "ISM-1648": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged access to systems and applications is disabled after 45 days of inactivity."
+        },
+        "ISM-1650": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged user account and security group management events are centrally logged."
+        },
+        "ISM-1898": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Secure Admin Workstations are used in the performance of administrative activities."
+        },
+        "ISM-1508": {
+          "maturity_levels": ["3"],
+          "control_text": "Privileged access to systems, applications, and data repositories is limited to only what is required for users and services to undertake their duties."
+        },
+        "ISM-1686": {
+          "maturity_levels": ["3"],
+          "control_text": "Credential Guard functionality is enabled."
+        },
+        "ISM-1897": {
+          "maturity_levels": ["3"],
+          "control_text": "Remote Credential Guard functionality is enabled."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Privileged users assigned dedicated privileged accounts (ISM-0445)",
+          "Privileged accounts prevented from accessing internet, email, web services (ISM-1175)",
+          "Requests for privileged access validated when first requested (ISM-1507)",
+          "Separate privileged and unprivileged operating environments (ISM-1380)",
+          "Unprivileged accounts cannot logon to privileged environments (ISM-1688)",
+          "Privileged accounts cannot logon to unprivileged environments (ISM-1689)",
+          "Privileged accounts for online services strictly limited to required duties (ISM-1883)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "Privileged access events centrally logged (ISM-1509)",
+          "Privileged access disabled after 12 months unless revalidated (ISM-1647)",
+          "Privileged access disabled after 45 days of inactivity (ISM-1648)",
+          "Privileged account and security group management events centrally logged (ISM-1650)",
+          "Secure Admin Workstations or jump servers used for admin activities (ISM-1898)",
+          "Credentials for break glass accounts, local admin accounts, and service accounts: minimum 30 characters, unique, unpredictable, managed",
+          "Privileged environments not virtualised within unprivileged operating environments"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "Privileged access limited to only what required (just-in-time) (ISM-1508)",
+          "Credential Guard functionality enabled (ISM-1686)",
+          "Remote Credential Guard functionality enabled (ISM-1897)",
+          "Secure Admin Workstations used for all administrative activities",
+          "Event logs from workstations, internet-facing and non-internet-facing servers analysed for signs of compromise",
+          "Just-in-time access with approval workflows implemented"
+        ]
+      }
+    },
+    "patch_operating_systems": {
+      "control_number": 6,
+      "name": "Patch Operating Systems",
+      "description": "Manage and deploy patches for operating systems to mitigate known vulnerabilities in OS, drivers, and firmware.",
+      "ism_controls": {
+        "ISM-1694": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within two weeks of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1877": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1695": {
+          "maturity_levels": ["1", "2"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within one month of release."
+        },
+        "ISM-1696": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1902": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within one month of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1701": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices."
+        },
+        "ISM-1702": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices."
+        },
+        "ISM-1501": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Operating systems that are no longer supported by vendors are replaced."
+        },
+        "ISM-1703": {
+          "maturity_levels": ["3"],
+          "control_text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in drivers."
+        },
+        "ISM-1900": {
+          "maturity_levels": ["3"],
+          "control_text": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in firmware."
+        },
+        "ISM-1879": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in drivers are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1697": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in drivers are applied within one month of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1903": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in firmware are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+        },
+        "ISM-1904": {
+          "maturity_levels": ["3"],
+          "control_text": "Patches, updates or other vendor mitigations for vulnerabilities in firmware are applied within one month of release when vulnerabilities are assessed as noncritical by vendors and no working exploits exist."
+        },
+        "ISM-1807": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities.",
+          "shared_with": "Patch Applications"
+        },
+        "ISM-1808": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities.",
+          "shared_with": "Patch Applications"
+        },
+        "ISM-1704": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed.",
+          "shared_with": "Patch Applications"
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Automated asset discovery at least fortnightly (ISM-1807)",
+          "Vulnerability scanner with up-to-date database (ISM-1808)",
+          "Vulnerability scanning of internet-facing server/device OS at least daily (ISM-1701)",
+          "Vulnerability scanning of workstation/non-internet-facing OS at least fortnightly (ISM-1702)",
+          "OS patches for internet-facing systems within 48 hours for critical/exploited (ISM-1877)",
+          "OS patches for internet-facing systems within 2 weeks for noncritical (ISM-1694)",
+          "OS patches for workstations/non-internet-facing within 1 month (ISM-1695)",
+          "Unsupported operating systems replaced (ISM-1501)",
+          "Unsupported core apps removed (ISM-1704)"
+        ],
+        "ML2": [
+          "All ML1 requirements (same as ML1 for Patch OS)"
+        ],
+        "ML3": [
+          "All ML1/ML2 requirements plus:",
+          "OS patches for workstations/non-internet-facing within 48 hours for critical/exploited (ISM-1696)",
+          "OS patches for workstations/non-internet-facing within 1 month for noncritical (ISM-1902)",
+          "Vulnerability scanning of drivers at least fortnightly (ISM-1703)",
+          "Vulnerability scanning of firmware at least fortnightly (ISM-1900)",
+          "Driver patches within 48 hours for critical/exploited (ISM-1879)",
+          "Driver patches within 1 month for noncritical (ISM-1697)",
+          "Firmware patches within 48 hours for critical/exploited (ISM-1903)",
+          "Firmware patches within 1 month for noncritical (ISM-1904)",
+          "Latest or previous release of operating systems used"
+        ]
+      },
+      "patching_timelines_summary": {
+        "internet_facing_servers_network_devices": {
+          "critical_exploited": {"ML1": "48 hours", "ML2": "48 hours", "ML3": "48 hours"},
+          "noncritical": {"ML1": "2 weeks", "ML2": "2 weeks", "ML3": "2 weeks"}
+        },
+        "workstations_non_internet_facing": {
+          "critical_exploited": {"ML1": "1 month", "ML2": "1 month", "ML3": "48 hours"},
+          "noncritical": {"ML1": "1 month", "ML2": "1 month", "ML3": "1 month"}
+        },
+        "drivers": {
+          "critical_exploited": {"ML3": "48 hours"},
+          "noncritical": {"ML3": "1 month"}
+        },
+        "firmware": {
+          "critical_exploited": {"ML3": "48 hours"},
+          "noncritical": {"ML3": "1 month"}
+        }
+      }
+    },
+    "multi_factor_authentication": {
+      "control_number": 7,
+      "name": "Multi-Factor Authentication",
+      "description": "MFA is one of the most effective controls to prevent adversaries from gaining access to devices, networks and sensitive information. When implemented correctly, MFA makes it more difficult for adversaries to steal legitimate credentials.",
+      "nist_basis": "Based on NIST Special Publication 800-63 B Digital Identity Guidelines: Authentication and Lifecycle Management.",
+      "ism_controls": {
+        "ISM-1504": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate users to their organisation's online services that process, store, or communicate their organisation's sensitive data."
+        },
+        "ISM-1679": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate users to third-party online services that process, store, or communicate their organisation's sensitive data."
+        },
+        "ISM-1680": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication (where available) is used to authenticate users to third-party online services that process, store, or communicate their organisation's nonsensitive data."
+        },
+        "ISM-1681": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate customers to online customer services that process, store, or communicate sensitive customer data."
+        },
+        "ISM-1401": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication uses either: something users have and something users know, or something users have that can be unlocked with something users know or are."
+        },
+        "ISM-1892": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate users to their organisation's online customer services that process, store, or communicate their organisation's sensitive customer data."
+        },
+        "ISM-1893": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate users to third-party online customer services that process, store, or communicate their organisation's sensitive customer data."
+        },
+        "ISM-0974": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate unprivileged users of systems."
+        },
+        "ISM-1173": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Multifactor authentication is used to authenticate privileged users of systems."
+        },
+        "ISM-1682": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Multifactor authentication used for authenticating users of systems is phishing-resistant."
+        },
+        "ISM-1872": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Multifactor authentication used for authenticating users of online services is phishing-resistant."
+        },
+        "ISM-1683": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Successful and unsuccessful multifactor authentication events are centrally logged."
+        },
+        "ISM-1873": {
+          "maturity_levels": ["2"],
+          "control_text": "Multifactor authentication used for authenticating customers of online customer services provides a phishing-resistant option."
+        },
+        "ISM-1505": {
+          "maturity_levels": ["3"],
+          "control_text": "Multifactor authentication is used to authenticate users of data repositories."
+        },
+        "ISM-1874": {
+          "maturity_levels": ["3"],
+          "control_text": "Multifactor authentication used for authenticating customers of online customer services is phishing-resistant."
+        },
+        "ISM-1894": {
+          "maturity_levels": ["3"],
+          "control_text": "Multifactor authentication used for authenticating users of data repositories is phishing-resistant."
+        },
+        "ISM-1815": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Event logs are protected from unauthorised modification and deletion."
+        },
+        "ISM-0109": {
+          "maturity_levels": ["3"],
+          "control_text": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-1228": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+        },
+        "ISM-1906": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-1907": {
+          "maturity_levels": ["3"],
+          "control_text": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+        },
+        "ISM-0123": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security incidents are reported to the CISO as soon as possible."
+        },
+        "ISM-0140": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Cyber security incidents are reported to ASD as soon as possible."
+        },
+        "ISM-1819": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "MFA for users of organisation's online services with sensitive data (ISM-1504)",
+          "MFA for users of third-party online services with sensitive data (ISM-1679)",
+          "MFA (where available) for users of third-party services with nonsensitive data (ISM-1680)",
+          "MFA for customers of online customer services with sensitive data (ISM-1681)",
+          "MFA uses something users have + something users know, or something users have unlocked by something users know/are (ISM-1401)",
+          "MFA for organisation's online customer services with sensitive customer data (ISM-1892)",
+          "MFA for third-party online customer services with sensitive customer data (ISM-1893)",
+          "Allowed authenticator types: something users have + something users know/are (e.g., Microsoft Authenticator with push notifications, hardware tokens)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "MFA for unprivileged users of systems (ISM-0974)",
+          "MFA for privileged users of systems (ISM-1173)",
+          "MFA for systems must be phishing-resistant (ISM-1682)",
+          "MFA for online services must be phishing-resistant (ISM-1872)",
+          "MFA for customer services must provide phishing-resistant option (ISM-1873)",
+          "Successful and unsuccessful MFA events centrally logged (ISM-1683)",
+          "Event logs protected from unauthorised modification/deletion (ISM-1815)",
+          "Users authenticate to workstations using phishing-resistant MFA",
+          "Phishing-resistant methods: FIDO2 security keys, Windows Hello for Business, smart cards",
+          "Cryptographic authenticators that bind output to specific session"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "MFA for users of data repositories (ISM-1505)",
+          "MFA for data repositories must be phishing-resistant (ISM-1894)",
+          "MFA for customer services must be phishing-resistant (not just an option) (ISM-1874)",
+          "Event logs from workstations analysed (ISM-0109)",
+          "Event logs from non-internet-facing servers analysed (ISM-1907)"
+        ]
+      },
+      "authenticator_types_by_level": {
+        "ML1": {
+          "permitted": ["Something users have + something users know", "Something users have unlocked by something users know or are"],
+          "examples": ["Microsoft Authenticator (push with number matching)", "Hardware OATH tokens", "Smart cards"],
+          "prohibited": ["SMS OTP (not recommended)", "Email OTP (not recommended)"]
+        },
+        "ML2": {
+          "required": "Phishing-resistant authenticators only",
+          "permitted": ["FIDO2 Security Keys", "Windows Hello for Business", "Certificate-based authentication (smart cards)"],
+          "prohibited": ["SMS", "Email OTP", "Voice call", "Standard push notifications without cryptographic binding"]
+        },
+        "ML3": {
+          "required": "Phishing-resistant authenticators only for all services including data repositories",
+          "permitted": ["FIDO2 Security Keys", "Windows Hello for Business", "Certificate-based authentication (smart cards)"],
+          "prohibited": ["All non-phishing-resistant methods"]
+        }
+      }
+    },
+    "regular_backups": {
+      "control_number": 8,
+      "name": "Regular Backups",
+      "description": "Backups are an essential strategy to ensure important data is protected from loss, whether from physical means (hardware failure, theft, damage, disasters) or logical means (deletion, corruption, malware/ransomware).",
+      "ism_controls": {
+        "ISM-1511": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Backups of data, applications, and settings are performed and retained in accordance with business criticality and business continuity requirements."
+        },
+        "ISM-1515": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Restoration of data, applications, and settings from backups to a common point in time is tested as part of disaster recovery exercises."
+        },
+        "ISM-1810": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Backups of data, applications, and settings are synchronised to enable restoration to a common point in time."
+        },
+        "ISM-1811": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Backups of data, applications, and settings are retained in a secure and resilient manner."
+        },
+        "ISM-1812": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Unprivileged user accounts cannot access backups belonging to other accounts."
+        },
+        "ISM-1814": {
+          "maturity_levels": ["1", "2", "3"],
+          "control_text": "Unprivileged user accounts are prevented from modifying and deleting backups."
+        },
+        "ISM-1705": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged user accounts (excluding backup administrator accounts) cannot access backups belonging to other accounts."
+        },
+        "ISM-1707": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Privileged user accounts (excluding backup administrator accounts) are prevented from modifying and deleting backups."
+        },
+        "ISM-1813": {
+          "maturity_levels": ["2", "3"],
+          "control_text": "Unprivileged user accounts cannot access backups belonging to other accounts, nor their own accounts."
+        },
+        "ISM-1706": {
+          "maturity_levels": ["3"],
+          "control_text": "Privileged user accounts (excluding backup administrator accounts) cannot access their own backups."
+        },
+        "ISM-1708": {
+          "maturity_levels": ["3"],
+          "control_text": "Backup administrator accounts are prevented from modifying and deleting backups during their retention period."
+        }
+      },
+      "maturity_requirements": {
+        "ML1": [
+          "Backups of data, applications, and settings performed and retained per business requirements (ISM-1511)",
+          "Backup restoration tested as part of disaster recovery exercises (ISM-1515)",
+          "Backups synchronised to enable restoration to common point in time (ISM-1810)",
+          "Backups retained in secure and resilient manner (ISM-1811)",
+          "Unprivileged users cannot access other accounts' backups (ISM-1812)",
+          "Unprivileged users cannot modify or delete backups (ISM-1814)"
+        ],
+        "ML2": [
+          "All ML1 requirements plus:",
+          "Privileged users (except backup admins) cannot access other accounts' backups (ISM-1705)",
+          "Privileged users (except backup admins) cannot modify/delete backups (ISM-1707)",
+          "Unprivileged users cannot access backups belonging to other accounts nor their own (ISM-1813)"
+        ],
+        "ML3": [
+          "All ML1 and ML2 requirements plus:",
+          "Privileged users (except backup admins) cannot access their own backups (ISM-1706)",
+          "Backup administrator accounts cannot modify/delete backups during retention period (ISM-1708)"
+        ]
+      }
+    }
+  },
+  "cross_cutting_ism_controls": {
+    "description": "These ISM controls appear across multiple Essential Eight strategies, primarily related to logging, monitoring, and incident response.",
+    "ISM-0109": {
+      "control_text": "Event logs from workstations are analysed in a timely manner to detect cyber security events.",
+      "maturity_levels": ["3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-0123": {
+      "control_text": "Cyber security incidents are reported to the CISO as soon as possible after they occur or are discovered.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-0140": {
+      "control_text": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-1228": {
+      "control_text": "Cyber security events are analysed in a timely manner to identify cyber security incidents.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-1815": {
+      "control_text": "Event logs are protected from unauthorised modification and deletion.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication", "User Application Hardening"]
+    },
+    "ISM-1819": {
+      "control_text": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-1906": {
+      "control_text": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events.",
+      "maturity_levels": ["2", "3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-1907": {
+      "control_text": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events.",
+      "maturity_levels": ["3"],
+      "appears_in": ["Application Control", "Multi-Factor Authentication"]
+    },
+    "ISM-1807": {
+      "control_text": "An automated method of asset discovery is used at least fortnightly.",
+      "maturity_levels": ["1", "2", "3"],
+      "appears_in": ["Patch Applications", "Patch Operating Systems"]
+    },
+    "ISM-1808": {
+      "control_text": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities.",
+      "maturity_levels": ["1", "2", "3"],
+      "appears_in": ["Patch Applications", "Patch Operating Systems"]
+    },
+    "ISM-1704": {
+      "control_text": "Unsupported core applications removed.",
+      "maturity_levels": ["1", "2", "3"],
+      "appears_in": ["Patch Applications", "Patch Operating Systems"]
+    }
+  },
+  "total_ism_controls_count": {
+    "application_control": 18,
+    "patch_applications": 14,
+    "restrict_microsoft_office_macros": 10,
+    "user_application_hardening": 17,
+    "restrict_administrative_privileges": 15,
+    "patch_operating_systems": 17,
+    "multi_factor_authentication": 22,
+    "regular_backups": 11,
+    "note": "Some controls are shared across multiple strategies and counted in each. Unique ISM control count is lower."
+  }
+}

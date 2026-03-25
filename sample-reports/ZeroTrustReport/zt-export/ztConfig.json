@@ -1,0 +1,17 @@
+﻿{
+  "User": true,
+  "Application": true,
+  "ServicePrincipal": true,
+  "ServicePrincipalSignIn": true,
+  "RoleDefinition": true,
+  "RoleAssignment": true,
+  "RoleAssignmentScheduleInstance": true,
+  "RoleEligibilityScheduleInstance": true,
+  "RoleManagementPolicyAssignment": true,
+  "UserRegistrationDetails": true,
+  "RoleAssignmentGroup": true,
+  "RoleAssignmentScheduleInstanceGroup": true,
+  "RoleEligibilityScheduleInstanceGroup": true,
+  "SignIn": true,
+  "Device": true
+}

@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, Workload
+from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, SourceTool, Workload
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
@@ -243,6 +243,64 @@ class Database:
                     updated_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_ssc_title ON secure_score_controls(title);
+
+                -- Zero Trust Report storage (HTML reports + metadata)
+                CREATE TABLE IF NOT EXISTS zt_reports (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    imported_at TEXT NOT NULL,
+                    executed_at TEXT DEFAULT '',
+                    report_tenant_id TEXT DEFAULT '',
+                    report_tenant_name TEXT DEFAULT '',
+                    report_domain TEXT DEFAULT '',
+                    report_account TEXT DEFAULT '',
+                    tool_version TEXT DEFAULT '',
+                    test_result_summary TEXT DEFAULT '{}',
+                    tenant_info TEXT DEFAULT '{}',
+                    html_path TEXT DEFAULT '',
+                    data_dir TEXT DEFAULT '',
+                    total_tests INTEGER DEFAULT 0,
+                    passed_tests INTEGER DEFAULT 0,
+                    failed_tests INTEGER DEFAULT 0,
+                    source_file TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_zt_reports_tenant ON zt_reports(tenant_name);
+
+                -- SCuBA (ScubaGear) Report storage
+                CREATE TABLE IF NOT EXISTS scuba_reports (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    imported_at TEXT NOT NULL,
+                    executed_at TEXT DEFAULT '',
+                    report_tenant_id TEXT DEFAULT '',
+                    report_tenant_name TEXT DEFAULT '',
+                    report_domain TEXT DEFAULT '',
+                    tool_version TEXT DEFAULT '',
+                    report_uuid TEXT DEFAULT '',
+                    products_assessed TEXT DEFAULT '[]',
+                    product_summary TEXT DEFAULT '{}',
+                    total_controls INTEGER DEFAULT 0,
+                    passed_controls INTEGER DEFAULT 0,
+                    failed_controls INTEGER DEFAULT 0,
+                    warning_controls INTEGER DEFAULT 0,
+                    manual_controls INTEGER DEFAULT 0,
+                    source_file TEXT DEFAULT '',
+                    html_path TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_scuba_reports_tenant ON scuba_reports(tenant_name);
+
+                CREATE TABLE IF NOT EXISTS gitlab_templates (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    template_type TEXT NOT NULL DEFAULT 'assessment',
+                    title_template TEXT DEFAULT '',
+                    body_template TEXT DEFAULT '',
+                    labels TEXT DEFAULT '[]',
+                    created_at TEXT,
+                    updated_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_gitlab_tpl_tenant ON gitlab_templates(tenant_name);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -265,6 +323,28 @@ class Database:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
+            # Add pinned_priority column to actions for dashboard pinning
+            for col, coltype, default in [
+                ("pinned_priority", "INTEGER", "0"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+            # Add plan metadata columns (responsible, dates, priority, effort)
+            for col, coltype, default in [
+                ("responsible_person", "TEXT", "''"),
+                ("start_date", "TEXT", "NULL"),
+                ("end_date", "TEXT", "NULL"),
+                ("priority", "TEXT", "'Medium'"),
+                ("implementation_effort", "TEXT", "'Medium'"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
             # Add Graph API overall scores and metadata to tenants (idempotent)
             for col, coltype, default in [
                 ("graph_current_score", "REAL", "NULL"),
@@ -279,6 +359,180 @@ class Database:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+    # ── Zero Trust Reports ──
+
+    def store_zt_report(self, tenant_name: str, report_data: dict) -> str:
+        """Store a Zero Trust Report record. Returns the report ID."""
+        report_id = report_data.get("id") or str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO zt_reports
+                   (id, tenant_name, imported_at, executed_at, report_tenant_id,
+                    report_tenant_name, report_domain, report_account, tool_version,
+                    test_result_summary, tenant_info, html_path, data_dir,
+                    total_tests, passed_tests, failed_tests, source_file)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (report_id, tenant_name,
+                 report_data.get("imported_at", datetime.utcnow().isoformat()),
+                 report_data.get("executed_at", ""),
+                 report_data.get("report_tenant_id", ""),
+                 report_data.get("report_tenant_name", ""),
+                 report_data.get("report_domain", ""),
+                 report_data.get("report_account", ""),
+                 report_data.get("tool_version", ""),
+                 json.dumps(report_data.get("test_result_summary", {})),
+                 json.dumps(report_data.get("tenant_info", {})),
+                 report_data.get("html_path", ""),
+                 report_data.get("data_dir", ""),
+                 report_data.get("total_tests", 0),
+                 report_data.get("passed_tests", 0),
+                 report_data.get("failed_tests", 0),
+                 report_data.get("source_file", "")),
+            )
+        return report_id
+
+    def get_zt_reports(self, tenant_name: str) -> list[dict]:
+        """Get all Zero Trust Reports for a tenant."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM zt_reports WHERE tenant_name=? ORDER BY imported_at DESC",
+                (tenant_name,),
+            ).fetchall()
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
+                d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
+                results.append(d)
+            return results
+
+    def get_zt_report(self, report_id: str) -> dict | None:
+        """Get a single ZT report by ID."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM zt_reports WHERE id=?", (report_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["test_result_summary"] = json.loads(d.get("test_result_summary") or "{}")
+            d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
+            return d
+
+    # ── SCuBA Reports ──
+
+    def store_scuba_report(self, tenant_name: str, report_data: dict) -> str:
+        """Store a SCuBA Report record. Returns the report ID."""
+        report_id = report_data.get("id") or str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO scuba_reports
+                   (id, tenant_name, imported_at, executed_at, report_tenant_id,
+                    report_tenant_name, report_domain, tool_version, report_uuid,
+                    products_assessed, product_summary, total_controls, passed_controls,
+                    failed_controls, warning_controls, manual_controls, source_file, html_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (report_id, tenant_name,
+                 report_data.get("imported_at", datetime.utcnow().isoformat()),
+                 report_data.get("executed_at", ""),
+                 report_data.get("report_tenant_id", ""),
+                 report_data.get("report_tenant_name", ""),
+                 report_data.get("report_domain", ""),
+                 report_data.get("tool_version", ""),
+                 report_data.get("report_uuid", ""),
+                 json.dumps(report_data.get("products_assessed", [])),
+                 json.dumps(report_data.get("product_summary", {})),
+                 report_data.get("total_controls", 0),
+                 report_data.get("passed_controls", 0),
+                 report_data.get("failed_controls", 0),
+                 report_data.get("warning_controls", 0),
+                 report_data.get("manual_controls", 0),
+                 report_data.get("source_file", ""),
+                 report_data.get("html_path", "")),
+            )
+        return report_id
+
+    def get_scuba_reports(self, tenant_name: str) -> list[dict]:
+        """Get all SCuBA Reports for a tenant."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM scuba_reports WHERE tenant_name=? ORDER BY imported_at DESC",
+                (tenant_name,),
+            ).fetchall()
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["products_assessed"] = json.loads(d.get("products_assessed") or "[]")
+                d["product_summary"] = json.loads(d.get("product_summary") or "{}")
+                results.append(d)
+            return results
+
+    def get_scuba_report(self, report_id: str) -> dict | None:
+        """Get a single SCuBA report by ID."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM scuba_reports WHERE id=?", (report_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["products_assessed"] = json.loads(d.get("products_assessed") or "[]")
+            d["product_summary"] = json.loads(d.get("product_summary") or "{}")
+            return d
+
+    # ── GitLab Templates ──
+
+    def get_gitlab_templates(self, tenant_name: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM gitlab_templates WHERE tenant_name=? ORDER BY template_type, name",
+                (tenant_name,),
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["labels"] = json.loads(d.get("labels") or "[]")
+                result.append(d)
+            return result
+
+    def get_gitlab_template(self, template_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM gitlab_templates WHERE id=?", (template_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["labels"] = json.loads(d.get("labels") or "[]")
+            return d
+
+    def create_gitlab_template(self, tenant_name: str, name: str, template_type: str,
+                                title_template: str, body_template: str,
+                                labels: list[str] = None) -> dict:
+        tid = _generate_id()
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO gitlab_templates (id, tenant_name, name, template_type,
+                   title_template, body_template, labels, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (tid, tenant_name, name, template_type,
+                 title_template, body_template, json.dumps(labels or []), now, now),
+            )
+        return self.get_gitlab_template(tid)
+
+    def update_gitlab_template(self, template_id: str, **kwargs) -> dict | None:
+        allowed = {"name", "template_type", "title_template", "body_template", "labels"}
+        updates = {}
+        for k, v in kwargs.items():
+            if k in allowed:
+                updates[k] = json.dumps(v) if k == "labels" else v
+        if updates:
+            updates["updated_at"] = datetime.utcnow().isoformat()
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [template_id]
+            with self._conn() as conn:
+                conn.execute(f"UPDATE gitlab_templates SET {sets} WHERE id=?", vals)
+        return self.get_gitlab_template(template_id)
+
+    def delete_gitlab_template(self, template_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM gitlab_templates WHERE id=?", (template_id,))
 
     # ── Graph API overall scores ──
 
@@ -606,6 +860,7 @@ class Database:
                 "notes", "reference_url", "correlation_group_id",
                 "risk_justification", "risk_owner", "risk_review_date",
                 "risk_expiry_date", "risk_accepted_at",
+                "pinned_priority",
             }
             updates = {}
             for k, v in data.items():
@@ -629,15 +884,23 @@ class Database:
             conn.execute("DELETE FROM actions WHERE id=?", (action_id,))
 
     def merge_actions(self, tenant_name: str, new_actions: list[Action],
-                      source_tool: str, source_file: str) -> tuple[int, int]:
-        """Smart merge: update existing actions, add new ones. Returns (new, updated)."""
+                      source_tool: str, source_file: str) -> tuple[int, int, list[dict]]:
+        """Smart merge: update existing actions, add new ones.
+
+        Returns (new_count, updated_count, updated_details).
+        updated_details is a list of {id, title, source_id, matched_by} for transparency.
+        """
         new_count = 0
         updated_count = 0
+        updated_details = []
+        # Secure Score legacy fallbacks only apply to Secure Score imports
+        is_secure_score = (source_tool == SourceTool.SECURE_SCORE.value)
 
         with self._conn() as conn:
             for action in new_actions:
-                # Look for existing by source_tool + source_id
+                # Look for existing by source_tool + source_id (primary match)
                 existing = None
+                matched_by = ""
                 if action.source_id:
                     row = conn.execute(
                         "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
@@ -645,8 +908,10 @@ class Database:
                     ).fetchone()
                     if row:
                         existing = dict(row)
-                    # Fallback: match by old-style source_id (ss_<name>) for backwards compat
-                    if not existing:
+                        matched_by = "source_id"
+
+                    # Fallback: old-style source_id (ss_<name>) — Secure Score only
+                    if not existing and is_secure_score:
                         old_style_id = f"ss_{action.source_id.replace(' ', '_').lower()[:40]}"
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND source_id=?",
@@ -654,22 +919,27 @@ class Database:
                         ).fetchone()
                         if row:
                             existing = dict(row)
-                    # Fallback: match by controlName as old title (old imports used controlName as title)
-                    if not existing and action.source_id:
+                            matched_by = "old_style_source_id"
+
+                    # Fallback: controlName as old title — Secure Score only
+                    if not existing and is_secure_score and action.source_id:
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
                             (tenant_name, action.source_tool, action.source_id),
                         ).fetchone()
                         if row:
                             existing = dict(row)
-                    # Fallback: match by new title
-                    if not existing and action.title:
+                            matched_by = "source_id_as_title"
+
+                    # Fallback: title match — Secure Score only
+                    if not existing and is_secure_score and action.title:
                         row = conn.execute(
                             "SELECT * FROM actions WHERE tenant_name=? AND source_tool=? AND title=?",
                             (tenant_name, action.source_tool, action.title),
                         ).fetchone()
                         if row:
                             existing = dict(row)
+                            matched_by = "title"
 
                 if existing:
                     # Update existing action with all current data
@@ -769,6 +1039,13 @@ class Database:
                     vals = list(changes.values()) + [existing["id"]]
                     conn.execute(f"UPDATE actions SET {sets} WHERE id=?", vals)
                     updated_count += 1
+                    updated_details.append({
+                        "id": existing["id"],
+                        "title": action.title,
+                        "source_id": action.source_id,
+                        "existing_source_id": existing.get("source_id", ""),
+                        "matched_by": matched_by,
+                    })
                 else:
                     # Insert new action
                     now = datetime.utcnow().isoformat()
@@ -815,7 +1092,7 @@ class Database:
                  source_file, len(new_actions), new_count, updated_count),
             )
 
-        return new_count, updated_count
+        return new_count, updated_count, updated_details
 
     def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
         """Remove duplicate actions, keeping the most recently updated one.
@@ -926,6 +1203,24 @@ class Database:
                 (group_id, action_id),
             )
 
+    def update_correlation_group(self, group_id: str, canonical_name: str,
+                                  description: str = "", keywords: list[str] = None) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE correlation_groups SET canonical_name=?, description=?, keywords=?
+                   WHERE id=?""",
+                (canonical_name, description, json.dumps(keywords or []), group_id),
+            )
+        return {"id": group_id, "canonical_name": canonical_name,
+                "description": description, "keywords": keywords or []}
+
+    def delete_correlation_group(self, group_id: str):
+        with self._conn() as conn:
+            # Unlink all actions first
+            conn.execute("UPDATE actions SET correlation_group_id=NULL WHERE correlation_group_id=?",
+                         (group_id,))
+            conn.execute("DELETE FROM correlation_groups WHERE id=?", (group_id,))
+
     def unlink_action(self, action_id: str):
         with self._conn() as conn:
             conn.execute(
@@ -975,7 +1270,8 @@ class Database:
             return plan
 
     def update_plan(self, plan_id: str, **kwargs) -> Optional[dict]:
-        allowed = {"name", "description", "status"}
+        allowed = {"name", "description", "status", "responsible_person",
+                   "start_date", "end_date", "priority", "implementation_effort"}
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if updates:
             updates["updated_at"] = datetime.utcnow().isoformat()
@@ -1472,24 +1768,36 @@ class Database:
 
     # ── Scoring helpers ──
 
-    def get_scores(self, tenant_name: str) -> dict:
+    def get_scores(self, tenant_name: str, exclude_na: bool = False) -> dict:
         """Calculate live scores from action data.
 
         Uses authoritative Graph API overall scores when available (stored
         by store_graph_scores). Falls back to summing per-action scores.
         Per-workload/tool breakdowns always use per-action data.
+
+        If exclude_na is True, actions with status 'Not Applicable' or
+        'Risk Accepted' are excluded from scoring (they don't count toward
+        totals or percentages).
         """
         actions = self.get_actions(tenant_name)
         if not actions:
             return {"percentage": 0, "total_actions": 0, "completed_actions": 0,
-                    "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {}}
+                    "by_tool": {}, "by_workload": {}, "by_status": {}, "by_priority": {},
+                    "excluded_count": 0}
+
+        excluded_statuses = set()
+        if exclude_na:
+            excluded_statuses = {ActionStatus.NOT_APPLICABLE.value, ActionStatus.RISK_ACCEPTED.value}
+
+        scored_actions = [a for a in actions if a["status"] not in excluded_statuses] if excluded_statuses else actions
+        excluded_count = len(actions) - len(scored_actions)
 
         # Sum per-action scores
-        action_total_score = sum(a.get("score") or 0 for a in actions)
-        action_total_max = sum(a.get("max_score") or 0 for a in actions)
-        completed = sum(1 for a in actions if a["status"] == ActionStatus.COMPLETED.value)
+        action_total_score = sum(a.get("score") or 0 for a in scored_actions)
+        action_total_max = sum(a.get("max_score") or 0 for a in scored_actions)
+        completed = sum(1 for a in scored_actions if a["status"] == ActionStatus.COMPLETED.value)
 
-        # Check for authoritative Graph API scores
+        # Check for authoritative Graph API scores (used for Secure Score tool breakdown only)
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT graph_current_score, graph_max_score, graph_score_date FROM tenants WHERE name=?",
@@ -1502,20 +1810,17 @@ class Database:
             graph_score = row["graph_current_score"] if "graph_current_score" in row.keys() else None
             graph_max = row["graph_max_score"] if "graph_max_score" in row.keys() else None
 
-        # Use Graph API authoritative scores for overall percentage when available
-        if graph_max and graph_max > 0:
-            total_score = graph_score or 0
-            total_max = graph_max
-        else:
-            total_score = action_total_score
-            total_max = action_total_max
+        # Overall score always combines ALL sources.
+        # Graph API scores adjust the Secure Score tool's contribution but don't replace the total.
+        total_score = action_total_score
+        total_max = action_total_max
 
         by_tool = {}
         by_workload = {}
         by_status = {}
         by_priority = {}
 
-        for a in actions:
+        for a in scored_actions:
             tool = a["source_tool"]
             wl = a["workload"]
             st = a["status"]
@@ -1533,37 +1838,35 @@ class Database:
             by_status[st] = by_status.get(st, 0) + 1
             by_priority[pr] = by_priority.get(pr, 0) + 1
 
-        # For tool/workload breakdowns, use Graph max if available for Secure Score
+        # Use Graph API authoritative scores for Secure Score tool breakdown only
         if graph_max and graph_max > 0:
             ss_key = "Microsoft Secure Score"
             if ss_key in by_tool:
-                by_tool[ss_key]["score"] = total_score
-                by_tool[ss_key]["max_score"] = total_max
+                # Replace action-summed scores with Graph API authoritative scores
+                ss_old_score = by_tool[ss_key]["score"]
+                ss_old_max = by_tool[ss_key]["max_score"]
+                by_tool[ss_key]["score"] = graph_score or 0
+                by_tool[ss_key]["max_score"] = graph_max
+                # Adjust overall totals to reflect Graph API correction for Secure Score
+                total_score = total_score - ss_old_score + (graph_score or 0)
+                total_max = total_max - ss_old_max + graph_max
 
         for group in [by_tool, by_workload]:
             for data in group.values():
                 m = data["max_score"]
                 data["percentage"] = round((data["score"] / m) * 100, 2) if m > 0 else 0
 
-        # Per-workload: distribute Graph scores proportionally if available
-        if graph_max and graph_max > 0:
-            for wl_data in by_workload.values():
-                wl_action_max = wl_data["max_score"]
-                if wl_action_max > 0 and action_total_max > 0:
-                    # Scale the workload's share proportionally to the Graph total
-                    proportion = wl_action_max / action_total_max
-                    wl_data["max_score"] = round(total_max * proportion, 2)
-                    wl_data["percentage"] = round((wl_data["score"] / wl_data["max_score"]) * 100, 2) if wl_data["max_score"] > 0 else 0
-
         return {
             "total_score": round(total_score, 2),
             "total_max": round(total_max, 2),
             "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
-            "total_actions": len(actions),
+            "total_actions": len(scored_actions),
             "completed_actions": completed,
             "by_tool": by_tool,
             "by_workload": by_workload,
             "by_status": by_status,
             "by_priority": by_priority,
+            "excluded_count": excluded_count,
+            "exclude_na": exclude_na,
         }
 
