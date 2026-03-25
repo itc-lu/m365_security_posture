@@ -281,6 +281,10 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Plans
     </a>
+    <a href="#people" data-page="people">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      People
+    </a>
     <a href="#correlations" data-page="correlations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       Correlations
@@ -519,12 +523,12 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',people:'People & Assignments',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
+  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,people:renderPeople,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
@@ -1267,6 +1271,7 @@ async function renderActions() {
       <select id="f-workload" onchange="filterActions()"><option value="">All Workloads</option>${selectOptions(state.enums.workloads)}</select>
       <select id="f-source" onchange="filterActions()"><option value="">All Sources</option>${selectOptions(state.enums.source_tools)}</select>
       <select id="f-priority" onchange="filterActions()"><option value="">All Priorities</option>${selectOptions(state.enums.priorities)}</select>
+      <select id="f-freshness" onchange="filterActions()"><option value="">All Items</option><option value="new-7d">New (last 7 days)</option><option value="new-30d">New (last 30 days)</option><option value="stale-30d">Stale (not seen 30d+)</option><option value="stale-90d">Stale (not seen 90d+)</option><option value="never-imported">Never in a report</option></select>
     </div>
     <div class="filter-bar" id="zt-filters" style="display:none;margin-top:-8px;padding-top:0">
       <select id="f-pillar" onchange="applyZtFilters()"><option value="">All Pillars</option><option value="Identity">Identity</option><option value="Devices">Devices</option></select>
@@ -1318,10 +1323,31 @@ function applyZtFilters() {
   const pillar = document.getElementById('f-pillar')?.value;
   const ztStatus = document.getElementById('f-zt-status')?.value;
   const sfi = document.getElementById('f-sfi')?.value;
+  const freshness = document.getElementById('f-freshness')?.value;
 
   if(pillar) actions = actions.filter(a => (a.tags||[]).some(t => t === 'Pillar: '+pillar));
   if(ztStatus) actions = actions.filter(a => (a.tags||[]).some(t => t === 'ZT: '+ztStatus));
   if(sfi) actions = actions.filter(a => a.subcategory === sfi);
+
+  // Freshness filter based on created_at and last_seen_in_report
+  if(freshness) {
+    const now = new Date();
+    if(freshness === 'new-7d') {
+      const cutoff = new Date(now - 7*86400000).toISOString();
+      actions = actions.filter(a => a.created_at && a.created_at >= cutoff);
+    } else if(freshness === 'new-30d') {
+      const cutoff = new Date(now - 30*86400000).toISOString();
+      actions = actions.filter(a => a.created_at && a.created_at >= cutoff);
+    } else if(freshness === 'stale-30d') {
+      const cutoff = new Date(now - 30*86400000).toISOString();
+      actions = actions.filter(a => a.last_seen_in_report && a.last_seen_in_report < cutoff);
+    } else if(freshness === 'stale-90d') {
+      const cutoff = new Date(now - 90*86400000).toISOString();
+      actions = actions.filter(a => a.last_seen_in_report && a.last_seen_in_report < cutoff);
+    } else if(freshness === 'never-imported') {
+      actions = actions.filter(a => !a.last_seen_in_report);
+    }
+  }
 
   renderActionsTable(actions);
 }
@@ -1642,6 +1668,7 @@ function actionDetailHtml(a) {
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
       <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
+      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Links & People</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
@@ -1722,6 +1749,23 @@ function actionDetailHtml(a) {
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
+    <!-- Links & People Tab -->
+    <div class="action-tab-content" id="atab-${uid}-links">
+      <div class="grid grid-2" style="gap:20px">
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Responsible Persons</div>
+          <div id="action-persons-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+          <button class="btn btn-sm" onclick="showAssignPerson('${a.id}','${uid}');event.stopPropagation()">+ Assign Person</button>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
+          <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+          <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
+        </div>
+      </div>
+      ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span>
+      ${a.import_suggested_status?` &middot; <span style="font-size:12px;color:var(--warning)">Import wanted status: <strong>${a.import_suggested_status}</strong> (protected)</span>`:''}</div>`:''}
+    </div>
     <!-- History Tab -->
     ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
   </div>`;
@@ -1744,6 +1788,97 @@ function toggleActionDetail(id) {
   el.classList.toggle('hidden');
   expandedAction = el.classList.contains('hidden') ? null : id;
   if(!el.classList.contains('hidden')) loadActionDeps(id);
+}
+
+async function loadActionLinks(actionId, uid) {
+  const [persons, links] = await Promise.all([
+    api.get(`/api/actions/${actionId}/persons`),
+    api.get(`/api/actions/${actionId}/links`),
+  ]);
+
+  // Render persons
+  const personsEl = document.getElementById(`action-persons-${uid}`);
+  if(personsEl) {
+    if(persons.length === 0) {
+      personsEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No persons assigned</div>';
+    } else {
+      personsEl.innerHTML = persons.map(p =>
+        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">
+          <span style="background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${p.name.charAt(0).toUpperCase()}</span>
+          <span><strong>${p.name}</strong>${p.role?' &middot; '+p.role:''}</span>
+          <button class="btn btn-sm" onclick="unassignPerson('${actionId}','${p.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Render links
+  const linksEl = document.getElementById(`action-links-${uid}`);
+  if(linksEl) {
+    if(links.length === 0) {
+      linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
+    } else {
+      linksEl.innerHTML = links.map(l =>
+        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
+          <span style="font-size:10px;color:var(--text-light)">${l.source_tool}</span>
+          <span>${l.title}</span>
+          ${statusBadge(l.status)}
+          <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+        </div>`
+      ).join('');
+    }
+  }
+}
+
+async function showAssignPerson(actionId, uid) {
+  const persons = await api.get('/api/responsible-persons');
+  if(!persons.length) {
+    toast('No persons registered. Add people first in the People page.','error');
+    return;
+  }
+  const opts = persons.map(p => `<option value="${p.id}">${p.name}${p.role?' ('+p.role+')':''}</option>`).join('');
+  openModal('Assign Person', `
+    <div class="form-group"><label>Person</label><select id="assign-person-select">${opts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="doAssignPerson('${actionId}','${uid}')">Assign</button>`);
+}
+
+async function doAssignPerson(actionId, uid) {
+  const personId = document.getElementById('assign-person-select').value;
+  await api.post(`/api/actions/${actionId}/persons`, {person_id: personId});
+  closeModal(); toast('Person assigned','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function unassignPerson(actionId, personId, uid) {
+  await api.del(`/api/actions/${actionId}/persons/${personId}`);
+  toast('Person unassigned','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function showLinkAction(actionId, uid) {
+  if(!state.activeTenant) return;
+  const actions = await api.get(`/api/tenants/${state.activeTenant.name}/actions`);
+  const other = actions.filter(a => a.id !== actionId).slice(0, 200);
+  const opts = other.map(a => `<option value="${a.id}">[${a.source_tool}] ${a.title.substring(0,60)}</option>`).join('');
+  openModal('Link Action', `
+    <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">Link this action to another action from a different tool to indicate they address the same recommendation.</p>
+    <div class="form-group"><label>Target Action</label><select id="link-action-select" style="max-width:100%">${opts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="doLinkAction('${actionId}','${uid}')">Link</button>`);
+}
+
+async function doLinkAction(actionId, uid) {
+  const targetId = document.getElementById('link-action-select').value;
+  await api.post(`/api/actions/${actionId}/links`, {target_action_id: targetId});
+  closeModal(); toast('Actions linked','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function unlinkAction(sourceId, targetId, uid) {
+  await api.del(`/api/actions/${sourceId}/links/${targetId}`);
+  toast('Link removed','success');
+  loadActionLinks(sourceId, uid);
 }
 
 function showAddAction() {
@@ -1850,14 +1985,18 @@ async function renderImport() {
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
         ${hasSecret ? `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively with device code (uses <strong>delegated</strong> permissions).</p>
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>
+          <button class="btn" onclick="startInteractiveAuth()">Sign in with Browser</button>
           <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
         </div>
         ` : `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. No credentials are stored.</p>
-        <button class="btn btn-primary" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Microsoft</button>
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. Uses Global Reader permissions. No secrets stored.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="startInteractiveAuth()">Sign in with Browser (Recommended)</button>
+          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+        </div>
         `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
       </div>`;
@@ -1888,6 +2027,48 @@ async function renderImport() {
 
 // ── Graph API Auth ──
 let graphPollTimer = null;
+
+async function startInteractiveAuth() {
+  const t = state.activeTenant.name;
+  const statusEl = document.getElementById('graph-auth-status');
+  statusEl.innerHTML = '<div style="color:var(--text-light)">Starting interactive authentication...</div>';
+
+  const r = await api.post(`/api/tenants/${t}/graph/interactive-auth`);
+  if(r.error) {
+    statusEl.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+
+  // Open the auth URL in a new window
+  window.open(r.auth_url, '_blank', 'width=600,height=700');
+  statusEl.innerHTML = `
+    <div class="card" style="padding:12px">
+      <p>&#128274; <strong>Sign in with your browser</strong></p>
+      <p style="font-size:12px;color:var(--text-light);margin-top:4px">A new window should have opened. Sign in with an account that has <strong>Global Reader</strong> (or Security Reader) permissions.</p>
+      <p style="font-size:12px;color:var(--text-light);margin-top:8px">Waiting for authentication to complete...</p>
+    </div>`;
+
+  // Poll for completion
+  for(let i=0; i<60; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const status = await api.get(`/api/tenants/${t}/graph/interactive-status`);
+    if(status.authenticated) {
+      statusEl.innerHTML = `
+        <div style="color:var(--success);font-weight:600">&#10003; Authenticated (expires in ${Math.floor(status.expires_in/60)} min)</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="graphImportScores()">Import Secure Scores</button>
+          <button class="btn" onclick="graphFetchControls()">Fetch Control Profiles</button>
+        </div>
+        <div id="graph-result" style="margin-top:8px"></div>`;
+      return;
+    }
+    if(status.expired) {
+      statusEl.innerHTML = '<div style="color:var(--danger)">Authentication expired. Please try again.</div>';
+      return;
+    }
+  }
+  statusEl.innerHTML = '<div style="color:var(--danger)">Authentication timed out. Please try again.</div>';
+}
 
 async function startGraphAuth() {
   const t = state.activeTenant.name;
@@ -2057,6 +2238,8 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
+      ${r.protected_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--primary)">&#128274; Protected Actions (status preserved)</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions had their status protected during import (Risk Accepted, Completed, In Progress, Exception).</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Current Status</th><th>Import Wanted</th></tr></thead><tbody>${r.protected_actions.map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.current_status)}</td><td>${statusBadge(d.import_wanted_status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.stale_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--warning)">&#9888; Stale Actions (${r.stale_actions.length})</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions from the same source tool were not in this import. They may be obsolete.</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Status</th><th>Last Seen</th></tr></thead><tbody>${r.stale_actions.slice(0,20).map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.status)}</td><td>${d.last_seen?.substring(0,10)||'—'}</td></tr>`).join('')}</tbody></table>${r.stale_actions.length>20?`<div style="font-size:11px;color:var(--text-light)">... and ${r.stale_actions.length-20} more</div>`:''}</div>` : ''}
       ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
@@ -2549,6 +2732,175 @@ async function deletePlan(id) {
   toast('Plan deleted','success'); renderPlans();
 }
 
+// ── People & Assignments ──
+let _peopleView = 'list'; // 'list' or 'kanban'
+let _peopleFilter = '';
+
+async function renderPeople() {
+  const c = document.getElementById('content');
+  const [persons, allActions] = await Promise.all([
+    api.get('/api/responsible-persons'),
+    requireTenant() ? api.get(`/api/tenants/${state.activeTenant.name}/actions`) : Promise.resolve([]),
+  ]);
+  const assignments = requireTenant() ? await api.get(`/api/tenants/${state.activeTenant.name}/action-persons`) : {};
+  // Build reverse map: person_id -> [actions]
+  const personActions = {};
+  persons.forEach(p => personActions[p.id] = []);
+  for(const [aid, plist] of Object.entries(assignments)) {
+    const action = allActions.find(a => a.id === aid);
+    if(!action) continue;
+    for(const p of plist) {
+      if(!personActions[p.id]) personActions[p.id] = [];
+      personActions[p.id].push(action);
+    }
+  }
+  // Unassigned actions
+  const assignedIds = new Set(Object.keys(assignments));
+  const unassigned = allActions.filter(a => !assignedIds.has(a.id));
+
+  // Plans map
+  let plansMap = {};
+  if(requireTenant()) {
+    try {
+      const plans = await api.get(`/api/tenants/${state.activeTenant.name}/plans`);
+      for(const p of plans) for(const pa of (p.actions||[])) {
+        if(!plansMap[pa.action_id]) plansMap[pa.action_id] = [];
+        plansMap[pa.action_id].push(p.name);
+      }
+    } catch(e) {}
+  }
+
+  const personList = persons.map(p => {
+    const acts = personActions[p.id] || [];
+    const todo = acts.filter(a=>a.status==='ToDo').length;
+    const prog = acts.filter(a=>a.status==='In Progress').length;
+    const done = acts.filter(a=>a.status==='Completed').length;
+    return `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td style="font-size:12px">${p.email||'—'}</td>
+      <td style="font-size:12px">${p.role||'—'}</td>
+      <td style="font-size:12px">${p.department||'—'}</td>
+      <td>${acts.length}</td>
+      <td><span class="badge badge-danger">${todo}</span> <span class="badge badge-warning">${prog}</span> <span class="badge badge-success">${done}</span></td>
+      <td>
+        <button class="btn btn-sm" onclick="editPerson('${p.id}','${p.name.replace(/'/g,"\\'")}','${(p.email||'').replace(/'/g,"\\'")}','${(p.role||'').replace(/'/g,"\\'")}','${(p.department||'').replace(/'/g,"\\'")}')">Edit</button>
+        <button class="btn btn-sm" onclick="deletePerson('${p.id}')" style="color:var(--danger)">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Kanban: columns per person + unassigned
+  const filterLower = _peopleFilter.toLowerCase();
+  const kanbanCols = persons.map(p => {
+    let acts = (personActions[p.id]||[]);
+    if(filterLower) acts = acts.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower) || a.source_tool.toLowerCase().includes(filterLower));
+    const cards = acts.map(a => {
+      const planBadge = plansMap[a.id] ? `<div style="font-size:10px;color:var(--primary);margin-top:4px">&#128203; ${plansMap[a.id].join(', ')}</div>` : '';
+      return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer" onclick="navigate('actions');setTimeout(()=>toggleActionDetail('${a.id}'),300)">
+        <div style="font-size:12px;font-weight:500">${a.title}</div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
+        <div style="font-size:10px;color:var(--text-light);margin-top:4px">${a.source_tool} &middot; ${a.workload}</div>
+        ${planBadge}
+      </div>`;
+    }).join('');
+    return `<div style="min-width:280px;max-width:320px;flex-shrink:0">
+      <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+        <span>${p.name}</span>
+        <span class="badge" style="background:var(--primary);color:#fff">${acts.length}</span>
+      </div>
+      <div style="max-height:calc(100vh - 260px);overflow-y:auto">${cards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">No actions</div>'}</div>
+    </div>`;
+  }).join('');
+
+  // Unassigned column
+  let unassignedFiltered = unassigned;
+  if(filterLower) unassignedFiltered = unassigned.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower));
+  const unassignedCards = unassignedFiltered.slice(0,50).map(a => {
+    return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px">
+      <div style="font-weight:500">${a.title}</div>
+      <div style="margin-top:4px">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
+    </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <div class="flex gap-8">
+        <button class="btn btn-sm ${_peopleView==='list'?'btn-primary':''}" onclick="_peopleView='list';renderPeople()">List</button>
+        <button class="btn btn-sm ${_peopleView==='kanban'?'btn-primary':''}" onclick="_peopleView='kanban';renderPeople()">Kanban</button>
+      </div>
+      <div class="flex gap-8">
+        ${_peopleView==='kanban'?`<input class="form-control" style="width:200px" placeholder="Filter actions..." value="${_peopleFilter}" oninput="_peopleFilter=this.value;renderPeople()">`:''}
+        <button class="btn btn-primary btn-sm" onclick="showAddPerson()">+ Add Person</button>
+      </div>
+    </div>
+    ${_peopleView==='list' ? `
+    <div class="card mb-16">
+      <div class="card-header">Responsible Persons (${persons.length})</div>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Actions</th><th>Status</th><th></th></tr></thead>
+      <tbody>${personList||'<tr><td colspan="7" class="text-center">No persons registered. Add your first team member.</td></tr>'}</tbody></table></div>
+    </div>` : `
+    <div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:16px">
+      ${kanbanCols}
+      <div style="min-width:280px;max-width:320px;flex-shrink:0">
+        <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--text-light)">Unassigned</span>
+          <span class="badge">${unassigned.length}</span>
+        </div>
+        <div style="max-height:calc(100vh - 260px);overflow-y:auto">${unassignedCards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">All actions assigned</div>'}</div>
+        ${unassigned.length>50?`<div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px">${unassigned.length-50} more...</div>`:''}
+      </div>
+    </div>`}`;
+}
+
+function showAddPerson() {
+  openModal('Add Person', `
+    <div class="form-group"><label>Name</label><input id="rp-name" placeholder="Jane Doe"></div>
+    <div class="form-group"><label>Email</label><input id="rp-email" placeholder="jane@company.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><input id="rp-role" placeholder="Security Engineer"></div>
+      <div class="form-group"><label>Department</label><input id="rp-department" placeholder="IT Security"></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addPerson()">Add</button>`);
+}
+
+async function addPerson() {
+  const name = document.getElementById('rp-name').value;
+  if(!name) return toast('Name is required','error');
+  await api.post('/api/responsible-persons', {
+    name, email:document.getElementById('rp-email').value,
+    role:document.getElementById('rp-role').value,
+    department:document.getElementById('rp-department').value
+  });
+  closeModal(); toast('Person added','success'); renderPeople();
+}
+
+function editPerson(id, name, email, role, dept) {
+  openModal('Edit Person', `
+    <div class="form-group"><label>Name</label><input id="rp-name" value="${name}"></div>
+    <div class="form-group"><label>Email</label><input id="rp-email" value="${email}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><input id="rp-role" value="${role}"></div>
+      <div class="form-group"><label>Department</label><input id="rp-department" value="${dept}"></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updatePerson('${id}')">Save</button>`);
+}
+
+async function updatePerson(id) {
+  await api.put(`/api/responsible-persons/${id}`, {
+    name:document.getElementById('rp-name').value,
+    email:document.getElementById('rp-email').value,
+    role:document.getElementById('rp-role').value,
+    department:document.getElementById('rp-department').value
+  });
+  closeModal(); toast('Person updated','success'); renderPeople();
+}
+
+async function deletePerson(id) {
+  if(!confirm('Delete this person? They will be unassigned from all actions.')) return;
+  await api.del(`/api/responsible-persons/${id}`);
+  toast('Person deleted','success'); renderPeople();
+}
+
 // ── Correlations ──
 let _corrTab = 'results';
 
@@ -2919,6 +3271,7 @@ async function renderE8() {
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${a.maturity?.replace('Maturity ','')||'—'}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+      <td><button class="btn btn-sm" onclick="event.stopPropagation();removeE8Action('${a.id}')" title="Remove from E8 control" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
     </tr>`).join('');
 
     return `<div class="card mb-16">
@@ -2984,7 +3337,7 @@ async function renderE8() {
             </div>
             <button class="btn btn-sm" onclick="showE8AddAction('${ctrl.replace(/'/g,"\\'")}', '${d.control_id||''}')">+ Add Action</button>
           </div>
-          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
+          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
         </div>
       </div>
     </div>`;
@@ -3123,6 +3476,13 @@ async function e8AddAction(controlName) {
   const r = await api.post(`/api/tenants/${state.activeTenant.name}/actions`, data);
   if(r.error) return toast(r.error,'error');
   closeModal(); toast('Action created','success'); renderE8();
+}
+
+async function removeE8Action(actionId) {
+  if(!confirm('Remove this action from Essential Eight control?')) return;
+  await api.put(`/api/actions/${actionId}`, {essential_eight_control:'', essential_eight_maturity:''});
+  toast('Action removed from E8 control','success');
+  renderE8();
 }
 
 // ── SCuBA ──

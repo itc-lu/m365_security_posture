@@ -34,7 +34,11 @@ from .planner import simulate_plan, suggest_phases, get_prioritized_actions, cal
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
 from .compliance import auto_map_compliance, map_action_to_frameworks
 from .drift import detect_drift
-from .graph_api import start_device_code_flow, poll_for_token, fetch_secure_scores, fetch_control_profiles, client_credentials_token
+from .graph_api import (
+    start_device_code_flow, poll_for_token, fetch_secure_scores,
+    fetch_control_profiles, client_credentials_token,
+    start_interactive_auth, exchange_auth_code, _interactive_sessions,
+)
 from .web_frontend import get_spa_html
 
 PARSER_MAP = {
@@ -395,6 +399,23 @@ def create_app(db_path: str = None) -> Flask:
             # Detect drift vs previous snapshot
             drift = detect_drift(db, name, source_tool)
 
+            # Count actions whose status was protected during import
+            protected_actions = [d for d in updated_details if d.get("status_protected")]
+
+            # Find stale actions: same source_tool but not in this import
+            all_tenant_actions = db.get_actions(name)
+            import_ts = datetime.utcnow().isoformat()
+            stale_actions = []
+            for a in all_tenant_actions:
+                if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
+                    # If last_seen is significantly older than this import, it's stale
+                    if a["last_seen_in_report"] < import_ts[:10]:
+                        stale_actions.append({
+                            "id": a["id"], "title": a["title"],
+                            "status": a["status"],
+                            "last_seen": a["last_seen_in_report"],
+                        })
+
             result = {
                 "success": True,
                 "source": source,
@@ -403,6 +424,8 @@ def create_app(db_path: str = None) -> Flask:
                 "new_actions": new_count,
                 "updated_actions": updated_count,
                 "updated_details": updated_details,
+                "protected_actions": protected_actions,
+                "stale_actions": stale_actions,
                 "correlation": corr,
                 "compliance": compliance,
                 "drift": drift,
@@ -1047,6 +1070,81 @@ def create_app(db_path: str = None) -> Flask:
 
         return jsonify(result)
 
+    # ── Responsible Persons ──
+
+    @app.route("/api/responsible-persons", methods=["GET"])
+    def api_list_persons():
+        return jsonify(db.get_responsible_persons())
+
+    @app.route("/api/responsible-persons", methods=["POST"])
+    def api_create_person():
+        data = request.get_json() or {}
+        if not data.get("name"):
+            return _json_error("name is required")
+        pid = db.create_responsible_person(
+            data["name"], data.get("email", ""),
+            data.get("role", ""), data.get("department", ""))
+        return jsonify({"id": pid, "name": data["name"]})
+
+    @app.route("/api/responsible-persons/<pid>", methods=["PUT"])
+    def api_update_person(pid):
+        data = request.get_json() or {}
+        db.update_responsible_person(pid, data)
+        return jsonify({"ok": True})
+
+    @app.route("/api/responsible-persons/<pid>", methods=["DELETE"])
+    def api_delete_person(pid):
+        db.delete_responsible_person(pid)
+        return jsonify({"ok": True})
+
+    @app.route("/api/actions/<action_id>/persons", methods=["GET"])
+    def api_action_persons(action_id):
+        return jsonify(db.get_action_persons(action_id))
+
+    @app.route("/api/actions/<action_id>/persons", methods=["POST"])
+    def api_assign_person(action_id):
+        data = request.get_json() or {}
+        person_id = data.get("person_id")
+        if not person_id:
+            return _json_error("person_id required")
+        db.assign_person_to_action(action_id, person_id)
+        return jsonify({"ok": True})
+
+    @app.route("/api/actions/<action_id>/persons/<pid>", methods=["DELETE"])
+    def api_unassign_person(action_id, pid):
+        db.unassign_person_from_action(action_id, pid)
+        return jsonify({"ok": True})
+
+    @app.route("/api/responsible-persons/<pid>/actions", methods=["GET"])
+    def api_person_actions(pid):
+        tenant = request.args.get("tenant")
+        return jsonify(db.get_person_actions(pid, tenant))
+
+    @app.route("/api/tenants/<name>/action-persons", methods=["GET"])
+    def api_all_action_persons(name):
+        """Return all action→person assignments for a tenant."""
+        return jsonify(db.get_all_action_person_assignments(name))
+
+    # ── Action Links (cross-tool) ──
+
+    @app.route("/api/actions/<action_id>/links", methods=["GET"])
+    def api_action_links(action_id):
+        return jsonify(db.get_linked_actions(action_id))
+
+    @app.route("/api/actions/<action_id>/links", methods=["POST"])
+    def api_link_action(action_id):
+        data = request.get_json() or {}
+        target_id = data.get("target_action_id")
+        if not target_id:
+            return _json_error("target_action_id required")
+        db.link_actions(action_id, target_id, data.get("link_type", "related"))
+        return jsonify({"ok": True})
+
+    @app.route("/api/actions/<aid>/links/<tid>", methods=["DELETE"])
+    def api_unlink_action(aid, tid):
+        db.unlink_actions(aid, tid)
+        return jsonify({"ok": True})
+
     # ── Pin/unpin actions on dashboard ──
 
     @app.route("/api/actions/<action_id>/pin", methods=["POST"])
@@ -1677,6 +1775,112 @@ def create_app(db_path: str = None) -> Flask:
             })
         except Exception as e:
             return _json_error(f"Client credentials auth failed: {str(e)}")
+
+    # ── Interactive Browser Auth ──
+
+    _interactive_flows: dict = {}
+
+    @app.route("/api/tenants/<name>/graph/interactive-auth", methods=["POST"])
+    def api_graph_interactive_auth(name):
+        """Start interactive browser-based OAuth2 with PKCE for Graph API.
+
+        The user signs in with their browser (Global Reader permissions suffice).
+        No client secret required.
+        """
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+
+        tenant_id = tenant.get("tenant_id", "")
+        client_id = tenant.get("client_id", "")
+
+        if not tenant_id or not client_id:
+            return _json_error(
+                "Tenant must have tenant_id and client_id configured. "
+                "Register an app in Entra ID (set 'Allow public client flows' = Yes, "
+                "add SecurityEvents.Read.All delegated permission, "
+                "add http://localhost:8400/auth/callback as redirect URI) "
+                "and set the IDs on the tenant."
+            )
+
+        try:
+            auth_data = start_interactive_auth(tenant_id, client_id)
+            _interactive_flows[name] = {
+                "tenant_id": tenant_id,
+                "client_id": client_id,
+                "state": auth_data["state"],
+                "code_verifier": auth_data["code_verifier"],
+                "redirect_uri": auth_data["redirect_uri"],
+            }
+            return jsonify({
+                "auth_url": auth_data["auth_url"],
+                "message": "Open the URL in your browser to sign in.",
+            })
+        except Exception as e:
+            return _json_error(f"Interactive auth failed: {str(e)}")
+
+    @app.route("/auth/callback")
+    def auth_callback():
+        """Handle the OAuth2 redirect callback from Entra ID."""
+        code = request.args.get("code")
+        state = request.args.get("state")
+        error = request.args.get("error")
+        error_desc = request.args.get("error_description", "")
+
+        if error:
+            return f"""<html><body style="font-family:system-ui;padding:40px">
+                <h2 style="color:red">Authentication Failed</h2>
+                <p>{error}: {error_desc}</p>
+                <p>You can close this window.</p></body></html>"""
+
+        # Find which tenant this callback belongs to
+        tenant_name = None
+        flow = None
+        for tname, fdata in _interactive_flows.items():
+            if fdata.get("state") == state:
+                tenant_name = tname
+                flow = fdata
+                break
+
+        if not flow:
+            return """<html><body style="font-family:system-ui;padding:40px">
+                <h2 style="color:red">Error</h2>
+                <p>Unknown auth state. The flow may have expired.</p>
+                </body></html>"""
+
+        try:
+            token_result = exchange_auth_code(
+                flow["tenant_id"], flow["client_id"],
+                code, flow["code_verifier"], flow["redirect_uri"])
+
+            expires_in = token_result.get("expires_in", 3600)
+            _device_flows[tenant_name] = {
+                "access_token": token_result["access_token"],
+                "expires_at": datetime.utcnow().timestamp() + expires_in,
+            }
+            _interactive_flows.pop(tenant_name, None)
+
+            return f"""<html><body style="font-family:system-ui;padding:40px;text-align:center">
+                <h2 style="color:green">Authenticated Successfully</h2>
+                <p>You are now signed in for tenant <strong>{tenant_name}</strong>.</p>
+                <p>Token expires in {expires_in // 60} minutes.</p>
+                <p>You can close this window and return to the application.</p>
+                <script>window.close()</script></body></html>"""
+        except Exception as e:
+            return f"""<html><body style="font-family:system-ui;padding:40px">
+                <h2 style="color:red">Token Exchange Failed</h2>
+                <p>{str(e)}</p></body></html>"""
+
+    @app.route("/api/tenants/<name>/graph/interactive-status", methods=["GET"])
+    def api_graph_interactive_status(name):
+        """Check if interactive auth has completed."""
+        flow = _device_flows.get(name)
+        if flow and "access_token" in flow:
+            if datetime.utcnow().timestamp() > flow["expires_at"]:
+                return jsonify({"authenticated": False, "expired": True})
+            remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
+            return jsonify({"authenticated": True, "expires_in": remaining})
+        return jsonify({"authenticated": False})
 
     # ── Enums update ──
 
