@@ -1198,7 +1198,36 @@ async function renderTenants() {
       </div>
     </div>`).join('');
 
-  document.getElementById('content').innerHTML = cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>';
+  // Migration status
+  const migStatus = await api.get('/api/admin/migration-status');
+  const migHtml = migStatus.migrated
+    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
+    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
+       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
+       <div id="migration-result" style="margin-top:8px"></div>`;
+
+  document.getElementById('content').innerHTML = (cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>')
+    + `<div class="card mt-16"><div class="card-header">Database Administration</div>${migHtml}</div>`;
+}
+
+async function migrateDatabase() {
+  if(!confirm('This will migrate to per-tenant databases. The original database will be backed up. Continue?')) return;
+  const el = document.getElementById('migration-result');
+  el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
+  const r = await api.post('/api/admin/migrate-database');
+  if(r.error) {
+    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+  if(r.success) {
+    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
+      `<div style="font-size:12px;padding:2px 0"><strong>${t}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
+    ).join('');
+    el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
+      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${r.backup}</div>
+      ${details}
+      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
+  }
 }
 
 function showAddTenant() {

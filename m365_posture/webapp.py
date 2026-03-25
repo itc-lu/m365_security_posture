@@ -1888,6 +1888,33 @@ def create_app(db_path: str = None) -> Flask:
     def api_frameworks():
         return jsonify([f.value for f in ComplianceFramework])
 
+    # ── Database Migration ──
+
+    @app.route("/api/admin/migrate-database", methods=["POST"])
+    def api_migrate_database():
+        """Migrate to per-tenant database layout."""
+        from .tenant_db import migrate_to_per_tenant, is_migrated
+        if is_migrated():
+            return jsonify({"already_migrated": True,
+                            "message": "Database already migrated to per-tenant layout."})
+        result = migrate_to_per_tenant(db.db_path)
+        return jsonify(result)
+
+    @app.route("/api/admin/migration-status", methods=["GET"])
+    def api_migration_status():
+        from .tenant_db import is_migrated, MIGRATION_MARKER, TENANT_DB_DIR
+        if not is_migrated():
+            return jsonify({"migrated": False})
+        import json as _json
+        marker = _json.loads(MIGRATION_MARKER.read_text())
+        tenant_dbs = list(TENANT_DB_DIR.glob("*.db"))
+        return jsonify({
+            "migrated": True,
+            "migrated_at": marker.get("migrated_at"),
+            "tenants": marker.get("tenants", []),
+            "tenant_db_count": len(tenant_dbs),
+        })
+
     return app
 
 
