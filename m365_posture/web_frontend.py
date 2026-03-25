@@ -2449,13 +2449,18 @@ async function viewPlan(planId) {
   const actionIds = plan.items.map(i => i.action_id);
 
   let sim = {actions_count:0, percentage_gain:0, current_percentage:0, projected_percentage:0, by_tool:{}, essential_eight_impact:{}, risk_reduction:{}, licences_needed:[], effort_breakdown:{}, user_impact_summary:{}};
-  let phases = [];
+  let suggestedPhases = [];
   if(actionIds.length) {
-    [sim, phases] = await Promise.all([
+    [sim, suggestedPhases] = await Promise.all([
       api.post(`/api/tenants/${t}/simulate`, {action_ids:actionIds}),
       api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3})
     ]);
   }
+
+  // Fetch all actions for detail expansion
+  const allActions = await api.get(`/api/tenants/${t}/actions`);
+  const actionMap = {};
+  allActions.forEach(a => actionMap[a.id] = a);
 
   let toolImpact = Object.entries(sim.by_tool||{}).map(([tool,d]) => `
     <div class="mb-8"><div class="flex justify-between"><span style="font-size:13px">${tool}</span><span style="font-size:13px;font-weight:600;color:var(--success)">+${d.percentage_gain?.toFixed(2)||0}%</span></div>
@@ -2467,33 +2472,62 @@ async function viewPlan(planId) {
 
   let riskReduction = Object.entries(sim.risk_reduction||{}).map(([level,n]) => `<span class="badge badge-${level==='Critical'||level==='High'?'danger':'warning'}">${n}x ${level}</span>`).join(' ');
 
-  // Plan actions table with remove button
-  let planActionsRows = plan.items.map(item => {
-    const a = item;
-    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
-    return `<tr>
-      <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
-      <td>${statusBadge(a.status||'ToDo')}</td>
-      <td>${priorityBadge(a.priority||'Medium')}</td>
-      <td style="font-size:12px">${a.workload||''}</td>
-      <td style="font-size:12px">${a.implementation_effort||''}</td>
-      <td>${scoreDisplay}</td>
-      <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
-    </tr>`;
-  }).join('');
+  // Phase names
+  const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
+  const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
 
-  let phaseHtml = phases.map((ph,i) => `
-    <div class="card phase-card phase-${i+1} mb-16">
-      <div class="card-header">${ph.name} <span class="badge badge-info">${ph.action_count} actions</span></div>
-      <div class="grid grid-3 mb-8">
-        <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', ')}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${ph.licences_needed.join(', ')||'None required'}</div></div>
+  // Group items by phase
+  const byPhase = {1:[], 2:[], 3:[]};
+  plan.items.forEach(item => {
+    const ph = item.phase || 1;
+    if(!byPhase[ph]) byPhase[ph] = [];
+    byPhase[ph].push(item);
+  });
+
+  // Render phase cards with clickable items
+  function renderPhaseCard(phaseNum) {
+    const items = byPhase[phaseNum] || [];
+    const phName = phaseNames[phaseNum];
+    const phColor = phaseColors[phaseNum];
+    let phaseScore = 0;
+    items.forEach(a => { if(a.score && a.max_score && a.status !== 'Completed') phaseScore += a.max_score - (a.score||0); });
+
+    const rows = items.map(a => {
+      const full = actionMap[a.action_id] || a;
+      const scoreDisplay = a.score != null && a.max_score != null ? a.score+'/'+a.max_score : '-';
+      // Phase move dropdown options (other phases)
+      const moveOpts = [1,2,3].filter(p=>p!==phaseNum).map(p =>
+        `<option value="${p}">${phaseNames[p]}</option>`
+      ).join('');
+      return `<tr onclick="togglePlanActionDetail('plan-${a.action_id}')" style="cursor:pointer" id="plan-row-${a.action_id}">
+        <td>${a.title}</td>
+        <td>${statusBadge(a.status||'ToDo')}</td>
+        <td>${priorityBadge(a.priority||'Medium')}</td>
+        <td style="font-size:12px">${a.workload||''}</td>
+        <td style="font-size:12px">${a.implementation_effort||'Medium'}</td>
+        <td>${scoreDisplay}</td>
+        <td onclick="event.stopPropagation()">
+          <select onchange="movePlanItemPhase('${planId}','${a.action_id}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+            <option value="" disabled selected>Move</option>
+            ${moveOpts}
+          </select>
+        </td>
+        <td onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="removePlanItem('${planId}','${a.action_id}')" title="Remove" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
+      </tr>
+      <tr id="detail-plan-${a.action_id}" class="hidden"><td colspan="8" style="padding:0">${actionDetailHtml(full)}</td></tr>`;
+    }).join('');
+
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="border-left:4px solid ${phColor};padding-left:12px">
+        <div>
+          <div class="card-header" style="margin:0">Phase ${phaseNum} — ${phName}</div>
+          <div style="font-size:12px;color:var(--text-light)">${items.length} actions${phaseScore>0?' &middot; Est. score gain: +'+phaseScore.toFixed(0):''}</div>
+        </div>
+        <span class="badge" style="background:${phColor};color:#fff;font-size:14px">${items.length}</span>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
-        ${ph.actions.map(a=>`<tr><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('')}
-      </tbody></table></div>
-    </div>`).join('');
+      ${items.length ? `<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Action</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th style="width:80px">Move to</th><th style="width:40px"></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div style="padding:16px;text-align:center;color:var(--text-light);font-style:italic">No actions in this phase. Move actions here or add new ones.</div>'}
+    </div>`;
+  }
 
   const statusOpts = ['Draft','Active','Completed','Archived'].map(s => `<option value="${s}" ${s===plan.status?'selected':''}>${s}</option>`).join('');
 
@@ -2527,13 +2561,16 @@ async function viewPlan(planId) {
       <div class="card stat-card">${gauge(sim.projected_percentage||0, 100, 'Projected')}</div>
     </div>
 
-    <div class="card mb-16">
-      <div class="flex justify-between items-center mb-8">
-        <div class="card-header" style="margin:0">Plan Actions (${plan.items.length})</div>
+    <div class="flex justify-between items-center mb-8">
+      <h3 style="margin:0">Phased Rollout</h3>
+      <div class="flex gap-8">
+        <button class="btn btn-sm" onclick="autoAssignPhases('${planId}')" title="Auto-assign actions to phases based on ROI, effort, and licence requirements">Auto-assign Phases</button>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
-      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
+    ${renderPhaseCard(1)}
+    ${renderPhaseCard(2)}
+    ${renderPhaseCard(3)}
 
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Impact by Source Tool</div>${toolImpact||'<div style="color:var(--text-light)">No data</div>'}</div>
@@ -2544,10 +2581,45 @@ async function viewPlan(planId) {
         <div class="card-header mt-16">Effort Breakdown</div><div style="font-size:13px">${Object.entries(sim.effort_breakdown||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
         <div class="card-header mt-16">User Impact</div><div style="font-size:13px">${Object.entries(sim.user_impact_summary||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
       </div>
-    </div>
-
-    ${phaseHtml ? `<h3 class="mb-16">Suggested Phased Rollout</h3>${phaseHtml}` : ''}`;
+    </div>`;
   setTimeout(applySort, 50);
+}
+
+let _planExpandedAction = null;
+function togglePlanActionDetail(id) {
+  const el = document.getElementById('detail-'+id);
+  if(!el) return;
+  if(_planExpandedAction && _planExpandedAction!==id) {
+    const prev = document.getElementById('detail-'+_planExpandedAction);
+    if(prev) prev.classList.add('hidden');
+  }
+  el.classList.toggle('hidden');
+  _planExpandedAction = el.classList.contains('hidden') ? null : id;
+}
+
+async function movePlanItemPhase(planId, actionId, newPhase) {
+  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(newPhase)});
+  toast('Moved to Phase ' + newPhase, 'success');
+  viewPlan(planId);
+}
+
+async function autoAssignPhases(planId) {
+  const t = state.activeTenant.name;
+  const plan = await api.get(`/api/plans/${planId}`);
+  const actionIds = plan.items.map(i => i.action_id);
+  if(!actionIds.length) return toast('No actions in plan','error');
+
+  const phases = await api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3});
+
+  // Update each item's phase based on suggestion
+  for(let phIdx=0; phIdx<phases.length; phIdx++) {
+    const ph = phases[phIdx];
+    for(const a of ph.actions) {
+      await api.put(`/api/plans/${planId}/items/${a.id}`, {phase: phIdx+1});
+    }
+  }
+  toast('Phases auto-assigned based on ROI analysis','success');
+  viewPlan(planId);
 }
 
 async function updatePlanStatus(planId, status) {
@@ -2615,11 +2687,18 @@ async function showAddActionsToPlan(planId) {
       '<button class="btn" onclick="closeModal()">Close</button>');
   }
 
-  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
 
   openModal('Add Actions to Plan', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${available.length} actions available (already in plan excluded)</div>
-    <div style="max-height:400px;overflow-y:auto">
+    <div class="form-group"><label>Add to Phase</label>
+      <select id="plan-add-phase">
+        <option value="1">Phase 1 — Quick Wins</option>
+        <option value="2">Phase 2 — Core Controls</option>
+        <option value="3">Phase 3 — Advanced Hardening</option>
+      </select>
+    </div>
+    <div style="max-height:350px;overflow-y:auto">
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-add-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
@@ -2629,8 +2708,9 @@ async function showAddActionsToPlan(planId) {
 async function submitAddActionsToPlan(planId) {
   const ids = [...document.querySelectorAll('.plan-add-cb:checked')].map(c => c.value);
   if(!ids.length) return toast('Select at least one action', 'error');
+  const phase = parseInt(document.getElementById('plan-add-phase')?.value || '1');
   for(const aid of ids) {
-    await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+    await api.post(`/api/plans/${planId}/items`, {action_id: aid, phase: phase});
   }
   closeModal();
   toast(ids.length + ' action' + (ids.length>1?'s':'') + ' added', 'success');

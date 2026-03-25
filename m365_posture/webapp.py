@@ -1128,11 +1128,11 @@ def create_app(db_path: str = None) -> Flask:
     # ── Action Links (cross-tool) ──
 
     @app.route("/api/actions/<action_id>/links", methods=["GET"])
-    def api_action_links(action_id):
+    def api_action_crosslinks(action_id):
         return jsonify(db.get_linked_actions(action_id))
 
     @app.route("/api/actions/<action_id>/links", methods=["POST"])
-    def api_link_action(action_id):
+    def api_create_crosslink(action_id):
         data = request.get_json() or {}
         target_id = data.get("target_action_id")
         if not target_id:
@@ -1141,7 +1141,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"ok": True})
 
     @app.route("/api/actions/<aid>/links/<tid>", methods=["DELETE"])
-    def api_unlink_action(aid, tid):
+    def api_delete_crosslink(aid, tid):
         db.unlink_actions(aid, tid)
         return jsonify({"ok": True})
 
