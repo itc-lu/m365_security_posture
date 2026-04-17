@@ -158,6 +158,30 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .phase-card.phase-3 { border-left-color:var(--purple); }
 .phase-card table { table-layout:fixed; width:100%; }
 .phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
+.phase-card.drag-over { background:var(--primary-light); border:2px dashed var(--primary); border-left:4px solid var(--primary); }
+.phase-card [draggable] { cursor:grab; }
+.phase-card [draggable]:active { cursor:grabbing; opacity:.7; }
+
+/* Login overlay */
+.login-overlay { position:fixed; inset:0; background:rgba(15,23,42,.85); z-index:1000; display:flex; align-items:center; justify-content:center; }
+.login-overlay.hidden { display:none; }
+.login-card { background:var(--bg-card); border-radius:12px; padding:40px; width:360px; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+.login-card h2 { margin-bottom:8px; font-size:22px; }
+.login-card .subtitle { color:var(--text-light); font-size:13px; margin-bottom:28px; }
+
+/* Control Plane styles */
+.cp-status-badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.cp-status-reviewed { background:#d1fae5; color:#065f46; }
+.cp-status-to-review { background:#fef3c7; color:#92400e; }
+.cross-tenant-table td { vertical-align:middle; }
+.cross-tenant-status { display:inline-block; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:600; min-width:70px; text-align:center; }
+.ga-detail-section { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; }
+.ga-detail-section h4 { font-size:13px; color:var(--text-light); text-transform:uppercase; letter-spacing:.5px; margin-bottom:12px; }
+.confirm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2000; display:flex; align-items:center; justify-content:center; }
+.confirm-dialog { background:var(--bg-card); border-radius:10px; padding:28px; width:360px; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+.confirm-dialog h3 { margin-bottom:10px; font-size:17px; }
+.confirm-dialog p { color:var(--text-light); font-size:14px; margin-bottom:24px; line-height:1.5; }
+.confirm-dialog .btn-row { display:flex; gap:10px; justify-content:flex-end; }
 
 /* Correlation badge */
 .corr-badge { display:inline-flex; gap:4px; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--purple-light); color:#5b21b6; }
@@ -309,7 +333,28 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
       History
     </a>
+    <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;letter-spacing:1px;color:#475569;text-transform:uppercase;padding:0 6px">Control Plane</div>
+    <a href="#cp-global-actions" data-page="cp-global-actions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Global Actions
+    </a>
+    <a href="#cp-cross-tenant" data-page="cp-cross-tenant">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      Cross-Tenant View
+    </a>
+    <a href="#cp-frameworks" data-page="cp-frameworks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      Frameworks
+    </a>
+    <a href="#cp-users" data-page="cp-users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      User Management
+    </a>
   </nav>
+  <div style="padding:8px 16px;border-top:1px solid #1e293b">
+    <div id="auth-user-info" style="font-size:12px;color:#94a3b8;margin-bottom:6px"></div>
+    <button class="btn btn-sm" id="auth-btn" onclick="showLoginModal()" style="width:100%;background:#1e293b;color:#cbd5e1;border-color:#334155">Login</button>
+  </div>
   <div class="tenant-indicator" id="tenant-indicator" onclick="toggleTenantDropdown(event)">
     <div class="tenant-dropdown" id="tenant-dropdown"></div>
     <div style="color:var(--text-sidebar)">Active Tenant</div>
@@ -329,6 +374,31 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 
 <!-- Toast container -->
 <div class="toast-container" id="toasts"></div>
+
+<!-- Login overlay -->
+<div class="login-overlay hidden" id="login-overlay">
+  <div class="login-card">
+    <h2>&#128274; Sign In</h2>
+    <p class="subtitle">M365 Security Posture Manager</p>
+    <div class="form-group"><label>Username</label><input id="login-username" placeholder="admin" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="form-group"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">Sign In</button>
+    <p style="font-size:11px;color:var(--text-light);margin-top:16px;text-align:center">Default credentials: admin / admin &mdash; change after first login</p>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="confirm-overlay" id="confirm-overlay" style="display:none">
+  <div class="confirm-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-message">Are you sure?</p>
+    <div class="btn-row">
+      <button class="btn" id="confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok" onclick="resolveConfirm(true)">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -519,20 +589,105 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
+  const render = {
+    dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,
+    plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
+    compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
+    history:renderHistory,
+    'cp-global-actions':renderCpGlobalActions,
+    'cp-cross-tenant':renderCpCrossTenant,
+    'cp-frameworks':renderCpFrameworks,
+    'cp-users':renderCpUsers,
+  };
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
 
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
 
+// ── Auth state ──
+let _authUser = null;
+
+async function checkAuth() {
+  const me = await api.get('/api/auth/me');
+  _authUser = me.authenticated ? me : null;
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const btn = document.getElementById('auth-btn');
+  const info = document.getElementById('auth-user-info');
+  if(_authUser) {
+    info.textContent = `${_authUser.display_name||_authUser.username} (${_authUser.role})`;
+    btn.textContent = 'Logout';
+    btn.onclick = doLogout;
+  } else {
+    info.textContent = '';
+    btn.textContent = 'Login';
+    btn.onclick = showLoginModal;
+  }
+}
+
+function showLoginModal() {
+  document.getElementById('login-overlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('login-username').focus(), 50);
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if(!username || !password) { errEl.textContent='Username and password required'; errEl.style.display='block'; return; }
+  const r = await api.post('/api/auth/login', {username, password});
+  if(r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
+  _authUser = r;
+  updateAuthUI();
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.getElementById('login-password').value = '';
+  toast(`Welcome, ${r.display_name||r.username}!`, 'success');
+}
+
+async function doLogout() {
+  await api.post('/api/auth/logout', {});
+  _authUser = null;
+  updateAuthUI();
+  toast('Logged out', 'info');
+}
+
+// ── Confirm dialog (replaces browser confirm()) ──
+let _confirmResolve = null;
+
+function showConfirm(title, message, okLabel='Delete', okClass='btn-danger') {
+  return new Promise(resolve => {
+    _confirmResolve = resolve;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = message;
+    const okBtn = document.getElementById('confirm-ok');
+    okBtn.textContent = okLabel;
+    okBtn.className = `btn ${okClass}`;
+    document.getElementById('confirm-overlay').style.display = 'flex';
+  });
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  if(_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+}
+
+function resolveConfirm(result) {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  if(_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+}
+
 // ── Init ──
 async function init() {
+  await checkAuth();
   state.enums = await api.get('/api/enums');
   state.tenants = await api.get('/api/tenants');
   const active = await api.get('/api/active-tenant');
@@ -1242,7 +1397,7 @@ async function activateTenant(name) {
 }
 
 async function deleteTenant(name) {
-  if(!confirm(`Delete tenant "${name}" and all its data?`)) return;
+  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and all its data? This cannot be undone.`)) return;
   await api.del(`/api/tenants/${name}`);
   state.activeTenant = await api.get('/api/active-tenant');
   updateTenantIndicator();
@@ -1437,7 +1592,7 @@ function updateBatchBar() {
 async function batchDeleteActions() {
   const ids = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   if(!ids.length) return;
-  if(!confirm('Delete ' + ids.length + ' selected actions?')) return;
+  if(!await showConfirm('Delete Actions', `Delete ${ids.length} selected action(s)? This cannot be undone.`)) return;
   const r = await api.post('/api/actions/batch-delete', {action_ids: ids});
   if(r.error) return toast(r.error, 'error');
   toast(r.deleted + ' actions deleted', 'success');
@@ -1798,7 +1953,7 @@ async function saveActionNotes(id, uid) {
 }
 
 async function deleteAction(id) {
-  if(!confirm('Delete this action?')) return;
+  if(!await showConfirm('Delete Action', 'Delete this action? This cannot be undone.')) return;
   await api.del(`/api/actions/${id}`);
   toast('Action deleted','success'); filterActions();
 }
@@ -2300,15 +2455,22 @@ async function viewPlan(planId) {
   }).join('');
 
   let phaseHtml = phases.map((ph,i) => `
-    <div class="card phase-card phase-${i+1} mb-16">
-      <div class="card-header">${ph.name} <span class="badge badge-info">${ph.action_count} actions</span></div>
+    <div class="card phase-card phase-${i+1} mb-16" data-phase="${i+1}"
+         ondragover="onPhaseDragOver(event,this)" ondragleave="onPhaseDragLeave(this)" ondrop="onPhaseDrop(event,'${planId}',${i+1})">
+      <div class="card-header">${ph.name} <span class="badge badge-info">${ph.action_count} actions</span>
+        <span style="font-size:11px;color:var(--text-light);margin-left:8px">&#8693; drag actions between phases</span>
+      </div>
       <div class="grid grid-3 mb-8">
         <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
         <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', ')}</div></div>
         <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${ph.licences_needed.join(', ')||'None required'}</div></div>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
-        ${ph.actions.map(a=>`<tr><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('')}
+      <div class="table-wrap"><table><thead><tr><th></th><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
+        ${ph.actions.map(a=>`<tr draggable="true" data-action-id="${a.action_id||a.id}" data-plan-id="${planId}"
+          ondragstart="onPhaseDragStart(event,'${a.action_id||a.id}','${planId}')"
+          style="cursor:grab">
+          <td style="width:24px;color:var(--text-light);font-size:16px">&#8597;</td>
+          <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -2412,7 +2574,7 @@ async function submitEditPlan(planId) {
 }
 
 async function removePlanItem(planId, actionId) {
-  if(!confirm('Remove this action from the plan?')) return;
+  if(!await showConfirm('Remove Action', 'Remove this action from the plan?', 'Remove', 'btn-danger')) return;
   await api.del(`/api/plans/${planId}/items/${actionId}`);
   toast('Action removed from plan', 'success');
   viewPlan(planId);
@@ -2544,7 +2706,7 @@ async function exportPlanPDF(planId) {
 }
 
 async function deletePlan(id) {
-  if(!confirm('Delete this plan?')) return;
+  if(!await showConfirm('Delete Plan', 'Delete this plan and all its items? This cannot be undone.')) return;
   await api.del(`/api/plans/${id}`);
   toast('Plan deleted','success'); renderPlans();
 }
@@ -3910,6 +4072,526 @@ async function removeDep(actionId, dependsOnId) {
   toast('Dependency removed', 'success');
   loadActionDeps(actionId);
 }
+
+
+// ── Plan Phase Drag-and-Drop ──
+let _dragActionId = null;
+let _dragPlanId = null;
+
+function onPhaseDragStart(event, actionId, planId) {
+  _dragActionId = actionId;
+  _dragPlanId = planId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', actionId);
+}
+
+function onPhaseDragOver(event, el) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  el.classList.add('drag-over');
+}
+
+function onPhaseDragLeave(el) {
+  el.classList.remove('drag-over');
+}
+
+async function onPhaseDrop(event, planId, targetPhase) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+  const actionId = _dragActionId;
+  if(!actionId) return;
+  _dragActionId = null;
+  const r = await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: targetPhase});
+  if(r && r.error) return toast(r.error, 'error');
+  toast(`Moved to Phase ${targetPhase}`, 'success');
+  viewPlan(planId);
+}
+
+// ── Control Plane: Global Actions ──
+let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:''};
+
+async function renderCpGlobalActions() {
+  const t = state.activeTenant;
+  const params = new URLSearchParams(Object.fromEntries(Object.entries(_cpGaFilter).filter(([,v])=>v)));
+  const actions = await api.get('/api/control-plane/global-actions?' + params.toString());
+  const summary = await api.get('/api/control-plane/compliance-summary');
+  const tools = [...new Set(actions.map(a=>a.source_tool))].sort();
+  const workloads = [...new Set(actions.map(a=>a.workload))].sort();
+  const toolOpts = ['', ...tools].map(v=>`<option value="${v}" ${v===_cpGaFilter.source_tool?'selected':''}>${v||'All Tools'}</option>`).join('');
+  const wlOpts = ['', ...workloads].map(v=>`<option value="${v}" ${v===_cpGaFilter.workload?'selected':''}>${v||'All Workloads'}</option>`).join('');
+  const rvOpts = ['','To Review','Reviewed'].map(v=>`<option value="${v}" ${v===_cpGaFilter.review_status?'selected':''}>${v||'All Status'}</option>`).join('');
+  const totalActions = summary._total_actions || 0;
+
+  const rows = actions.map(a => `<tr onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
+    <td><strong>${(a.title||'').substring(0,60)}</strong></td>
+    <td><span class="badge badge-info">${a.source_tool||''}</span></td>
+    <td>${a.workload||''}</td>
+    <td>${priorityBadge(a.priority)}</td>
+    <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${a.review_status||'To Review'}</span></td>
+    <td style="text-align:center">${a.compliance_mapping_count||0}</td>
+    <td style="text-align:center">${a.tenant_action_count||0}</td>
+    <td onclick="event.stopPropagation()" style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="showCpGlobalActionDetail('${a.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteCpGlobalAction('${a.id}')">&#x2715;</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-4 mb-16">
+      <div class="card stat-card"><div class="value">${totalActions}</div><div class="label">Global Actions</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--warning)">${actions.filter(a=>a.review_status!=='Reviewed').length}</div><div class="label">To Review</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--success)">${actions.filter(a=>a.review_status==='Reviewed').length}</div><div class="label">Reviewed</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--purple)">${actions.filter(a=>a.compliance_mapping_count>0).length}</div><div class="label">Framework Mapped</div></div>
+    </div>
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Global Action Library</div>
+        <div class="flex gap-8 flex-wrap">
+          <button class="btn btn-primary btn-sm" onclick="showCreateCpGlobalAction()">+ New Action</button>
+          <button class="btn btn-sm" onclick="runCpMigration()">&#8635; Migrate from Tenants</button>
+        </div>
+      </div>
+      <div class="flex gap-8 mb-12 flex-wrap">
+        <select style="width:160px" onchange="_cpGaFilter.source_tool=this.value;renderCpGlobalActions()">${toolOpts}</select>
+        <select style="width:160px" onchange="_cpGaFilter.workload=this.value;renderCpGlobalActions()">${wlOpts}</select>
+        <select style="width:140px" onchange="_cpGaFilter.review_status=this.value;renderCpGlobalActions()">${rvOpts}</select>
+        <input placeholder="Search..." style="width:200px" value="${_cpGaFilter.search}" oninput="_cpGaFilter.search=this.value" onkeydown="if(event.key==='Enter')renderCpGlobalActions()">
+        <button class="btn btn-sm" onclick="renderCpGlobalActions()">Search</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Title</th><th>Source Tool</th><th>Workload</th><th>Priority</th><th>Review Status</th><th>Frameworks</th><th>Tenants</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:32px">No global actions found. Use "Migrate from Tenants" to import existing actions.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function runCpMigration() {
+  const r = await api.post('/api/control-plane/migrate', {});
+  if(r.error) return toast(r.error, 'error');
+  toast(`Migration complete: ${r.global_actions_created} new global actions, ${r.tenant_actions_linked} tenant actions linked`, 'success');
+  renderCpGlobalActions();
+}
+
+function showCreateCpGlobalAction() {
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const toolOpts = (state.enums.source_tools||[]).map(t=>`<option value="${t}">${t}</option>`).join('');
+  const prioOpts = (state.enums.priorities||[]).map(p=>`<option value="${p}">${p}</option>`).join('');
+  openModal('New Global Action', `
+    <div class="form-row"><div class="form-group"><label>Title</label><input id="cga-title" placeholder="Action title"></div>
+    <div class="form-group"><label>Source Tool</label><select id="cga-tool">${toolOpts}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Source ID</label><input id="cga-srcid" placeholder="e.g. MS.EXO.1.1v2"></div>
+    <div class="form-group"><label>Workload</label><select id="cga-workload">${wlOpts}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Priority</label><select id="cga-priority">${prioOpts}</select></div>
+    <div class="form-group"><label>Review Status</label><select id="cga-review"><option>To Review</option><option>Reviewed</option></select></div></div>
+    <div class="form-group"><label>Description</label><textarea id="cga-desc" rows="2"></textarea></div>
+    <div class="form-group"><label>Implementation Steps</label><textarea id="cga-steps" rows="3" placeholder="Step-by-step instructions..."></textarea></div>
+    <div class="form-group"><label>Risk Explanation</label><textarea id="cga-risk" rows="2" placeholder="Why this is a risk..."></textarea></div>
+    <div class="form-group"><label>Reference URL</label><input id="cga-url" placeholder="https://..."></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateCpGlobalAction()">Create</button>`);
+}
+
+async function submitCreateCpGlobalAction() {
+  const title = document.getElementById('cga-title').value.trim();
+  if(!title) return toast('Title required','error');
+  const r = await api.post('/api/control-plane/global-actions', {
+    title, source_tool: document.getElementById('cga-tool').value,
+    source_id: document.getElementById('cga-srcid').value,
+    workload: document.getElementById('cga-workload').value,
+    priority: document.getElementById('cga-priority').value,
+    review_status: document.getElementById('cga-review').value,
+    description: document.getElementById('cga-desc').value,
+    implementation_steps: document.getElementById('cga-steps').value,
+    risk_explanation: document.getElementById('cga-risk').value,
+    reference_url: document.getElementById('cga-url').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Global action created','success'); renderCpGlobalActions();
+}
+
+async function deleteCpGlobalAction(id) {
+  if(!await showConfirm('Delete Global Action','Delete this global action? Linked tenant actions will be unlinked but not deleted.')) return;
+  await api.del(`/api/control-plane/global-actions/${id}`);
+  toast('Deleted','success'); renderCpGlobalActions();
+}
+
+async function showCpGlobalActionDetail(id) {
+  const ga = await api.get(`/api/control-plane/global-actions/${id}`);
+  if(ga.error) return toast(ga.error,'error');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}" ${w===ga.workload?'selected':''}>${w}</option>`).join('');
+  const prioOpts = (state.enums.priorities||[]).map(p=>`<option value="${p}" ${p===ga.priority?'selected':''}>${p}</option>`).join('');
+  const rvOpts = ['To Review','Reviewed'].map(v=>`<option value="${v}" ${v===ga.review_status?'selected':''}>${v}</option>`).join('');
+  const fwOpts = (state.enums.compliance_frameworks||[]).map(f=>`<option value="${f}">${f}</option>`).join('');
+  const mappingRows = (ga.compliance_mappings||[]).map(m=>`<tr>
+    <td>${m.framework}</td><td>${m.control_id}</td><td>${m.control_name||''}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="deleteCpComplianceMapping('${id}',${m.id})">&#x2715;</button></td>
+  </tr>`).join('');
+  const tenantRows = (ga.linked_tenant_actions||[]).map(a=>`<tr>
+    <td>${a.tenant_name}</td><td>${(a.title||'').substring(0,50)}</td><td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+  openModal(`Global Action: ${ga.title.substring(0,50)}`, `
+    <div class="action-tabs"><div class="atab active" onclick="switchTab(event,'ga-tab-details')">Details</div>
+    <div class="atab" onclick="switchTab(event,'ga-tab-compliance')">Compliance Mappings</div>
+    <div class="atab" onclick="switchTab(event,'ga-tab-tenants')">Tenant Instances (${ga.linked_tenant_actions?.length||0})</div></div>
+    <div class="action-tab-content active" id="ga-tab-details">
+      <div class="form-row"><div class="form-group"><label>Title</label><input id="gae-title" value="${(ga.title||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Workload</label><select id="gae-workload">${wlOpts}</select></div></div>
+      <div class="form-row"><div class="form-group"><label>Priority</label><select id="gae-priority">${prioOpts}</select></div>
+      <div class="form-group"><label>Review Status</label><select id="gae-review">${rvOpts}</select></div></div>
+      <div class="form-group"><label>Description</label><textarea id="gae-desc" rows="2">${ga.description||''}</textarea></div>
+      <div class="form-group"><label>Implementation Steps</label><textarea id="gae-steps" rows="4">${ga.implementation_steps||''}</textarea></div>
+      <div class="form-group"><label>Risk Explanation</label><textarea id="gae-risk" rows="3">${ga.risk_explanation||''}</textarea></div>
+      <div class="form-group"><label>Additional Info</label><textarea id="gae-info" rows="2">${ga.additional_info||''}</textarea></div>
+      <div class="form-group"><label>Reference URL</label><input id="gae-url" value="${ga.reference_url||''}"></div>
+    </div>
+    <div class="action-tab-content" id="ga-tab-compliance">
+      <div class="mb-12">
+        <div class="flex gap-8 mb-8">
+          <select id="cmap-fw" style="width:180px">${fwOpts}</select>
+          <input id="cmap-ctrl" placeholder="Control ID (e.g. IA-2)" style="width:130px">
+          <input id="cmap-name" placeholder="Control name" style="flex:1">
+          <button class="btn btn-sm btn-primary" onclick="addCpComplianceMapping('${id}')">+ Add</button>
+        </div>
+        <table><thead><tr><th>Framework</th><th>Control ID</th><th>Control Name</th><th></th></tr></thead>
+        <tbody>${mappingRows||'<tr><td colspan="4" style="color:var(--text-light)">No mappings yet</td></tr>'}</tbody></table>
+      </div>
+    </div>
+    <div class="action-tab-content" id="ga-tab-tenants">
+      ${tenantRows ? `<table><thead><tr><th>Tenant</th><th>Action Title</th><th>Status</th></tr></thead><tbody>${tenantRows}</tbody></table>` : '<p style="color:var(--text-light)">Not linked to any tenant actions yet. Run migration to link automatically.</p>'}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="saveCpGlobalAction('${id}')">Save Changes</button>`);
+}
+
+async function saveCpGlobalAction(id) {
+  const r = await api.put(`/api/control-plane/global-actions/${id}`, {
+    title: document.getElementById('gae-title').value,
+    workload: document.getElementById('gae-workload').value,
+    priority: document.getElementById('gae-priority').value,
+    review_status: document.getElementById('gae-review').value,
+    description: document.getElementById('gae-desc').value,
+    implementation_steps: document.getElementById('gae-steps').value,
+    risk_explanation: document.getElementById('gae-risk').value,
+    additional_info: document.getElementById('gae-info').value,
+    reference_url: document.getElementById('gae-url').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Saved','success'); renderCpGlobalActions();
+}
+
+async function addCpComplianceMapping(gaId) {
+  const framework = document.getElementById('cmap-fw').value;
+  const control_id = document.getElementById('cmap-ctrl').value.trim();
+  const control_name = document.getElementById('cmap-name').value.trim();
+  if(!control_id) return toast('Control ID required','error');
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/compliance`, {framework, control_id, control_name});
+  if(r.error) return toast(r.error,'error');
+  toast('Mapping added','success');
+  showCpGlobalActionDetail(gaId);
+}
+
+async function deleteCpComplianceMapping(gaId, mappingId) {
+  await api.del(`/api/control-plane/global-actions/${gaId}/compliance/${mappingId}`);
+  toast('Mapping removed','success');
+  showCpGlobalActionDetail(gaId);
+}
+
+function switchTab(event, tabId) {
+  const tabs = event.target.closest('.action-tabs');
+  if(!tabs) return;
+  tabs.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+  const panel = tabs.nextElementSibling;
+  if(!panel) return;
+  let el = panel;
+  while(el) {
+    if(el.classList && el.classList.contains('action-tab-content')) {
+      el.classList.toggle('active', el.id===tabId);
+    }
+    el = el.nextElementSibling;
+  }
+}
+
+
+// ── Control Plane: Cross-Tenant View ──
+async function renderCpCrossTenant() {
+  const data = await api.get('/api/control-plane/cross-tenant');
+  const tenants = data.tenants || [];
+  const globalActions = data.global_actions || [];
+  const statusColors = {
+    'Completed':'success','In Progress':'info','ToDo':'warning',
+    'Risk Accepted':'purple','Not Applicable':'gray','Warning':'danger'
+  };
+  const filterOpts = ['','Microsoft Secure Score','SCuBA (CISA)','Zero Trust Assessment','Manual']
+    .map(v=>`<option value="${v}">${v||'All Tools'}</option>`).join('');
+
+  const headerCols = tenants.map(t=>`<th style="min-width:90px;text-align:center">${t}</th>`).join('');
+  const rows = globalActions.map(ga => {
+    const tenantCols = tenants.map(t => {
+      const ts = ga.tenant_status[t];
+      if(!ts) return `<td style="text-align:center"><span style="color:var(--border)">—</span></td>`;
+      const color = statusColors[ts.status]||'gray';
+      return `<td style="text-align:center"><span class="badge badge-${color}" style="font-size:10px">${ts.status}</span></td>`;
+    }).join('');
+    return `<tr>
+      <td style="max-width:220px"><strong>${(ga.title||'').substring(0,55)}</strong></td>
+      <td><span class="badge badge-info" style="font-size:10px">${ga.source_tool||''}</span></td>
+      <td>${ga.workload||''}</td>
+      <td><span class="cp-status-badge ${ga.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${ga.review_status||''}</span></td>
+      ${tenantCols}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Implementation Status Across All Tenants</div>
+        <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
+      </div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+        Showing ${globalActions.length} global actions across ${tenants.length} tenants.
+        Actions without a tenant column entry are not yet imported for that tenant.
+      </div>
+      <div class="table-wrap" id="cross-tenant-table-wrap"><table id="cross-tenant-table">
+        <thead><tr><th>Action</th><th>Tool</th><th>Workload</th><th>Review</th>${headerCols}</tr></thead>
+        <tbody>${rows||'<tr><td colspan="20" style="text-align:center;padding:32px;color:var(--text-light)">No global actions. Run migration first.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function filterCrossTenantTable(tool) {
+  document.querySelectorAll('#cross-tenant-table tbody tr').forEach(row => {
+    if(!tool) { row.style.display=''; return; }
+    const toolCell = row.cells[1];
+    row.style.display = (toolCell && toolCell.textContent.includes(tool)) ? '' : 'none';
+  });
+}
+
+// ── Control Plane: Frameworks ──
+async function renderCpFrameworks() {
+  const tenants = await api.get('/api/tenants');
+  const allFrameworks = await api.get('/api/control-plane/tenant-frameworks');
+  const frameworks = (state.enums.compliance_frameworks || ['Essential Eight','NIST 800-53','CIS Microsoft 365','ISO 27001']);
+
+  const rows = tenants.map(t => {
+    const assigned = allFrameworks[t.name] || [];
+    const fwBadges = assigned.map(f=>`<span class="badge badge-info" style="margin:2px">${f}</span>`).join('');
+    const fwCheckboxes = frameworks.map(f=>`
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:4px 8px 4px 0;font-size:13px;cursor:pointer">
+        <input type="checkbox" value="${f}" ${assigned.includes(f)?'checked':''} onchange="toggleTenantFramework('${t.name}','${f}',this.checked)" style="width:16px;height:16px">
+        ${f}
+      </label>`).join('');
+    return `<tr>
+      <td><strong>${t.display_name||t.name}</strong></td>
+      <td>${fwBadges||'<span style="color:var(--text-light)">None assigned</span>'}</td>
+      <td>${fwCheckboxes}</td>
+    </tr>`;
+  }).join('');
+
+  const compSummary = await api.get('/api/control-plane/compliance-summary');
+  const summaryCards = frameworks.map(f => {
+    const count = compSummary[f] || 0;
+    const total = compSummary._total_actions || 1;
+    const pct = total ? Math.round(count/total*100) : 0;
+    return `<div class="card stat-card"><div class="value" style="font-size:20px">${count}</div>
+      <div class="label">${f}</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">${pct}% of actions mapped</div>
+      ${progressBar(pct)}</div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="card-header">Framework Coverage (Global Actions)</div>
+      <div class="grid grid-4">${summaryCards}</div>
+    </div>
+    <div class="card">
+      <div class="card-header mb-12">Tenant Framework Assignment</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">Select which compliance frameworks each tenant must follow. This controls which framework views and reports are shown per tenant.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tenant</th><th>Assigned Frameworks</th><th>Configure</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="3" style="text-align:center;color:var(--text-light)">No tenants found.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function toggleTenantFramework(tenantName, framework, checked) {
+  if(checked) {
+    await api.put(`/api/control-plane/tenants/${tenantName}/frameworks`, {
+      frameworks: [...(await api.get(`/api/control-plane/tenants/${tenantName}/frameworks`)), framework]
+    });
+  } else {
+    await api.del(`/api/control-plane/tenants/${tenantName}/frameworks/${encodeURIComponent(framework)}`);
+  }
+  toast(`${checked?'Added':'Removed'} ${framework} for ${tenantName}`, 'success');
+}
+
+// ── Control Plane: Users ──
+async function renderCpUsers() {
+  const users = await api.get('/api/control-plane/users');
+  const tenants = await api.get('/api/tenants');
+  const roleColors = {admin:'danger', analyst:'info', viewer:'gray', tenant_admin:'purple'};
+
+  const rows = users.map(u => {
+    const accessList = (u.tenant_access||[]).map(ta => {
+      const wls = ta.workloads?.length ? ` (${ta.workloads.join(', ')})` : ' (all workloads)';
+      return `<span class="badge badge-gray" style="margin:1px">${ta.tenant_name}${wls}</span>`;
+    }).join('');
+    return `<tr>
+      <td><strong>${u.display_name||u.username}</strong><br><span style="font-size:11px;color:var(--text-light)">${u.username}</span></td>
+      <td>${u.email||'—'}</td>
+      <td><span class="badge badge-${roleColors[u.role]||'gray'}">${u.role}</span></td>
+      <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
+      <td>${accessList||'<span style="color:var(--text-light);font-size:12px">${u.role==="admin"?"Full access":"No tenant access"}</span>'}</td>
+      <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')">&#x2715;</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>`;
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-8">
+        <div class="card-header" style="margin:0">Application Users (${users.length})</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Tenant Access</th><th>Last Login</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light)">No users found.</td></tr>'}</tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header">Role Descriptions</div>
+      <div class="grid grid-4" style="margin-top:8px">
+        <div><span class="badge badge-danger">admin</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Full access to all tenants, users, and control plane settings.</p></div>
+        <div><span class="badge badge-purple">tenant_admin</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Can manage assigned tenants including imports and plans.</p></div>
+        <div><span class="badge badge-info">analyst</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Read and write access to assigned tenants and workloads.</p></div>
+        <div><span class="badge badge-gray">viewer</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Read-only access to assigned tenants and workloads.</p></div>
+      </div>
+    </div>`;
+}
+
+function showCreateUser() {
+  const roleOpts = ['admin','tenant_admin','analyst','viewer'].map(r=>`<option value="${r}">${r}</option>`).join('');
+  openModal('Create User', `
+    <div class="form-row">
+      <div class="form-group"><label>Username</label><input id="cu-username" placeholder="jsmith"></div>
+      <div class="form-group"><label>Display Name</label><input id="cu-display" placeholder="John Smith"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email</label><input id="cu-email" type="email" placeholder="jsmith@company.com"></div>
+      <div class="form-group"><label>Role</label><select id="cu-role">${roleOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Password</label><input id="cu-pw" type="password" placeholder="Min 6 characters"></div>
+      <div class="form-group"><label>Confirm Password</label><input id="cu-pw2" type="password"></div>
+    </div>
+    <div class="form-group" id="cu-tenant-wrap">
+      <label>Tenant Access (leave empty for role-based access)</label>
+      <div id="cu-tenant-list"></div>
+      <button class="btn btn-sm mt-8" type="button" onclick="addTenantAccessRow('cu-tenant-list')">+ Add Tenant Access</button>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>`);
+}
+
+function addTenantAccessRow(containerId) {
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${t.display_name||t.name}</option>`).join('');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'flex gap-8 mb-8 tenant-access-row';
+  div.innerHTML = `<select class="ta-tenant" style="flex:1">${tenantOpts}</select>
+    <select class="ta-workload" multiple style="flex:1;height:60px">${wlOpts}</select>
+    <button class="btn btn-sm btn-danger" type="button" onclick="this.closest('.tenant-access-row').remove()">&#x2715;</button>`;
+  document.getElementById(containerId).appendChild(div);
+}
+
+function collectTenantAccess(containerId) {
+  const rows = document.querySelectorAll(`#${containerId} .tenant-access-row`);
+  return Array.from(rows).map(row => {
+    const tenant = row.querySelector('.ta-tenant').value;
+    const workloads = Array.from(row.querySelectorAll('.ta-workload option:checked')).map(o=>o.value);
+    return {tenant_name: tenant, workloads};
+  });
+}
+
+async function submitCreateUser() {
+  const username = document.getElementById('cu-username').value.trim();
+  const pw = document.getElementById('cu-pw').value;
+  const pw2 = document.getElementById('cu-pw2').value;
+  if(!username) return toast('Username required','error');
+  if(pw !== pw2) return toast('Passwords do not match','error');
+  if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+  const r = await api.post('/api/control-plane/users', {
+    username, password: pw,
+    display_name: document.getElementById('cu-display').value,
+    email: document.getElementById('cu-email').value,
+    role: document.getElementById('cu-role').value,
+    tenant_access: collectTenantAccess('cu-tenant-list'),
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('User created','success'); renderCpUsers();
+}
+
+async function showEditUser(userId) {
+  const user = await api.get(`/api/control-plane/users/${userId}`);
+  if(user.error) return toast(user.error,'error');
+  const roleOpts = ['admin','tenant_admin','analyst','viewer'].map(r=>`<option value="${r}" ${r===user.role?'selected':''}>${r}</option>`).join('');
+  const activeOpts = [1,0].map(v=>`<option value="${v}" ${(user.is_active?1:0)===v?'selected':''}>${v?'Active':'Inactive'}</option>`).join('');
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${t.display_name||t.name}</option>`).join('');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const existingAccess = (user.tenant_access||[]).map(ta => {
+    const wlSel = (state.enums.workloads||[]).map(w=>`<option value="${w}" ${(ta.workloads||[]).includes(w)?'selected':''}>${w}</option>`).join('');
+    const tSel = state.tenants.map(t=>`<option value="${t.name}" ${t.name===ta.tenant_name?'selected':''}>${t.display_name||t.name}</option>`).join('');
+    return `<div class="flex gap-8 mb-8 tenant-access-row">
+      <select class="ta-tenant" style="flex:1">${tSel}</select>
+      <select class="ta-workload" multiple style="flex:1;height:60px">${wlSel}</select>
+      <button class="btn btn-sm btn-danger" type="button" onclick="this.closest('.tenant-access-row').remove()">&#x2715;</button>
+    </div>`;
+  }).join('');
+
+  openModal(`Edit User: ${user.display_name||user.username}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Display Name</label><input id="eu-display" value="${(user.display_name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${user.email||''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><select id="eu-role">${roleOpts}</select></div>
+      <div class="form-group"><label>Status</label><select id="eu-active">${activeOpts}</select></div>
+    </div>
+    <div class="form-group"><label>New Password (leave blank to keep current)</label><input id="eu-pw" type="password" placeholder="Leave blank to keep current"></div>
+    <div class="form-group">
+      <label>Tenant Access</label>
+      <div id="eu-tenant-list">${existingAccess}</div>
+      <button class="btn btn-sm mt-8" type="button" onclick="addTenantAccessRow('eu-tenant-list')">+ Add Tenant Access</button>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser('${userId}')">Save</button>`);
+}
+
+async function submitEditUser(userId) {
+  const pw = document.getElementById('eu-pw').value;
+  const updates = {
+    display_name: document.getElementById('eu-display').value,
+    email: document.getElementById('eu-email').value,
+    role: document.getElementById('eu-role').value,
+    is_active: parseInt(document.getElementById('eu-active').value),
+    tenant_access: collectTenantAccess('eu-tenant-list'),
+  };
+  if(pw) {
+    if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+    updates.password = pw;
+  }
+  const r = await api.put(`/api/control-plane/users/${userId}`, updates);
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('User updated','success'); renderCpUsers();
+}
+
+async function deleteUser(userId, username) {
+  if(!await showConfirm('Delete User', `Delete user "${username}"? This cannot be undone.`)) return;
+  const r = await api.del(`/api/control-plane/users/${userId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('User deleted','success'); renderCpUsers();
+}
+
 
 // Boot
 init();

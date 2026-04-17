@@ -14,13 +14,35 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl, SourceTool, Workload
+import hashlib
+import os
+import secrets
+
+from .models import (
+    Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl,
+    SourceTool, Workload, GlobalAction, User, UserRole,
+)
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
 
 def _generate_id() -> str:
     return str(uuid.uuid4())[:8]
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
+    return f"pbkdf2:sha256:{salt}:{dk.hex()}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        _, algo, salt, dk_hex = stored_hash.split(":", 3)
+        dk = hashlib.pbkdf2_hmac(algo, password.encode(), salt.encode(), 260000)
+        return secrets.compare_digest(dk.hex(), dk_hex)
+    except Exception:
+        return False
 
 
 class Database:
@@ -301,6 +323,83 @@ class Database:
                     updated_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_gitlab_tpl_tenant ON gitlab_templates(tenant_name);
+
+                -- ── Control Plane ──
+
+                CREATE TABLE IF NOT EXISTS global_actions (
+                    id TEXT PRIMARY KEY,
+                    source_tool TEXT NOT NULL DEFAULT 'Manual',
+                    source_id TEXT DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    description TEXT DEFAULT '',
+                    workload TEXT DEFAULT 'General',
+                    category TEXT DEFAULT '',
+                    subcategory TEXT DEFAULT '',
+                    priority TEXT DEFAULT 'Medium',
+                    risk_level TEXT DEFAULT 'Medium',
+                    user_impact TEXT DEFAULT 'Low',
+                    implementation_effort TEXT DEFAULT 'Medium',
+                    required_licence TEXT DEFAULT '',
+                    score REAL,
+                    max_score REAL,
+                    essential_eight_control TEXT,
+                    essential_eight_maturity TEXT,
+                    implementation_steps TEXT DEFAULT '',
+                    risk_explanation TEXT DEFAULT '',
+                    additional_info TEXT DEFAULT '',
+                    reference_url TEXT DEFAULT '',
+                    tags TEXT DEFAULT '[]',
+                    review_status TEXT DEFAULT 'To Review',
+                    created_at TEXT,
+                    updated_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_ga_source ON global_actions(source_tool, source_id);
+                CREATE INDEX IF NOT EXISTS idx_ga_review ON global_actions(review_status);
+                CREATE INDEX IF NOT EXISTS idx_ga_workload ON global_actions(workload);
+
+                CREATE TABLE IF NOT EXISTS global_compliance_mappings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_action_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    framework TEXT NOT NULL,
+                    control_id TEXT NOT NULL,
+                    control_name TEXT DEFAULT '',
+                    control_family TEXT DEFAULT '',
+                    notes TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_gcm_action ON global_compliance_mappings(global_action_id);
+                CREATE INDEX IF NOT EXISTS idx_gcm_framework ON global_compliance_mappings(framework, control_id);
+
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT DEFAULT '',
+                    email TEXT DEFAULT '',
+                    role TEXT DEFAULT 'viewer',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    last_login TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+                CREATE TABLE IF NOT EXISTS user_tenant_access (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    workloads TEXT DEFAULT '[]',
+                    UNIQUE(user_id, tenant_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_uta_user ON user_tenant_access(user_id);
+                CREATE INDEX IF NOT EXISTS idx_uta_tenant ON user_tenant_access(tenant_name);
+
+                CREATE TABLE IF NOT EXISTS tenant_frameworks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    framework TEXT NOT NULL,
+                    UNIQUE(tenant_name, framework)
+                );
+                CREATE INDEX IF NOT EXISTS idx_tf_tenant ON tenant_frameworks(tenant_name);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -331,6 +430,30 @@ class Database:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+            # Add global_action_id link to actions (idempotent)
+            for col, coltype, default in [
+                ("global_action_id", "TEXT", "NULL"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+            # Ensure default admin user exists
+            existing_admin = conn.execute(
+                "SELECT id FROM users WHERE role='admin' LIMIT 1"
+            ).fetchone()
+            if not existing_admin:
+                admin_id = str(uuid.uuid4())[:8]
+                now = datetime.utcnow().isoformat()
+                pw_hash = _hash_password("admin")
+                conn.execute(
+                    """INSERT OR IGNORE INTO users
+                       (id, username, password_hash, display_name, email, role, is_active, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (admin_id, "admin", pw_hash, "Administrator", "", "admin", 1, now, now),
+                )
 
             # Add plan metadata columns (responsible, dates, priority, effort)
             for col, coltype, default in [
@@ -1869,4 +1992,366 @@ class Database:
             "excluded_count": excluded_count,
             "exclude_na": exclude_na,
         }
+
+    # ── Global Actions (Control Plane) ──
+
+    def _row_to_global_action(self, row) -> dict:
+        d = dict(row)
+        d["tags"] = json.loads(d.get("tags") or "[]")
+        return d
+
+    def list_global_actions(self, source_tool: str = None, workload: str = None,
+                             review_status: str = None, search: str = None) -> list[dict]:
+        sql = "SELECT * FROM global_actions WHERE 1=1"
+        params = []
+        if source_tool:
+            sql += " AND source_tool=?"
+            params.append(source_tool)
+        if workload:
+            sql += " AND workload=?"
+            params.append(workload)
+        if review_status:
+            sql += " AND review_status=?"
+            params.append(review_status)
+        if search:
+            sql += " AND (title LIKE ? OR description LIKE ? OR source_id LIKE ?)"
+            params += [f"%{search}%", f"%{search}%", f"%{search}%"]
+        sql += " ORDER BY source_tool, workload, title"
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_global_action(r) for r in rows]
+
+    def get_global_action(self, ga_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM global_actions WHERE id=?", (ga_id,)).fetchone()
+        return self._row_to_global_action(row) if row else None
+
+    def get_global_action_by_source(self, source_tool: str, source_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
+                (source_tool, source_id),
+            ).fetchone()
+        return self._row_to_global_action(row) if row else None
+
+    def create_global_action(self, ga: GlobalAction) -> dict:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO global_actions
+                   (id, source_tool, source_id, title, description, workload, category, subcategory,
+                    priority, risk_level, user_impact, implementation_effort, required_licence,
+                    score, max_score, essential_eight_control, essential_eight_maturity,
+                    implementation_steps, risk_explanation, additional_info, reference_url,
+                    tags, review_status, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (ga.id, ga.source_tool, ga.source_id, ga.title, ga.description,
+                 ga.workload, ga.category, ga.subcategory, ga.priority, ga.risk_level,
+                 ga.user_impact, ga.implementation_effort, ga.required_licence,
+                 ga.score, ga.max_score, ga.essential_eight_control, ga.essential_eight_maturity,
+                 ga.implementation_steps, ga.risk_explanation, ga.additional_info,
+                 ga.reference_url, json.dumps(ga.tags), ga.review_status, now, now),
+            )
+        return self.get_global_action(ga.id)
+
+    def update_global_action(self, ga_id: str, **kwargs) -> dict | None:
+        allowed = {
+            "title", "description", "workload", "category", "subcategory", "priority",
+            "risk_level", "user_impact", "implementation_effort", "required_licence",
+            "score", "max_score", "essential_eight_control", "essential_eight_maturity",
+            "implementation_steps", "risk_explanation", "additional_info", "reference_url",
+            "tags", "review_status",
+        }
+        updates = {}
+        for k, v in kwargs.items():
+            if k in allowed:
+                updates[k] = json.dumps(v) if k == "tags" else v
+        if updates:
+            updates["updated_at"] = datetime.utcnow().isoformat()
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [ga_id]
+            with self._conn() as conn:
+                conn.execute(f"UPDATE global_actions SET {sets} WHERE id=?", vals)
+        return self.get_global_action(ga_id)
+
+    def delete_global_action(self, ga_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM global_actions WHERE id=?", (ga_id,))
+
+    def link_action_to_global(self, action_id: str, global_action_id: str):
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE actions SET global_action_id=? WHERE id=?",
+                (global_action_id, action_id),
+            )
+
+    def migrate_actions_to_global(self) -> dict:
+        """Populate global_actions from all distinct source_tool+source_id combos across tenants."""
+        created = 0
+        linked = 0
+        with self._conn() as conn:
+            # Get all distinct (source_tool, source_id) combinations with their data
+            rows = conn.execute(
+                """SELECT source_tool, source_id, title, description, workload, category,
+                          subcategory, priority, risk_level, user_impact, implementation_effort,
+                          required_licence, score, max_score, essential_eight_control,
+                          essential_eight_maturity, remediation_steps, reference_url, tags
+                   FROM actions
+                   WHERE source_id != '' AND global_action_id IS NULL
+                   GROUP BY source_tool, source_id"""
+            ).fetchall()
+
+            now = datetime.utcnow().isoformat()
+            for row in rows:
+                d = dict(row)
+                # Check if global action already exists for this source
+                existing = conn.execute(
+                    "SELECT id FROM global_actions WHERE source_tool=? AND source_id=?",
+                    (d["source_tool"], d["source_id"]),
+                ).fetchone()
+
+                if existing:
+                    ga_id = existing["id"]
+                else:
+                    ga_id = _generate_id()
+                    conn.execute(
+                        """INSERT OR IGNORE INTO global_actions
+                           (id, source_tool, source_id, title, description, workload, category,
+                            subcategory, priority, risk_level, user_impact, implementation_effort,
+                            required_licence, score, max_score, essential_eight_control,
+                            essential_eight_maturity, implementation_steps, risk_explanation,
+                            additional_info, reference_url, tags, review_status, created_at, updated_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (ga_id, d["source_tool"], d["source_id"], d["title"], d["description"],
+                         d["workload"], d.get("category", ""), d.get("subcategory", ""),
+                         d.get("priority", "Medium"), d.get("risk_level", "Medium"),
+                         d.get("user_impact", "Low"), d.get("implementation_effort", "Medium"),
+                         d.get("required_licence", ""), d.get("score"), d.get("max_score"),
+                         d.get("essential_eight_control"), d.get("essential_eight_maturity"),
+                         d.get("remediation_steps", ""), "", "", d.get("reference_url", ""),
+                         d.get("tags", "[]"), "To Review", now, now),
+                    )
+                    created += 1
+
+                # Link all matching tenant actions to this global action
+                result = conn.execute(
+                    """UPDATE actions SET global_action_id=?
+                       WHERE source_tool=? AND source_id=? AND global_action_id IS NULL""",
+                    (ga_id, d["source_tool"], d["source_id"]),
+                )
+                linked += result.rowcount
+
+        return {"global_actions_created": created, "tenant_actions_linked": linked}
+
+    # ── Global Compliance Mappings ──
+
+    def get_global_compliance_mappings(self, global_action_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM global_compliance_mappings WHERE global_action_id=? ORDER BY framework, control_id",
+                (global_action_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_global_compliance_mapping(self, global_action_id: str, framework: str,
+                                       control_id: str, control_name: str = "",
+                                       control_family: str = "", notes: str = "") -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO global_compliance_mappings
+                   (global_action_id, framework, control_id, control_name, control_family, notes)
+                   VALUES (?,?,?,?,?,?)""",
+                (global_action_id, framework, control_id, control_name, control_family, notes),
+            )
+            row = conn.execute(
+                "SELECT * FROM global_compliance_mappings WHERE global_action_id=? AND framework=? AND control_id=?",
+                (global_action_id, framework, control_id),
+            ).fetchone()
+        return dict(row)
+
+    def remove_global_compliance_mapping(self, mapping_id: int):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM global_compliance_mappings WHERE id=?", (mapping_id,))
+
+    def get_global_compliance_summary(self) -> dict:
+        """Return count of global actions mapped per framework."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT framework, COUNT(DISTINCT global_action_id) as mapped_count
+                   FROM global_compliance_mappings GROUP BY framework"""
+            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) as c FROM global_actions").fetchone()["c"]
+        result = {r["framework"]: r["mapped_count"] for r in rows}
+        result["_total_actions"] = total
+        return result
+
+    # ── Users ──
+
+    def _row_to_user(self, row, include_hash: bool = False) -> dict:
+        d = dict(row)
+        if not include_hash:
+            d.pop("password_hash", None)
+        d["is_active"] = bool(d.get("is_active", 1))
+        return d
+
+    def list_users(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM users ORDER BY username").fetchall()
+        return [self._row_to_user(r) for r in rows]
+
+    def get_user(self, user_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        return self._row_to_user(row) if row else None
+
+    def get_user_by_username(self, username: str, include_hash: bool = False) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        return self._row_to_user(row, include_hash=include_hash) if row else None
+
+    def authenticate_user(self, username: str, password: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE username=? AND is_active=1", (username,)
+            ).fetchone()
+        if not row:
+            return None
+        user = dict(row)
+        if not _verify_password(password, user.get("password_hash", "")):
+            return None
+        # Update last_login
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute("UPDATE users SET last_login=? WHERE id=?", (now, user["id"]))
+        return self._row_to_user(row)
+
+    def create_user(self, username: str, password: str, display_name: str = "",
+                    email: str = "", role: str = "viewer") -> dict:
+        uid = _generate_id()
+        now = datetime.utcnow().isoformat()
+        pw_hash = _hash_password(password)
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO users (id, username, password_hash, display_name, email, role,
+                   is_active, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (uid, username, pw_hash, display_name, email, role, 1, now, now),
+            )
+        return self.get_user(uid)
+
+    def update_user(self, user_id: str, **kwargs) -> dict | None:
+        allowed = {"display_name", "email", "role", "is_active"}
+        updates = {}
+        for k, v in kwargs.items():
+            if k in allowed:
+                updates[k] = v
+        if "password" in kwargs:
+            updates["password_hash"] = _hash_password(kwargs["password"])
+        if updates:
+            updates["updated_at"] = datetime.utcnow().isoformat()
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [user_id]
+            with self._conn() as conn:
+                conn.execute(f"UPDATE users SET {sets} WHERE id=?", vals)
+        return self.get_user(user_id)
+
+    def delete_user(self, user_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+    # ── User Tenant Access ──
+
+    def get_user_tenant_access(self, user_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM user_tenant_access WHERE user_id=?", (user_id,)
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["workloads"] = json.loads(d.get("workloads") or "[]")
+            result.append(d)
+        return result
+
+    def set_user_tenant_access(self, user_id: str, tenant_name: str, workloads: list[str] = None):
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO user_tenant_access (user_id, tenant_name, workloads)
+                   VALUES (?,?,?)""",
+                (user_id, tenant_name, json.dumps(workloads or [])),
+            )
+
+    def remove_user_tenant_access(self, user_id: str, tenant_name: str):
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM user_tenant_access WHERE user_id=? AND tenant_name=?",
+                (user_id, tenant_name),
+            )
+
+    # ── Tenant Frameworks ──
+
+    def get_tenant_frameworks(self, tenant_name: str) -> list[str]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT framework FROM tenant_frameworks WHERE tenant_name=? ORDER BY framework",
+                (tenant_name,),
+            ).fetchall()
+        return [r["framework"] for r in rows]
+
+    def set_tenant_framework(self, tenant_name: str, framework: str):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tenant_frameworks (tenant_name, framework) VALUES (?,?)",
+                (tenant_name, framework),
+            )
+
+    def remove_tenant_framework(self, tenant_name: str, framework: str):
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM tenant_frameworks WHERE tenant_name=? AND framework=?",
+                (tenant_name, framework),
+            )
+
+    def set_tenant_frameworks(self, tenant_name: str, frameworks: list[str]):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM tenant_frameworks WHERE tenant_name=?", (tenant_name,))
+            for fw in frameworks:
+                conn.execute(
+                    "INSERT OR IGNORE INTO tenant_frameworks (tenant_name, framework) VALUES (?,?)",
+                    (tenant_name, fw),
+                )
+
+    def get_all_tenant_frameworks(self) -> dict:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT tenant_name, framework FROM tenant_frameworks ORDER BY tenant_name, framework"
+            ).fetchall()
+        result: dict = {}
+        for r in rows:
+            result.setdefault(r["tenant_name"], []).append(r["framework"])
+        return result
+
+    # ── Import linking helpers ──
+
+    def find_global_action_for_import(self, source_tool: str, source_id: str,
+                                       title: str = "") -> dict | None:
+        """Try to find a matching global action for an incoming import."""
+        with self._conn() as conn:
+            # Exact source_id match first
+            if source_id:
+                row = conn.execute(
+                    "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
+                    (source_tool, source_id),
+                ).fetchone()
+                if row:
+                    return self._row_to_global_action(row)
+            # Fuzzy title match fallback
+            if title:
+                row = conn.execute(
+                    "SELECT * FROM global_actions WHERE source_tool=? AND title=?",
+                    (source_tool, title),
+                ).fetchone()
+                if row:
+                    return self._row_to_global_action(row)
+        return None
 
