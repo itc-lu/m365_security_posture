@@ -13,11 +13,17 @@ Required Azure AD app registration:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import os
+import secrets
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 
 # Default scope for Secure Score read access
 GRAPH_SCOPES = "https://graph.microsoft.com/SecurityEvents.Read.All offline_access"
@@ -113,6 +119,91 @@ def client_credentials_token(tenant_id: str, client_id: str, client_secret: str)
             raise RuntimeError(err.get("error_description", body))
         except json.JSONDecodeError:
             raise RuntimeError(f"Client credentials auth failed ({e.code}): {body}")
+
+
+# ── Interactive Browser Auth (Authorization Code + PKCE) ──
+
+def start_interactive_auth(tenant_id: str, client_id: str,
+                           redirect_port: int = 8400) -> dict:
+    """Start the interactive browser-based OAuth2 Authorization Code flow with PKCE.
+
+    Returns a dict with:
+      - auth_url: URL to open in the browser
+      - state: CSRF state value
+      - code_verifier: PKCE code verifier (needed to exchange code for token)
+      - redirect_uri: The local redirect URI
+    """
+    # Generate PKCE code verifier and challenge
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    state = secrets.token_urlsafe(32)
+
+    redirect_uri = f"http://localhost:{redirect_port}/auth/callback"
+    params = urlencode({
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": GRAPH_SCOPES,
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "prompt": "select_account",
+    })
+    auth_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize?{params}"
+
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "code_verifier": code_verifier,
+        "redirect_uri": redirect_uri,
+        "redirect_port": redirect_port,
+    }
+
+
+def exchange_auth_code(tenant_id: str, client_id: str, code: str,
+                       code_verifier: str, redirect_uri: str) -> dict:
+    """Exchange an authorization code for an access token (PKCE flow)."""
+    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    data = urlencode({
+        "client_id": client_id,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "code_verifier": code_verifier,
+    }).encode()
+
+    req = Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+    try:
+        with urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except HTTPError as e:
+        body = e.read().decode()
+        try:
+            err = json.loads(body)
+            raise RuntimeError(err.get("error_description", body))
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Token exchange failed ({e.code}): {body}")
+
+
+# Store pending interactive auth sessions (keyed by state)
+_interactive_sessions: dict = {}
+
+
+def wait_for_auth_callback(state: str, timeout: int = 300) -> dict | None:
+    """Wait for the auth callback to arrive. Returns the session data or None on timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        session = _interactive_sessions.get(state)
+        if session and session.get("code"):
+            return session
+        if session and session.get("error"):
+            return session
+        time.sleep(1)
+    return None
 
 
 def fetch_secure_scores(access_token: str) -> dict:

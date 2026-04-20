@@ -513,6 +513,44 @@ class Database:
                 conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
+            # Add import_suggested_status to track what import wanted to set
+            # when status was protected (Risk Accepted, Completed, etc.)
+            for col, coltype, default in [
+                ("import_suggested_status", "TEXT", "''"),
+                ("last_seen_in_report", "TEXT", "NULL"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+            # Responsible persons registry
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS responsible_persons (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    email TEXT DEFAULT '',
+                    role TEXT DEFAULT '',
+                    department TEXT DEFAULT '',
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS action_responsible (
+                    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+                    person_id TEXT NOT NULL REFERENCES responsible_persons(id) ON DELETE CASCADE,
+                    assigned_at TEXT,
+                    PRIMARY KEY (action_id, person_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_action_responsible_person
+                    ON action_responsible(person_id);
+
+                CREATE TABLE IF NOT EXISTS action_links (
+                    source_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+                    target_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+                    link_type TEXT DEFAULT 'related',
+                    created_at TEXT,
+                    PRIMARY KEY (source_action_id, target_action_id)
+                );
+            """)
 
             # Add Graph API overall scores and metadata to tenants (idempotent)
             for col, coltype, default in [
@@ -1050,7 +1088,7 @@ class Database:
                 "notes", "reference_url", "correlation_group_id",
                 "risk_justification", "risk_owner", "risk_review_date",
                 "risk_expiry_date", "risk_accepted_at",
-                "pinned_priority",
+                "pinned_priority", "import_suggested_status", "last_seen_in_report",
             }
             updates = {}
             for k, v in data.items():
@@ -1154,14 +1192,25 @@ class Database:
                         changes["score_percentage"] = 0
 
                     if action.status != existing["status"]:
-                        conn.execute(
-                            """INSERT INTO action_history (action_id, timestamp,
-                               old_status, new_status, source_report)
-                               VALUES (?, ?, ?, ?, ?)""",
-                            (existing["id"], datetime.utcnow().isoformat(),
-                             existing["status"], action.status, source_file),
-                        )
-                        changes["status"] = action.status
+                        # Protect manually-set statuses from being overwritten by imports.
+                        # Risk Accepted, Completed, In Progress, and Exception are user decisions
+                        # that should not be reset by a new report import.
+                        protected_statuses = {
+                            "Risk Accepted", "Completed", "In Progress", "Exception",
+                        }
+                        if existing["status"] not in protected_statuses:
+                            conn.execute(
+                                """INSERT INTO action_history (action_id, timestamp,
+                                   old_status, new_status, source_report)
+                                   VALUES (?, ?, ?, ?, ?)""",
+                                (existing["id"], datetime.utcnow().isoformat(),
+                                 existing["status"], action.status, source_file),
+                            )
+                            changes["status"] = action.status
+                        else:
+                            # Record that the import wanted to change status, but we preserved
+                            # the user's decision. Store the import's suggested status for reference.
+                            changes["import_suggested_status"] = action.status
 
                     # Always update source_id and title to latest format
                     changes["source_id"] = action.source_id
@@ -1224,6 +1273,7 @@ class Database:
 
                     changes["source_report_file"] = source_file
                     changes["source_report_date"] = datetime.utcnow().isoformat()
+                    changes["last_seen_in_report"] = datetime.utcnow().isoformat()
                     changes["updated_at"] = datetime.utcnow().isoformat()
                     changes["raw_data"] = json.dumps(action.raw_data if hasattr(action, "raw_data") else {})
 
@@ -1233,12 +1283,18 @@ class Database:
                     updated_count += 1
                     touched_ids.append(existing["id"])
                     updated_details.append({
+                    detail = {
                         "id": existing["id"],
                         "title": action.title,
                         "source_id": action.source_id,
                         "existing_source_id": existing.get("source_id", ""),
                         "matched_by": matched_by,
-                    })
+                    }
+                    if "import_suggested_status" in changes and changes["import_suggested_status"]:
+                        detail["status_protected"] = True
+                        detail["current_status"] = existing["status"]
+                        detail["import_wanted_status"] = changes["import_suggested_status"]
+                    updated_details.append(detail)
                 else:
                     # Insert new action
                     now = datetime.utcnow().isoformat()
@@ -1254,8 +1310,9 @@ class Database:
                            category, subcategory, planned_date, responsible,
                            tags, notes, reference_url, source_report_file,
                            source_report_date, raw_data, created_at, updated_at, control_id,
-                           threats, tier, action_type, remediation_impact, deprecated)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           threats, tier, action_type, remediation_impact, deprecated,
+                           last_seen_in_report)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (action_id, tenant_name, action.title, action.description,
                          action.source_tool, action.source_id, action.reference_id,
                          action.workload,
@@ -1272,7 +1329,8 @@ class Database:
                          json.dumps(action.raw_data if hasattr(action, "raw_data") else {}),
                          action.created_at or now, now, control_id,
                          json.dumps(action.threats), action.tier, action.action_type,
-                         action.remediation_impact, 1 if action.deprecated else 0),
+                         action.remediation_impact, 1 if action.deprecated else 0,
+                         now),
                     )
                     new_count += 1
                     touched_ids.append(action_id)
@@ -1919,6 +1977,134 @@ class Database:
                 d["resolved_findings"] = json.loads(d.get("resolved_findings") or "[]")
                 result.append(d)
             return result
+
+    # ── Responsible Persons ──
+
+    def get_responsible_persons(self) -> list:
+        """Get all registered responsible persons."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM responsible_persons ORDER BY name"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def create_responsible_person(self, name: str, email: str = "",
+                                  role: str = "", department: str = "") -> str:
+        pid = str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO responsible_persons (id, name, email, role, department, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (pid, name, email, role, department, datetime.utcnow().isoformat()),
+            )
+        return pid
+
+    def update_responsible_person(self, person_id: str, data: dict):
+        allowed = {"name", "email", "role", "department"}
+        fields = {k: v for k, v in data.items() if k in allowed}
+        if not fields:
+            return
+        with self._conn() as conn:
+            sets = ", ".join(f"{k}=?" for k in fields)
+            vals = list(fields.values()) + [person_id]
+            conn.execute(f"UPDATE responsible_persons SET {sets} WHERE id=?", vals)
+
+    def delete_responsible_person(self, person_id: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM action_responsible WHERE person_id=?", (person_id,))
+            conn.execute("DELETE FROM responsible_persons WHERE id=?", (person_id,))
+
+    def assign_person_to_action(self, action_id: str, person_id: str):
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO action_responsible (action_id, person_id, assigned_at)
+                   VALUES (?, ?, ?)""",
+                (action_id, person_id, datetime.utcnow().isoformat()),
+            )
+
+    def unassign_person_from_action(self, action_id: str, person_id: str):
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM action_responsible WHERE action_id=? AND person_id=?",
+                (action_id, person_id),
+            )
+
+    def get_action_persons(self, action_id: str) -> list:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT rp.* FROM responsible_persons rp
+                   JOIN action_responsible ar ON ar.person_id = rp.id
+                   WHERE ar.action_id=? ORDER BY rp.name""",
+                (action_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_person_actions(self, person_id: str, tenant_name: str = None) -> list:
+        with self._conn() as conn:
+            sql = """SELECT a.* FROM actions a
+                     JOIN action_responsible ar ON ar.action_id = a.id
+                     WHERE ar.person_id=?"""
+            params: list = [person_id]
+            if tenant_name:
+                sql += " AND a.tenant_name=?"
+                params.append(tenant_name)
+            sql += " ORDER BY a.priority, a.status"
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_all_action_person_assignments(self, tenant_name: str = None) -> dict:
+        """Return {action_id: [person_dicts]} for all assigned actions."""
+        with self._conn() as conn:
+            sql = """SELECT ar.action_id, rp.* FROM action_responsible ar
+                     JOIN responsible_persons rp ON rp.id = ar.person_id
+                     JOIN actions a ON a.id = ar.action_id"""
+            params: list = []
+            if tenant_name:
+                sql += " WHERE a.tenant_name=?"
+                params.append(tenant_name)
+            sql += " ORDER BY rp.name"
+            rows = conn.execute(sql, params).fetchall()
+        result: dict = {}
+        for r in rows:
+            d = dict(r)
+            aid = d.pop("action_id")
+            result.setdefault(aid, []).append(d)
+        return result
+
+    # ── Action Links (cross-tool) ──
+
+    def link_actions(self, source_id: str, target_id: str,
+                     link_type: str = "related") -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO action_links
+                   (source_action_id, target_action_id, link_type, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (source_id, target_id, link_type, datetime.utcnow().isoformat()),
+            )
+
+    def unlink_actions(self, source_id: str, target_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """DELETE FROM action_links
+                   WHERE (source_action_id=? AND target_action_id=?)
+                      OR (source_action_id=? AND target_action_id=?)""",
+                (source_id, target_id, target_id, source_id),
+            )
+
+    def get_linked_actions(self, action_id: str) -> list:
+        """Get all actions linked to the given action (bidirectional)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT a.*, al.link_type,
+                     CASE WHEN al.source_action_id=? THEN 'outgoing' ELSE 'incoming' END as direction
+                   FROM action_links al
+                   JOIN actions a ON a.id = CASE WHEN al.source_action_id=?
+                     THEN al.target_action_id ELSE al.source_action_id END
+                   WHERE al.source_action_id=? OR al.target_action_id=?""",
+                (action_id, action_id, action_id, action_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     # ── Scoring helpers ──
 

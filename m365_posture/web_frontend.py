@@ -305,6 +305,10 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Plans
     </a>
+    <a href="#people" data-page="people">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      People
+    </a>
     <a href="#correlations" data-page="correlations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       Correlations
@@ -1454,7 +1458,36 @@ async function renderTenants() {
       </div>
     </div>`).join('');
 
-  document.getElementById('content').innerHTML = cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>';
+  // Migration status
+  const migStatus = await api.get('/api/admin/migration-status');
+  const migHtml = migStatus.migrated
+    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
+    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
+       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
+       <div id="migration-result" style="margin-top:8px"></div>`;
+
+  document.getElementById('content').innerHTML = (cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>')
+    + `<div class="card mt-16"><div class="card-header">Database Administration</div>${migHtml}</div>`;
+}
+
+async function migrateDatabase() {
+  if(!confirm('This will migrate to per-tenant databases. The original database will be backed up. Continue?')) return;
+  const el = document.getElementById('migration-result');
+  el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
+  const r = await api.post('/api/admin/migrate-database');
+  if(r.error) {
+    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+  if(r.success) {
+    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
+      `<div style="font-size:12px;padding:2px 0"><strong>${t}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
+    ).join('');
+    el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
+      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${r.backup}</div>
+      ${details}
+      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
+  }
 }
 
 function showAddTenant() {
@@ -1527,6 +1560,7 @@ async function renderActions() {
       <select id="f-workload" onchange="filterActions()"><option value="">All Workloads</option>${selectOptions(state.enums.workloads)}</select>
       <select id="f-source" onchange="filterActions()"><option value="">All Sources</option>${selectOptions(state.enums.source_tools)}</select>
       <select id="f-priority" onchange="filterActions()"><option value="">All Priorities</option>${selectOptions(state.enums.priorities)}</select>
+      <select id="f-freshness" onchange="filterActions()"><option value="">All Items</option><option value="new-7d">New (last 7 days)</option><option value="new-30d">New (last 30 days)</option><option value="stale-30d">Stale (not seen 30d+)</option><option value="stale-90d">Stale (not seen 90d+)</option><option value="never-imported">Never in a report</option></select>
     </div>
     <div class="filter-bar" id="zt-filters" style="display:none;margin-top:-8px;padding-top:0">
       <select id="f-pillar" onchange="applyZtFilters()"><option value="">All Pillars</option><option value="Identity">Identity</option><option value="Devices">Devices</option></select>
@@ -1578,10 +1612,31 @@ function applyZtFilters() {
   const pillar = document.getElementById('f-pillar')?.value;
   const ztStatus = document.getElementById('f-zt-status')?.value;
   const sfi = document.getElementById('f-sfi')?.value;
+  const freshness = document.getElementById('f-freshness')?.value;
 
   if(pillar) actions = actions.filter(a => (a.tags||[]).some(t => t === 'Pillar: '+pillar));
   if(ztStatus) actions = actions.filter(a => (a.tags||[]).some(t => t === 'ZT: '+ztStatus));
   if(sfi) actions = actions.filter(a => a.subcategory === sfi);
+
+  // Freshness filter based on created_at and last_seen_in_report
+  if(freshness) {
+    const now = new Date();
+    if(freshness === 'new-7d') {
+      const cutoff = new Date(now - 7*86400000).toISOString();
+      actions = actions.filter(a => a.created_at && a.created_at >= cutoff);
+    } else if(freshness === 'new-30d') {
+      const cutoff = new Date(now - 30*86400000).toISOString();
+      actions = actions.filter(a => a.created_at && a.created_at >= cutoff);
+    } else if(freshness === 'stale-30d') {
+      const cutoff = new Date(now - 30*86400000).toISOString();
+      actions = actions.filter(a => a.last_seen_in_report && a.last_seen_in_report < cutoff);
+    } else if(freshness === 'stale-90d') {
+      const cutoff = new Date(now - 90*86400000).toISOString();
+      actions = actions.filter(a => a.last_seen_in_report && a.last_seen_in_report < cutoff);
+    } else if(freshness === 'never-imported') {
+      actions = actions.filter(a => !a.last_seen_in_report);
+    }
+  }
 
   renderActionsTable(actions);
 }
@@ -1902,6 +1957,7 @@ function actionDetailHtml(a) {
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
       <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
+      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Links & People</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
@@ -1983,6 +2039,23 @@ function actionDetailHtml(a) {
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
+    <!-- Links & People Tab -->
+    <div class="action-tab-content" id="atab-${uid}-links">
+      <div class="grid grid-2" style="gap:20px">
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Responsible Persons</div>
+          <div id="action-persons-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+          <button class="btn btn-sm" onclick="showAssignPerson('${a.id}','${uid}');event.stopPropagation()">+ Assign Person</button>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
+          <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+          <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
+        </div>
+      </div>
+      ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span>
+      ${a.import_suggested_status?` &middot; <span style="font-size:12px;color:var(--warning)">Import wanted status: <strong>${a.import_suggested_status}</strong> (protected)</span>`:''}</div>`:''}
+    </div>
     <!-- History Tab -->
     ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
   </div>`;
@@ -2005,6 +2078,97 @@ function toggleActionDetail(id) {
   el.classList.toggle('hidden');
   expandedAction = el.classList.contains('hidden') ? null : id;
   if(!el.classList.contains('hidden')) loadActionDeps(id);
+}
+
+async function loadActionLinks(actionId, uid) {
+  const [persons, links] = await Promise.all([
+    api.get(`/api/actions/${actionId}/persons`),
+    api.get(`/api/actions/${actionId}/links`),
+  ]);
+
+  // Render persons
+  const personsEl = document.getElementById(`action-persons-${uid}`);
+  if(personsEl) {
+    if(persons.length === 0) {
+      personsEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No persons assigned</div>';
+    } else {
+      personsEl.innerHTML = persons.map(p =>
+        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">
+          <span style="background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${p.name.charAt(0).toUpperCase()}</span>
+          <span><strong>${p.name}</strong>${p.role?' &middot; '+p.role:''}</span>
+          <button class="btn btn-sm" onclick="unassignPerson('${actionId}','${p.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Render links
+  const linksEl = document.getElementById(`action-links-${uid}`);
+  if(linksEl) {
+    if(links.length === 0) {
+      linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
+    } else {
+      linksEl.innerHTML = links.map(l =>
+        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
+          <span style="font-size:10px;color:var(--text-light)">${l.source_tool}</span>
+          <span>${l.title}</span>
+          ${statusBadge(l.status)}
+          <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+        </div>`
+      ).join('');
+    }
+  }
+}
+
+async function showAssignPerson(actionId, uid) {
+  const persons = await api.get('/api/responsible-persons');
+  if(!persons.length) {
+    toast('No persons registered. Add people first in the People page.','error');
+    return;
+  }
+  const opts = persons.map(p => `<option value="${p.id}">${p.name}${p.role?' ('+p.role+')':''}</option>`).join('');
+  openModal('Assign Person', `
+    <div class="form-group"><label>Person</label><select id="assign-person-select">${opts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="doAssignPerson('${actionId}','${uid}')">Assign</button>`);
+}
+
+async function doAssignPerson(actionId, uid) {
+  const personId = document.getElementById('assign-person-select').value;
+  await api.post(`/api/actions/${actionId}/persons`, {person_id: personId});
+  closeModal(); toast('Person assigned','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function unassignPerson(actionId, personId, uid) {
+  await api.del(`/api/actions/${actionId}/persons/${personId}`);
+  toast('Person unassigned','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function showLinkAction(actionId, uid) {
+  if(!state.activeTenant) return;
+  const actions = await api.get(`/api/tenants/${state.activeTenant.name}/actions`);
+  const other = actions.filter(a => a.id !== actionId).slice(0, 200);
+  const opts = other.map(a => `<option value="${a.id}">[${a.source_tool}] ${a.title.substring(0,60)}</option>`).join('');
+  openModal('Link Action', `
+    <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">Link this action to another action from a different tool to indicate they address the same recommendation.</p>
+    <div class="form-group"><label>Target Action</label><select id="link-action-select" style="max-width:100%">${opts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="doLinkAction('${actionId}','${uid}')">Link</button>`);
+}
+
+async function doLinkAction(actionId, uid) {
+  const targetId = document.getElementById('link-action-select').value;
+  await api.post(`/api/actions/${actionId}/links`, {target_action_id: targetId});
+  closeModal(); toast('Actions linked','success');
+  loadActionLinks(actionId, uid);
+}
+
+async function unlinkAction(sourceId, targetId, uid) {
+  await api.del(`/api/actions/${sourceId}/links/${targetId}`);
+  toast('Link removed','success');
+  loadActionLinks(sourceId, uid);
 }
 
 function showAddAction() {
@@ -2111,14 +2275,18 @@ async function renderImport() {
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
         ${hasSecret ? `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively with device code (uses <strong>delegated</strong> permissions).</p>
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>
+          <button class="btn" onclick="startInteractiveAuth()">Sign in with Browser</button>
           <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
         </div>
         ` : `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. No credentials are stored.</p>
-        <button class="btn btn-primary" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Microsoft</button>
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. Uses Global Reader permissions. No secrets stored.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="startInteractiveAuth()">Sign in with Browser (Recommended)</button>
+          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+        </div>
         `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
       </div>`;
@@ -2149,6 +2317,48 @@ async function renderImport() {
 
 // ── Graph API Auth ──
 let graphPollTimer = null;
+
+async function startInteractiveAuth() {
+  const t = state.activeTenant.name;
+  const statusEl = document.getElementById('graph-auth-status');
+  statusEl.innerHTML = '<div style="color:var(--text-light)">Starting interactive authentication...</div>';
+
+  const r = await api.post(`/api/tenants/${t}/graph/interactive-auth`);
+  if(r.error) {
+    statusEl.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
+    return;
+  }
+
+  // Open the auth URL in a new window
+  window.open(r.auth_url, '_blank', 'width=600,height=700');
+  statusEl.innerHTML = `
+    <div class="card" style="padding:12px">
+      <p>&#128274; <strong>Sign in with your browser</strong></p>
+      <p style="font-size:12px;color:var(--text-light);margin-top:4px">A new window should have opened. Sign in with an account that has <strong>Global Reader</strong> (or Security Reader) permissions.</p>
+      <p style="font-size:12px;color:var(--text-light);margin-top:8px">Waiting for authentication to complete...</p>
+    </div>`;
+
+  // Poll for completion
+  for(let i=0; i<60; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const status = await api.get(`/api/tenants/${t}/graph/interactive-status`);
+    if(status.authenticated) {
+      statusEl.innerHTML = `
+        <div style="color:var(--success);font-weight:600">&#10003; Authenticated (expires in ${Math.floor(status.expires_in/60)} min)</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="graphImportScores()">Import Secure Scores</button>
+          <button class="btn" onclick="graphFetchControls()">Fetch Control Profiles</button>
+        </div>
+        <div id="graph-result" style="margin-top:8px"></div>`;
+      return;
+    }
+    if(status.expired) {
+      statusEl.innerHTML = '<div style="color:var(--danger)">Authentication expired. Please try again.</div>';
+      return;
+    }
+  }
+  statusEl.innerHTML = '<div style="color:var(--danger)">Authentication timed out. Please try again.</div>';
+}
 
 async function startGraphAuth() {
   const t = state.activeTenant.name;
@@ -2318,7 +2528,9 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
-      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${esc(d.title||'')}</td><td><code>${esc(d.source_id||'')}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+esc(d.existing_source_id||'')+'</code>':''}</td><td>${esc(d.matched_by||'')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.protected_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--primary)">&#128274; Protected Actions (status preserved)</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions had their status protected during import (Risk Accepted, Completed, In Progress, Exception).</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Current Status</th><th>Import Wanted</th></tr></thead><tbody>${r.protected_actions.map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.current_status)}</td><td>${statusBadge(d.import_wanted_status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.stale_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--warning)">&#9888; Stale Actions (${r.stale_actions.length})</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions from the same source tool were not in this import. They may be obsolete.</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Status</th><th>Last Seen</th></tr></thead><tbody>${r.stale_actions.slice(0,20).map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.status)}</td><td>${d.last_seen?.substring(0,10)||'—'}</td></tr>`).join('')}</tbody></table>${r.stale_actions.length>20?`<div style="font-size:11px;color:var(--text-light)">... and ${r.stale_actions.length-20} more</div>`:''}</div>` : ''}
+      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
   // Reload ZT reports after import
@@ -2531,13 +2743,18 @@ async function viewPlan(planId) {
   const actionIds = plan.items.map(i => i.action_id);
 
   let sim = {actions_count:0, percentage_gain:0, current_percentage:0, projected_percentage:0, by_tool:{}, essential_eight_impact:{}, risk_reduction:{}, licences_needed:[], effort_breakdown:{}, user_impact_summary:{}};
-  let phases = [];
+  let suggestedPhases = [];
   if(actionIds.length) {
-    [sim, phases] = await Promise.all([
+    [sim, suggestedPhases] = await Promise.all([
       api.post(`/api/tenants/${t}/simulate`, {action_ids:actionIds}),
       api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3})
     ]);
   }
+
+  // Fetch all actions for detail expansion
+  const allActions = await api.get(`/api/tenants/${t}/actions`);
+  const actionMap = {};
+  allActions.forEach(a => actionMap[a.id] = a);
 
   let toolImpact = Object.entries(sim.by_tool||{}).map(([tool,d]) => `
     <div class="mb-8"><div class="flex justify-between"><span style="font-size:13px">${tool}</span><span style="font-size:13px;font-weight:600;color:var(--success)">+${d.percentage_gain?.toFixed(2)||0}%</span></div>
@@ -2585,6 +2802,62 @@ async function viewPlan(planId) {
           <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
+  // Phase names
+  const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
+  const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
+
+  // Group items by phase
+  const byPhase = {1:[], 2:[], 3:[]};
+  plan.items.forEach(item => {
+    const ph = item.phase || 1;
+    if(!byPhase[ph]) byPhase[ph] = [];
+    byPhase[ph].push(item);
+  });
+
+  // Render phase cards with clickable items
+  function renderPhaseCard(phaseNum) {
+    const items = byPhase[phaseNum] || [];
+    const phName = phaseNames[phaseNum];
+    const phColor = phaseColors[phaseNum];
+    let phaseScore = 0;
+    items.forEach(a => { if(a.score && a.max_score && a.status !== 'Completed') phaseScore += a.max_score - (a.score||0); });
+
+    const rows = items.map(a => {
+      const full = actionMap[a.action_id] || a;
+      const scoreDisplay = a.score != null && a.max_score != null ? a.score+'/'+a.max_score : '-';
+      // Phase move dropdown options (other phases)
+      const moveOpts = [1,2,3].filter(p=>p!==phaseNum).map(p =>
+        `<option value="${p}">${phaseNames[p]}</option>`
+      ).join('');
+      return `<tr onclick="togglePlanActionDetail('plan-${a.action_id}')" style="cursor:pointer" id="plan-row-${a.action_id}">
+        <td>${a.title}</td>
+        <td>${statusBadge(a.status||'ToDo')}</td>
+        <td>${priorityBadge(a.priority||'Medium')}</td>
+        <td style="font-size:12px">${a.workload||''}</td>
+        <td style="font-size:12px">${a.implementation_effort||'Medium'}</td>
+        <td>${scoreDisplay}</td>
+        <td onclick="event.stopPropagation()">
+          <select onchange="movePlanItemPhase('${planId}','${a.action_id}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+            <option value="" disabled selected>Move</option>
+            ${moveOpts}
+          </select>
+        </td>
+        <td onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="removePlanItem('${planId}','${a.action_id}')" title="Remove" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
+      </tr>
+      <tr id="detail-plan-${a.action_id}" class="hidden"><td colspan="8" style="padding:0">${actionDetailHtml(full)}</td></tr>`;
+    }).join('');
+
+    return `<div class="card mb-16">
+      <div class="flex justify-between items-center" style="border-left:4px solid ${phColor};padding-left:12px">
+        <div>
+          <div class="card-header" style="margin:0">Phase ${phaseNum} — ${phName}</div>
+          <div style="font-size:12px;color:var(--text-light)">${items.length} actions${phaseScore>0?' &middot; Est. score gain: +'+phaseScore.toFixed(0):''}</div>
+        </div>
+        <span class="badge" style="background:${phColor};color:#fff;font-size:14px">${items.length}</span>
+      </div>
+      ${items.length ? `<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Action</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th style="width:80px">Move to</th><th style="width:40px"></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div style="padding:16px;text-align:center;color:var(--text-light);font-style:italic">No actions in this phase. Move actions here or add new ones.</div>'}
+    </div>`;
+  }
 
   const statusOpts = ['Draft','Active','Completed','Archived'].map(s => `<option value="${s}" ${s===plan.status?'selected':''}>${s}</option>`).join('');
 
@@ -2618,13 +2891,17 @@ async function viewPlan(planId) {
       <div class="card stat-card">${gauge(sim.projected_percentage||0, 100, 'Projected')}</div>
     </div>
 
-    <div class="card mb-16">
-      <div class="flex justify-between items-center mb-8">
-        <div class="card-header" style="margin:0">Plan Actions (${plan.items.length})</div>
+    <div class="flex justify-between items-center mb-8">
+      <h3 style="margin:0">Phased Rollout</h3>
+      <div class="flex gap-8">
+        <button class="btn btn-sm" onclick="autoAssignPhases('${planId}')" title="Auto-assign actions to phases based on ROI, effort, and licence requirements">Auto-assign Phases</button>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
       ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th>Phase</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
+    ${renderPhaseCard(1)}
+    ${renderPhaseCard(2)}
+    ${renderPhaseCard(3)}
 
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Impact by Source Tool</div>${toolImpact||'<div style="color:var(--text-light)">No data</div>'}</div>
@@ -2635,10 +2912,45 @@ async function viewPlan(planId) {
         <div class="card-header mt-16">Effort Breakdown</div><div style="font-size:13px">${Object.entries(sim.effort_breakdown||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
         <div class="card-header mt-16">User Impact</div><div style="font-size:13px">${Object.entries(sim.user_impact_summary||{}).map(([e,n])=>`${n}x ${e}`).join(', ')||'N/A'}</div>
       </div>
-    </div>
-
-    ${phaseHtml ? `<h3 class="mb-16">Suggested Phased Rollout</h3>${phaseHtml}` : ''}`;
+    </div>`;
   setTimeout(applySort, 50);
+}
+
+let _planExpandedAction = null;
+function togglePlanActionDetail(id) {
+  const el = document.getElementById('detail-'+id);
+  if(!el) return;
+  if(_planExpandedAction && _planExpandedAction!==id) {
+    const prev = document.getElementById('detail-'+_planExpandedAction);
+    if(prev) prev.classList.add('hidden');
+  }
+  el.classList.toggle('hidden');
+  _planExpandedAction = el.classList.contains('hidden') ? null : id;
+}
+
+async function movePlanItemPhase(planId, actionId, newPhase) {
+  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(newPhase)});
+  toast('Moved to Phase ' + newPhase, 'success');
+  viewPlan(planId);
+}
+
+async function autoAssignPhases(planId) {
+  const t = state.activeTenant.name;
+  const plan = await api.get(`/api/plans/${planId}`);
+  const actionIds = plan.items.map(i => i.action_id);
+  if(!actionIds.length) return toast('No actions in plan','error');
+
+  const phases = await api.post(`/api/tenants/${t}/suggest-phases`, {action_ids:actionIds, num_phases:3});
+
+  // Update each item's phase based on suggestion
+  for(let phIdx=0; phIdx<phases.length; phIdx++) {
+    const ph = phases[phIdx];
+    for(const a of ph.actions) {
+      await api.put(`/api/plans/${planId}/items/${a.id}`, {phase: phIdx+1});
+    }
+  }
+  toast('Phases auto-assigned based on ROI analysis','success');
+  viewPlan(planId);
 }
 
 async function updatePlanStatus(planId, status) {
@@ -2715,7 +3027,14 @@ async function showAddActionsToPlan(planId) {
 
   openModal('Add Actions to Plan', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${available.length} actions available (already in plan excluded)</div>
-    <div style="max-height:400px;overflow-y:auto">
+    <div class="form-group"><label>Add to Phase</label>
+      <select id="plan-add-phase">
+        <option value="1">Phase 1 — Quick Wins</option>
+        <option value="2">Phase 2 — Core Controls</option>
+        <option value="3">Phase 3 — Advanced Hardening</option>
+      </select>
+    </div>
+    <div style="max-height:350px;overflow-y:auto">
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-add-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
@@ -2725,8 +3044,9 @@ async function showAddActionsToPlan(planId) {
 async function submitAddActionsToPlan(planId) {
   const ids = [...document.querySelectorAll('.plan-add-cb:checked')].map(c => c.value);
   if(!ids.length) return toast('Select at least one action', 'error');
+  const phase = parseInt(document.getElementById('plan-add-phase')?.value || '1');
   for(const aid of ids) {
-    await api.post(`/api/plans/${planId}/items`, {action_id: aid});
+    await api.post(`/api/plans/${planId}/items`, {action_id: aid, phase: phase});
   }
   closeModal();
   toast(ids.length + ' action' + (ids.length>1?'s':'') + ' added', 'success');
@@ -2826,6 +3146,175 @@ async function deletePlan(id) {
   if(!await showConfirm('Delete Plan', 'Delete this plan and all its items? This cannot be undone.')) return;
   await api.del(`/api/plans/${id}`);
   toast('Plan deleted','success'); renderPlans();
+}
+
+// ── People & Assignments ──
+let _peopleView = 'list'; // 'list' or 'kanban'
+let _peopleFilter = '';
+
+async function renderPeople() {
+  const c = document.getElementById('content');
+  const [persons, allActions] = await Promise.all([
+    api.get('/api/responsible-persons'),
+    requireTenant() ? api.get(`/api/tenants/${state.activeTenant.name}/actions`) : Promise.resolve([]),
+  ]);
+  const assignments = requireTenant() ? await api.get(`/api/tenants/${state.activeTenant.name}/action-persons`) : {};
+  // Build reverse map: person_id -> [actions]
+  const personActions = {};
+  persons.forEach(p => personActions[p.id] = []);
+  for(const [aid, plist] of Object.entries(assignments)) {
+    const action = allActions.find(a => a.id === aid);
+    if(!action) continue;
+    for(const p of plist) {
+      if(!personActions[p.id]) personActions[p.id] = [];
+      personActions[p.id].push(action);
+    }
+  }
+  // Unassigned actions
+  const assignedIds = new Set(Object.keys(assignments));
+  const unassigned = allActions.filter(a => !assignedIds.has(a.id));
+
+  // Plans map
+  let plansMap = {};
+  if(requireTenant()) {
+    try {
+      const plans = await api.get(`/api/tenants/${state.activeTenant.name}/plans`);
+      for(const p of plans) for(const pa of (p.actions||[])) {
+        if(!plansMap[pa.action_id]) plansMap[pa.action_id] = [];
+        plansMap[pa.action_id].push(p.name);
+      }
+    } catch(e) {}
+  }
+
+  const personList = persons.map(p => {
+    const acts = personActions[p.id] || [];
+    const todo = acts.filter(a=>a.status==='ToDo').length;
+    const prog = acts.filter(a=>a.status==='In Progress').length;
+    const done = acts.filter(a=>a.status==='Completed').length;
+    return `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td style="font-size:12px">${p.email||'—'}</td>
+      <td style="font-size:12px">${p.role||'—'}</td>
+      <td style="font-size:12px">${p.department||'—'}</td>
+      <td>${acts.length}</td>
+      <td><span class="badge badge-danger">${todo}</span> <span class="badge badge-warning">${prog}</span> <span class="badge badge-success">${done}</span></td>
+      <td>
+        <button class="btn btn-sm" onclick="editPerson('${p.id}','${p.name.replace(/'/g,"\\'")}','${(p.email||'').replace(/'/g,"\\'")}','${(p.role||'').replace(/'/g,"\\'")}','${(p.department||'').replace(/'/g,"\\'")}')">Edit</button>
+        <button class="btn btn-sm" onclick="deletePerson('${p.id}')" style="color:var(--danger)">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Kanban: columns per person + unassigned
+  const filterLower = _peopleFilter.toLowerCase();
+  const kanbanCols = persons.map(p => {
+    let acts = (personActions[p.id]||[]);
+    if(filterLower) acts = acts.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower) || a.source_tool.toLowerCase().includes(filterLower));
+    const cards = acts.map(a => {
+      const planBadge = plansMap[a.id] ? `<div style="font-size:10px;color:var(--primary);margin-top:4px">&#128203; ${plansMap[a.id].join(', ')}</div>` : '';
+      return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer" onclick="navigate('actions');setTimeout(()=>toggleActionDetail('${a.id}'),300)">
+        <div style="font-size:12px;font-weight:500">${a.title}</div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
+        <div style="font-size:10px;color:var(--text-light);margin-top:4px">${a.source_tool} &middot; ${a.workload}</div>
+        ${planBadge}
+      </div>`;
+    }).join('');
+    return `<div style="min-width:280px;max-width:320px;flex-shrink:0">
+      <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+        <span>${p.name}</span>
+        <span class="badge" style="background:var(--primary);color:#fff">${acts.length}</span>
+      </div>
+      <div style="max-height:calc(100vh - 260px);overflow-y:auto">${cards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">No actions</div>'}</div>
+    </div>`;
+  }).join('');
+
+  // Unassigned column
+  let unassignedFiltered = unassigned;
+  if(filterLower) unassignedFiltered = unassigned.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower));
+  const unassignedCards = unassignedFiltered.slice(0,50).map(a => {
+    return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px">
+      <div style="font-weight:500">${a.title}</div>
+      <div style="margin-top:4px">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
+    </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <div class="flex gap-8">
+        <button class="btn btn-sm ${_peopleView==='list'?'btn-primary':''}" onclick="_peopleView='list';renderPeople()">List</button>
+        <button class="btn btn-sm ${_peopleView==='kanban'?'btn-primary':''}" onclick="_peopleView='kanban';renderPeople()">Kanban</button>
+      </div>
+      <div class="flex gap-8">
+        ${_peopleView==='kanban'?`<input class="form-control" style="width:200px" placeholder="Filter actions..." value="${_peopleFilter}" oninput="_peopleFilter=this.value;renderPeople()">`:''}
+        <button class="btn btn-primary btn-sm" onclick="showAddPerson()">+ Add Person</button>
+      </div>
+    </div>
+    ${_peopleView==='list' ? `
+    <div class="card mb-16">
+      <div class="card-header">Responsible Persons (${persons.length})</div>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Actions</th><th>Status</th><th></th></tr></thead>
+      <tbody>${personList||'<tr><td colspan="7" class="text-center">No persons registered. Add your first team member.</td></tr>'}</tbody></table></div>
+    </div>` : `
+    <div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:16px">
+      ${kanbanCols}
+      <div style="min-width:280px;max-width:320px;flex-shrink:0">
+        <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--text-light)">Unassigned</span>
+          <span class="badge">${unassigned.length}</span>
+        </div>
+        <div style="max-height:calc(100vh - 260px);overflow-y:auto">${unassignedCards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">All actions assigned</div>'}</div>
+        ${unassigned.length>50?`<div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px">${unassigned.length-50} more...</div>`:''}
+      </div>
+    </div>`}`;
+}
+
+function showAddPerson() {
+  openModal('Add Person', `
+    <div class="form-group"><label>Name</label><input id="rp-name" placeholder="Jane Doe"></div>
+    <div class="form-group"><label>Email</label><input id="rp-email" placeholder="jane@company.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><input id="rp-role" placeholder="Security Engineer"></div>
+      <div class="form-group"><label>Department</label><input id="rp-department" placeholder="IT Security"></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addPerson()">Add</button>`);
+}
+
+async function addPerson() {
+  const name = document.getElementById('rp-name').value;
+  if(!name) return toast('Name is required','error');
+  await api.post('/api/responsible-persons', {
+    name, email:document.getElementById('rp-email').value,
+    role:document.getElementById('rp-role').value,
+    department:document.getElementById('rp-department').value
+  });
+  closeModal(); toast('Person added','success'); renderPeople();
+}
+
+function editPerson(id, name, email, role, dept) {
+  openModal('Edit Person', `
+    <div class="form-group"><label>Name</label><input id="rp-name" value="${name}"></div>
+    <div class="form-group"><label>Email</label><input id="rp-email" value="${email}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><input id="rp-role" value="${role}"></div>
+      <div class="form-group"><label>Department</label><input id="rp-department" value="${dept}"></div>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updatePerson('${id}')">Save</button>`);
+}
+
+async function updatePerson(id) {
+  await api.put(`/api/responsible-persons/${id}`, {
+    name:document.getElementById('rp-name').value,
+    email:document.getElementById('rp-email').value,
+    role:document.getElementById('rp-role').value,
+    department:document.getElementById('rp-department').value
+  });
+  closeModal(); toast('Person updated','success'); renderPeople();
+}
+
+async function deletePerson(id) {
+  if(!confirm('Delete this person? They will be unassigned from all actions.')) return;
+  await api.del(`/api/responsible-persons/${id}`);
+  toast('Person deleted','success'); renderPeople();
 }
 
 // ── Correlations ──
@@ -3198,6 +3687,7 @@ async function renderE8() {
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${esc(a.maturity?.replace('Maturity ','')||'—')}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
+      <td><button class="btn btn-sm" onclick="event.stopPropagation();removeE8Action('${a.id}')" title="Remove from E8 control" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
     </tr>`).join('');
 
     return `<div class="card mb-16">
@@ -3263,7 +3753,7 @@ async function renderE8() {
             </div>
             <button class="btn btn-sm" onclick="showE8AddAction('${ctrl.replace(/'/g,"\\'")}', '${d.control_id||''}')">+ Add Action</button>
           </div>
-          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
+          ${actionRows ? `<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Source</th><th>Title</th><th>Status</th><th>Priority</th><th>Level</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>${actionRows}</tbody></table></div>` : '<div style="color:var(--text-light);padding:8px;background:var(--bg-hover);border-radius:6px;text-align:center">No actions mapped to this control. Use the button above to add actions, or import data from Secure Score / SCuBA / Zero Trust.</div>'}
         </div>
       </div>
     </div>`;
@@ -3402,6 +3892,13 @@ async function e8AddAction(controlName) {
   const r = await api.post(`/api/tenants/${state.activeTenant.name}/actions`, data);
   if(r.error) return toast(r.error,'error');
   closeModal(); toast('Action created','success'); renderE8();
+}
+
+async function removeE8Action(actionId) {
+  if(!confirm('Remove this action from Essential Eight control?')) return;
+  await api.put(`/api/actions/${actionId}`, {essential_eight_control:'', essential_eight_maturity:''});
+  toast('Action removed from E8 control','success');
+  renderE8();
 }
 
 // ── SCuBA ──
