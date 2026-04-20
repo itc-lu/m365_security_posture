@@ -122,6 +122,18 @@ def create_app(db_path: str = None) -> Flask:
         "index",
     }
 
+    # Endpoints allowed while user has must_change_password=1
+    _PASSWORD_RESET_ALLOWED = {
+        "api_auth_login",
+        "api_auth_logout",
+        "api_auth_me",
+        "api_auth_change_password",
+        "api_enums",
+        "serve_frontend",
+        "serve_static",
+        "index",
+    }
+
     @app.before_request
     def _require_auth():
         """Enforce authentication on all /api/* routes except the allowlist."""
@@ -135,6 +147,10 @@ def create_app(db_path: str = None) -> Flask:
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
                 return jsonify({"error": "CSRF check failed"}), 403
+        # Force password-change: restrict access until the flag is cleared
+        if session.get("must_change_password"):
+            if request.endpoint not in _PASSWORD_RESET_ALLOWED:
+                return jsonify({"error": "Password change required", "must_change_password": True}), 403
 
     # ── Serve SPA ──
 
@@ -464,44 +480,9 @@ def create_app(db_path: str = None) -> Flask:
 
             new_count, updated_count, updated_details, imported_ids = db.merge_actions(name, actions, source_tool, file.filename)
 
-            # Auto-link imported actions to global actions and enrich with CP data
-            unlinked_actions = []
-            for aid in imported_ids:
-                with db._conn() as conn:
-                    row = conn.execute("SELECT * FROM actions WHERE id=?", (aid,)).fetchone()
-                if not row:
-                    continue
-                a = dict(row)
-                if a.get("global_action_id"):
-                    # Already linked — refresh enrichment from global action
-                    ga = db.get_global_action(a["global_action_id"])
-                    if ga:
-                        updates = {}
-                        if ga.get("implementation_steps") and not a.get("remediation_steps"):
-                            updates["remediation_steps"] = ga["implementation_steps"]
-                        if updates:
-                            with db._conn() as conn:
-                                sets = ", ".join(f"{k}=?" for k in updates)
-                                conn.execute(f"UPDATE actions SET {sets} WHERE id=?",
-                                             list(updates.values()) + [aid])
-                    continue
-                ga = db.find_global_action_for_import(
-                    a["source_tool"], a.get("source_id", ""), a["title"]
-                )
-                if ga:
-                    db.link_action_to_global(aid, ga["id"])
-                    if ga.get("implementation_steps") and not a.get("remediation_steps"):
-                        with db._conn() as conn:
-                            conn.execute(
-                                "UPDATE actions SET remediation_steps=? WHERE id=?",
-                                (ga["implementation_steps"], aid),
-                            )
-                else:
-                    unlinked_actions.append({
-                        "id": aid, "title": a["title"],
-                        "source_tool": a["source_tool"], "source_id": a.get("source_id", ""),
-                        "status": a["status"],
-                    })
+            # Auto-link imported actions to global actions (single transaction)
+            link_result = db.bulk_auto_link_imported(imported_ids)
+            unlinked_actions = link_result["unlinked"]
 
             # For Zero Trust Report: store HTML report and metadata
             zt_report_id = None
@@ -1836,6 +1817,7 @@ def create_app(db_path: str = None) -> Flask:
         session["user_id"] = user["id"]
         session["username"] = user["username"]
         session["role"] = user["role"]
+        session["must_change_password"] = bool(user.get("must_change_password"))
         return jsonify(user)
 
     @app.route("/api/auth/logout", methods=["POST"])
@@ -1869,6 +1851,8 @@ def create_app(db_path: str = None) -> Flask:
         if len(new_pw) < 12:
             return _json_error("Password must be at least 12 characters")
         db.update_user(uid, password=new_pw)
+        session["must_change_password"] = False
+        db.audit("user.password_change", actor=session.get("username"), entity_type="user", entity_id=uid)
         return jsonify({"status": "ok"})
 
     # ── Control Plane: Global Actions ──
@@ -1998,15 +1982,50 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/control-plane/cross-tenant", methods=["GET"])
     def api_cp_cross_tenant():
-        """Show implementation status of global actions across all tenants."""
+        """Show implementation status of global actions across all tenants.
+        Supports pagination (limit/offset) and filtering by source_tool/workload."""
+        limit = min(int(request.args.get("limit", 100)), 500)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        source_tool = request.args.get("source_tool")
+        workload = request.args.get("workload")
+
+        where = []
+        params: list = []
+        if source_tool:
+            where.append("ga.source_tool=?")
+            params.append(source_tool)
+        if workload:
+            where.append("ga.workload=?")
+            params.append(workload)
+        where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
         with db._conn() as conn:
             tenants = [r["name"] for r in conn.execute("SELECT name FROM tenants ORDER BY name").fetchall()]
+            total = conn.execute(
+                f"SELECT COUNT(*) as c FROM global_actions ga {where_clause}",
+                params,
+            ).fetchone()["c"]
+            page_ga_ids = [
+                r["id"] for r in conn.execute(
+                    f"""SELECT ga.id FROM global_actions ga {where_clause}
+                        ORDER BY ga.source_tool, ga.title LIMIT ? OFFSET ?""",
+                    params + [limit, offset],
+                ).fetchall()
+            ]
+            if not page_ga_ids:
+                return jsonify({
+                    "tenants": tenants, "global_actions": [],
+                    "total": total, "limit": limit, "offset": offset,
+                })
+            placeholders = ",".join("?" * len(page_ga_ids))
             rows = conn.execute(
-                """SELECT ga.id, ga.title, ga.source_tool, ga.workload, ga.review_status,
+                f"""SELECT ga.id, ga.title, ga.source_tool, ga.workload, ga.review_status,
                           a.tenant_name, a.status, a.id as action_id
                    FROM global_actions ga
                    LEFT JOIN actions a ON a.global_action_id=ga.id
-                   ORDER BY ga.source_tool, ga.title, a.tenant_name"""
+                   WHERE ga.id IN ({placeholders})
+                   ORDER BY ga.source_tool, ga.title, a.tenant_name""",
+                page_ga_ids,
             ).fetchall()
 
         by_ga: dict = {}
@@ -2024,7 +2043,11 @@ def create_app(db_path: str = None) -> Flask:
                     "status": d["status"], "action_id": d["action_id"],
                 }
 
-        return jsonify({"tenants": tenants, "global_actions": list(by_ga.values())})
+        return jsonify({
+            "tenants": tenants,
+            "global_actions": list(by_ga.values()),
+            "total": total, "limit": limit, "offset": offset,
+        })
 
     # ── Control Plane: Users ──
 
@@ -2063,6 +2086,7 @@ def create_app(db_path: str = None) -> Flask:
         for ta in data.get("tenant_access", []):
             if ta.get("tenant_name"):
                 db.set_user_tenant_access(user["id"], ta["tenant_name"], ta.get("workloads", []))
+        db.audit("user.create", actor=session.get("username"), entity_type="user", entity_id=user["id"], detail=f"role={role}")
         return jsonify(user), 201
 
     @app.route("/api/control-plane/users/<user_id>", methods=["GET"])
@@ -2100,6 +2124,7 @@ def create_app(db_path: str = None) -> Flask:
                 if ta.get("tenant_name"):
                     db.set_user_tenant_access(user_id, ta["tenant_name"], ta.get("workloads", []))
         user["tenant_access"] = db.get_user_tenant_access(user_id)
+        db.audit("user.update", actor=session.get("username"), entity_type="user", entity_id=user_id, detail=",".join(kwargs.keys()))
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
@@ -2108,6 +2133,7 @@ def create_app(db_path: str = None) -> Flask:
         if user_id == session.get("user_id"):
             return _json_error("Cannot delete your own account")
         db.delete_user(user_id)
+        db.audit("user.delete", actor=session.get("username"), entity_type="user", entity_id=user_id)
         return jsonify({"status": "deleted"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access", methods=["POST"])
@@ -2151,21 +2177,30 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/control-plane/unlinked-actions", methods=["GET"])
     def api_cp_unlinked_actions():
         tenant_name = request.args.get("tenant")
+        source_tool = request.args.get("source_tool")
+        limit = min(int(request.args.get("limit", 200)), 1000)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        where = ["global_action_id IS NULL"]
+        params: list = []
+        if tenant_name:
+            where.append("tenant_name=?"); params.append(tenant_name)
+        if source_tool:
+            where.append("source_tool=?"); params.append(source_tool)
+        where_clause = " AND ".join(where)
         with db._conn() as conn:
-            if tenant_name:
-                rows = conn.execute(
-                    """SELECT id, title, source_tool, source_id, workload, status, tenant_name
-                       FROM actions WHERE global_action_id IS NULL AND tenant_name=?
-                       ORDER BY source_tool, title""",
-                    (tenant_name,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """SELECT id, title, source_tool, source_id, workload, status, tenant_name
-                       FROM actions WHERE global_action_id IS NULL
-                       ORDER BY source_tool, title"""
-                ).fetchall()
-        return jsonify([dict(r) for r in rows])
+            total = conn.execute(
+                f"SELECT COUNT(*) as c FROM actions WHERE {where_clause}", params
+            ).fetchone()["c"]
+            rows = conn.execute(
+                f"""SELECT id, title, source_tool, source_id, workload, status, tenant_name
+                    FROM actions WHERE {where_clause}
+                    ORDER BY source_tool, title LIMIT ? OFFSET ?""",
+                params + [limit, offset],
+            ).fetchall()
+        # Preserve legacy list shape; total available via X-Total-Count header
+        resp = jsonify([dict(r) for r in rows])
+        resp.headers["X-Total-Count"] = str(total)
+        return resp
 
     # ── Global Action Links ──
 
@@ -2201,6 +2236,7 @@ def create_app(db_path: str = None) -> Flask:
         if keep_id in merge_ids:
             return _json_error("keep_id cannot also be in merge_ids")
         result = db.merge_global_actions(keep_id, merge_ids)
+        db.audit("global_action.merge", actor=session.get("username"), entity_type="global_action", entity_id=keep_id, detail=f"merged={','.join(merge_ids)}")
         return jsonify(result)
 
     # ── Create global action from a tenant action ──

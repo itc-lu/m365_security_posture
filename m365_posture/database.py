@@ -127,7 +127,6 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
                 CREATE INDEX IF NOT EXISTS idx_actions_correlation ON actions(correlation_group_id);
                 CREATE INDEX IF NOT EXISTS idx_actions_source_id ON actions(tenant_name, source_tool, source_id);
-                CREATE INDEX IF NOT EXISTS idx_actions_global_action ON actions(global_action_id);
                 CREATE INDEX IF NOT EXISTS idx_actions_tenant_tool_title ON actions(tenant_name, source_tool, title);
                 CREATE INDEX IF NOT EXISTS idx_actions_updated_at ON actions(updated_at);
 
@@ -380,6 +379,7 @@ class Database:
                     email TEXT DEFAULT '',
                     role TEXT DEFAULT 'viewer',
                     is_active INTEGER DEFAULT 1,
+                    must_change_password INTEGER DEFAULT 0,
                     created_at TEXT,
                     updated_at TEXT,
                     last_login TEXT
@@ -477,6 +477,9 @@ class Database:
                 except sqlite3.OperationalError:
                     pass
 
+            # Create index on global_action_id (must run after ALTER TABLE above)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_actions_global_action ON actions(global_action_id)")
+
             # Ensure default admin user exists
             existing_admin = conn.execute(
                 "SELECT id FROM users WHERE role='admin' LIMIT 1"
@@ -487,9 +490,9 @@ class Database:
                 pw_hash = _hash_password("admin")
                 conn.execute(
                     """INSERT OR IGNORE INTO users
-                       (id, username, password_hash, display_name, email, role, is_active, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (admin_id, "admin", pw_hash, "Administrator", "", "admin", 1, now, now),
+                       (id, username, password_hash, display_name, email, role, is_active, must_change_password, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (admin_id, "admin", pw_hash, "Administrator", "", "admin", 1, 1, now, now),
                 )
 
             # Add plan metadata columns (responsible, dates, priority, effort)
@@ -504,6 +507,12 @@ class Database:
                     conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+            # Add must_change_password column to users (idempotent)
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
 
             # Add Graph API overall scores and metadata to tenants (idempotent)
             for col, coltype, default in [
@@ -2240,6 +2249,7 @@ class Database:
         if not include_hash:
             d.pop("password_hash", None)
         d["is_active"] = bool(d.get("is_active", 1))
+        d["must_change_password"] = bool(d.get("must_change_password", 0))
         return d
 
     def list_users(self) -> list[dict]:
@@ -2288,13 +2298,15 @@ class Database:
         return self.get_user(uid)
 
     def update_user(self, user_id: str, **kwargs) -> dict | None:
-        allowed = {"display_name", "email", "role", "is_active"}
+        allowed = {"display_name", "email", "role", "is_active", "must_change_password"}
         updates = {}
         for k, v in kwargs.items():
             if k in allowed:
                 updates[k] = v
         if "password" in kwargs:
             updates["password_hash"] = _hash_password(kwargs["password"])
+            # Clear must-change flag when password is successfully changed
+            updates["must_change_password"] = 0
         if updates:
             updates["updated_at"] = datetime.utcnow().isoformat()
             sets = ", ".join(f"{k}=?" for k in updates)
@@ -2523,6 +2535,14 @@ class Database:
                 ).fetchone()
                 if row:
                     return self._row_to_global_action(row)
+                # Broader case-insensitive match across any source_tool (covers merged GAs
+                # that kept a canonical title from another tool).
+                row = conn.execute(
+                    "SELECT * FROM global_actions WHERE LOWER(title)=LOWER(?)",
+                    (title,),
+                ).fetchone()
+                if row:
+                    return self._row_to_global_action(row)
         return None
 
     # ── Correlation groups (control plane CRUD) ──
@@ -2648,3 +2668,86 @@ class Database:
                     (limit, offset),
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def bulk_auto_link_imported(self, action_ids: list[str]) -> dict:
+        """Auto-link a batch of freshly imported tenant actions to global actions
+        in a single transaction. Avoids N+1 connection churn.
+
+        Returns: {"linked": N, "already_linked": N, "unlinked": [action_dicts]}
+        """
+        if not action_ids:
+            return {"linked": 0, "already_linked": 0, "unlinked": []}
+
+        linked = 0
+        already_linked = 0
+        unlinked = []
+
+        placeholders = ",".join("?" * len(action_ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM actions WHERE id IN ({placeholders})",
+                action_ids,
+            ).fetchall()
+            for r in rows:
+                a = dict(r)
+                aid = a["id"]
+
+                if a.get("global_action_id"):
+                    ga_row = conn.execute(
+                        "SELECT * FROM global_actions WHERE id=?", (a["global_action_id"],)
+                    ).fetchone()
+                    if ga_row and ga_row["implementation_steps"] and not a.get("remediation_steps"):
+                        conn.execute(
+                            "UPDATE actions SET remediation_steps=? WHERE id=?",
+                            (ga_row["implementation_steps"], aid),
+                        )
+                    already_linked += 1
+                    continue
+
+                ga = None
+                src_tool = a.get("source_tool", "")
+                src_id = a.get("source_id", "") or ""
+                title = a.get("title", "") or ""
+
+                if src_id:
+                    ga = conn.execute(
+                        "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
+                        (src_tool, src_id),
+                    ).fetchone()
+                    if not ga:
+                        ga = conn.execute(
+                            """SELECT ga.* FROM global_action_source_aliases sa
+                               JOIN global_actions ga ON ga.id=sa.global_action_id
+                               WHERE sa.source_tool=? AND sa.source_id=?""",
+                            (src_tool, src_id),
+                        ).fetchone()
+                if not ga and title:
+                    ga = conn.execute(
+                        "SELECT * FROM global_actions WHERE source_tool=? AND title=?",
+                        (src_tool, title),
+                    ).fetchone()
+                    if not ga:
+                        ga = conn.execute(
+                            "SELECT * FROM global_actions WHERE LOWER(title)=LOWER(?)",
+                            (title,),
+                        ).fetchone()
+
+                if ga:
+                    conn.execute(
+                        "UPDATE actions SET global_action_id=? WHERE id=?",
+                        (ga["id"], aid),
+                    )
+                    if ga["implementation_steps"] and not a.get("remediation_steps"):
+                        conn.execute(
+                            "UPDATE actions SET remediation_steps=? WHERE id=?",
+                            (ga["implementation_steps"], aid),
+                        )
+                    linked += 1
+                else:
+                    unlinked.append({
+                        "id": aid, "title": a.get("title", ""),
+                        "source_tool": src_tool, "source_id": src_id,
+                        "status": a.get("status", ""),
+                    })
+
+        return {"linked": linked, "already_linked": already_linked, "unlinked": unlinked}
