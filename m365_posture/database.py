@@ -1282,7 +1282,6 @@ class Database:
                     conn.execute(f"UPDATE actions SET {sets} WHERE id=?", vals)
                     updated_count += 1
                     touched_ids.append(existing["id"])
-                    updated_details.append({
                     detail = {
                         "id": existing["id"],
                         "title": action.title,
