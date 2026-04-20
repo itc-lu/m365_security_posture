@@ -739,7 +739,7 @@ async function doForcedPasswordChange() {
   errEl.style.display = 'none';
   if(!current || !next) { errEl.textContent = 'Both fields are required'; errEl.style.display = 'block'; return; }
   if(next !== confirmVal) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
-  if(next.length < 8) { errEl.textContent = 'New password must be at least 8 characters'; errEl.style.display = 'block'; return; }
+  if(next.length < 12) { errEl.textContent = 'New password must be at least 12 characters'; errEl.style.display = 'block'; return; }
   const r = await api.post('/api/auth/change-password', {current_password: current, new_password: next});
   if(r && r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
   document.getElementById('pwchange-overlay').classList.add('hidden');
