@@ -98,6 +98,18 @@ class ComplianceFramework(str, Enum):
     ESSENTIAL_EIGHT = "Essential Eight"
 
 
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    VIEWER = "viewer"
+    TENANT_ADMIN = "tenant_admin"
+
+
+class GlobalActionReviewStatus(str, Enum):
+    TO_REVIEW = "To Review"
+    REVIEWED = "Reviewed"
+
+
 @dataclass
 class HistoryEntry:
     """A single point-in-time snapshot of an action's status."""
@@ -265,6 +277,69 @@ class TenantConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> TenantConfig:
+        valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**valid_fields)
+
+
+@dataclass
+class GlobalAction:
+    """A canonical control plane action, shared across all tenants."""
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    source_tool: str = SourceTool.MANUAL.value
+    source_id: str = ""
+    title: str = ""
+    description: str = ""
+    workload: str = Workload.GENERAL.value
+    category: str = ""
+    subcategory: str = ""
+    priority: str = Priority.MEDIUM.value
+    risk_level: str = RiskLevel.MEDIUM.value
+    user_impact: str = UserImpact.LOW.value
+    implementation_effort: str = ImplementationEffort.MEDIUM.value
+    required_licence: str = ""
+    score: Optional[float] = None
+    max_score: Optional[float] = None
+    essential_eight_control: Optional[str] = None
+    essential_eight_maturity: Optional[str] = None
+    implementation_steps: str = ""
+    risk_explanation: str = ""
+    additional_info: str = ""
+    reference_url: str = ""
+    tags: list[str] = field(default_factory=list)
+    review_status: str = GlobalActionReviewStatus.TO_REVIEW.value
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> GlobalAction:
+        valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**valid_fields)
+
+
+@dataclass
+class User:
+    """Application user with role-based access control."""
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    username: str = ""
+    password_hash: str = ""
+    display_name: str = ""
+    email: str = ""
+    role: str = UserRole.VIEWER.value
+    is_active: bool = True
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    last_login: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d.pop("password_hash", None)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> User:
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
 
