@@ -735,6 +735,12 @@ function resolveConfirm(result) {
   if(_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
 }
 
+// ── HTML escape helper (XSS protection) ──
+function esc(s) {
+  if(s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 // ── Init ──
 async function init() {
   await checkAuth();
@@ -759,7 +765,7 @@ function toggleTenantDropdown(e) {
   let items = state.tenants.map(t => {
     const isActive = state.activeTenant && state.activeTenant.name === t.name;
     return `<div class="td-item ${isActive?'active':''}" onclick="switchTenant('${t.name}');event.stopPropagation()">
-      <span>${t.display_name||t.name}</span>
+      <span>${esc(t.display_name||t.name)}</span>
       ${isActive?'<span class="td-check">&#10003;</span>':''}
     </div>`;
   }).join('');
@@ -908,7 +914,7 @@ async function renderDashboard(sourceFilter) {
   let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => {
     const full = _allActionsMap[a.id] || a;
     return `<tr onclick="toggleActionDetail('dash-${a.id}')" style="cursor:pointer">
-    <td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
+    <td>${esc(a.title||'')}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="unpinDashAction('${a.id}');event.stopPropagation()" title="${a.pinned_priority?'Unpin from dashboard':'Remove from list'}" style="padding:2px 6px;font-size:11px">${a.pinned_priority?'&#9733;':'&times;'}</button>
     </td>
@@ -993,7 +999,7 @@ async function switchTenantFromDashboard(name) {
 
 function showDashboardCompare() {
   let checks = state.tenants.map(t => {
-    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${t.display_name||t.name}</span></label>`;
+    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${esc(t.display_name||t.name)}</span></label>`;
   }).join('');
   openModal('Compare', `
     <div class="action-tabs" style="margin:0 0 16px">
@@ -1041,7 +1047,7 @@ async function loadSnapshotsForCompare() {
     snapSel.innerHTML = snaps.map(s => {
       const dt = s.timestamp?.substring(0,16).replace('T',' ') || '';
       const trigger = s.trigger ? ' ('+s.trigger+')' : '';
-      return `<option value="${s.id}">${dt}${trigger} — ${(s.percentage||0).toFixed(1)}%</option>`;
+      return `<option value="${s.id}">${esc(dt)}${esc(trigger)} — ${(s.percentage||0).toFixed(1)}%</option>`;
     }).join('');
   }
 
@@ -1099,7 +1105,7 @@ async function doSnapshotCompare() {
       ? `<td>${statusBadge(a.snapshot.status)}</td>`
       : '<td style="color:var(--text-light);font-style:italic;font-size:12px">Did not exist</td>';
     const curCell = `<td><a href="#" onclick="toggleCompareActionDetail('${tenantName}','${a.current.id}','snap-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details">${statusBadge(a.current.status)}</a></td>`;
-    return `<tr><td style="font-size:12px">${a.title}</td>${snapCell}${curCell}</tr>
+    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>${snapCell}${curCell}</tr>
       <tr id="snap-detail-${idx}" class="hidden"><td colspan="3" style="padding:0"><div id="snap-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
@@ -1168,7 +1174,7 @@ async function doDashboardCompare() {
       if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
       return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details for ${t}">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>
+    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>${cells}</tr>
       <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+1}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
@@ -1279,7 +1285,7 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
     contentEl.innerHTML = `
       <div style="padding:8px 0 4px;margin-bottom:4px;border-bottom:1px solid var(--border)">
         <span class="badge badge-info" style="font-size:12px">${tenantName}</span>
-        <strong style="font-size:14px;margin-left:8px">${a.title}</strong>
+        <strong style="font-size:14px;margin-left:8px">${esc(a.title||'')}</strong>
       </div>
       ${actionDetailHtml(a)}`;
     // Load dependencies for this action
@@ -1358,7 +1364,7 @@ async function showPinActionModal() {
   const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && !a.pinned_priority);
   let rows = pending.slice(0,50).map(a => `<tr>
     <td><input type="checkbox" value="${a.id}" class="pin-cb"></td>
-    <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
+    <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
   </tr>`).join('');
   openModal('Pin Actions to Dashboard', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Select actions to pin to the Top Priority list.</div>
@@ -1389,8 +1395,8 @@ async function renderTenants() {
 
   let cards = state.tenants.map(t => `
     <div class="card" style="${t.is_active?'border-left:4px solid var(--primary)':''}">
-      <div class="card-header">${t.display_name||t.name} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${t.tenant_id||'No tenant ID'}</div>
+      <div class="card-header">${esc(t.display_name||t.name)} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(t.tenant_id||'No tenant ID')}</div>
       <div style="font-size:14px;margin-bottom:12px">${t.action_count||0} actions</div>
       <div class="btn-group">
         ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenant('${t.name}')">Activate</button>`:''}
@@ -1424,11 +1430,11 @@ async function addTenant() {
 async function showEditTenant(name) {
   const t = await api.get(`/api/tenants/${name}`);
   openModal('Edit Tenant: '+name, `
-    <div class="form-group"><label>Display Name</label><input id="te-display" value="${t.display_name||''}"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${t.tenant_id||''}"></div>
-    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${t.client_id||''}"></div>
-    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${t.client_secret||''}"></div>
-    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${t.notes||''}</textarea></div>`,
+    <div class="form-group"><label>Display Name</label><input id="te-display" value="${esc(t.display_name||'')}"></div>
+    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${esc(t.tenant_id||'')}"></div>
+    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${esc(t.client_id||'')}"></div>
+    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${esc(t.client_secret||'')}"></div>
+    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${esc(t.notes||'')}</textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateTenant('${name}')">Save</button>`);
 }
 
@@ -1588,12 +1594,12 @@ function _renderActionsTableSorted() {
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
-      <td style="font-size:12px"><code>${a.reference_id||'-'}</code></td>
-      <td style="max-width:300px">${a.title.substring(0,70)}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
+      <td style="font-size:12px"><code>${esc(a.reference_id||'-')}</code></td>
+      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
-      <td style="font-size:12px">${a.workload}</td>
-      <td style="font-size:12px">${a.source_tool}</td>
+      <td style="font-size:12px">${esc(a.workload||'')}</td>
+      <td style="font-size:12px">${esc(a.source_tool||'')}</td>
       <td>${scoreDisplay}</td>
       <td>${planBadge}</td>
     </tr>
@@ -1796,12 +1802,12 @@ function actionDetailHtml(a) {
     riskHtml = `<div class="risk-card ${isExpired?'expired':''} mb-16">
       <div class="field-label">Risk Acceptance</div>
       <div class="grid grid-2 mt-16">
-        <div class="field"><div class="field-label">Owner</div><div class="field-value">${a.risk_owner||'Not specified'}</div></div>
+        <div class="field"><div class="field-label">Owner</div><div class="field-value">${esc(a.risk_owner||'Not specified')}</div></div>
         <div class="field"><div class="field-label">Accepted</div><div class="field-value">${a.risk_accepted_at?.substring(0,10)||'Unknown'}</div></div>
         <div class="field"><div class="field-label">Review Date</div><div class="field-value">${a.risk_review_date||'Not set'}</div></div>
         <div class="field"><div class="field-label">Expiry Date</div><div class="field-value">${isExpired?'<span class="badge badge-danger">EXPIRED</span> ':''}${a.risk_expiry_date||'No expiry'}</div></div>
       </div>
-      <div class="field mt-16"><div class="field-label">Justification</div><div class="field-value">${a.risk_justification||'None provided'}</div></div>
+      <div class="field mt-16"><div class="field-label">Justification</div><div class="field-value">${esc(a.risk_justification||'None provided')}</div></div>
     </div>`;
   }
 
@@ -1813,7 +1819,7 @@ function actionDetailHtml(a) {
   const isZTR = a.source_tool === 'Zero Trust Report';
   const isSCuBA = a.source_tool === 'SCuBA (CISA)';
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
-  const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
+  const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${esc(a.source_tool||'')}</span>`;
 
   // Remediation steps - split into structured parts if possible
   let prerequisitesHtml = '';
@@ -1857,11 +1863,11 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
-          ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+t+'</span>').join(' ')}</div></div>`:''}
-          ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
-          ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${esc(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${esc(a.remediation_impact)}</div></div>`:''}
+          ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
+          ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
           `}
           <div id="deps-${a.id}" class="mb-8"></div>
         </div>
@@ -1869,19 +1875,19 @@ function actionDetailHtml(a) {
           <div class="action-sidebar-card">
             ${a.global_action_id ? `<div class="sidebar-field"><div class="field-label">Linked Global Action</div><div class="field-value"><a href="#" onclick="navigateToCpAction('${a.global_action_id}');event.preventDefault()" style="color:var(--primary);text-decoration:none;font-size:12px">&#8594; View in Control Plane</a></div></div>` : ''}
             ${isZTR ? `
-            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${a.reference_id||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${esc(a.reference_id||'N/A')}</div></div>
             <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
-            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${(a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${esc((a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A')}</div></div>
+            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${esc(a.subcategory||'N/A')}</div></div>
             ` : isSCuBA ? `
-            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${a.reference_id||a.source_id?.replace('scuba_','')||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${esc(a.reference_id||a.source_id?.replace('scuba_','')||'N/A')}</div></div>
             <div class="sidebar-field">
               <div class="field-label">Result</div>
               <div class="field-value">${statusBadge(a.status)}</div>
             </div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${esc(a.category||'N/A')}</div></div>
             <div class="sidebar-field"><div class="field-label">Criticality</div><div class="field-value">${_scubaCritBadge(a.subcategory)}</div></div>
-            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+g+'</div></div>':'';})()}
+            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+esc(g)+'</div></div>':'';})()}
             ` : `
             <div class="sidebar-field">
               <div class="field-label">Score</div>
@@ -1889,21 +1895,21 @@ function actionDetailHtml(a) {
               <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
             </div>
             `}
-            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>` : ''}
+            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${esc(a.category||'N/A')}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${esc(a.subcategory||'N/A')}</div></div>` : ''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
-            <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort}</div></div>
-            <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${a.required_licence||'N/A'}</div></div>
-            ${a.tier?`<div class="sidebar-field"><div class="field-label">Tier</div><div class="field-value">${a.tier}</div></div>`:''}
-            ${a.action_type?`<div class="sidebar-field"><div class="field-label">Action Type</div><div class="field-value">${a.action_type}</div></div>`:''}
+            <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${esc(a.implementation_effort||'')}</div></div>
+            <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${esc(a.required_licence||'N/A')}</div></div>
+            ${a.tier?`<div class="sidebar-field"><div class="field-label">Tier</div><div class="field-value">${esc(a.tier)}</div></div>`:''}
+            ${a.action_type?`<div class="sidebar-field"><div class="field-label">Action Type</div><div class="field-value">${esc(a.action_type)}</div></div>`:''}
             ${a.deprecated?`<div class="sidebar-field"><div class="field-label">Status</div><div class="field-value"><span class="badge badge-danger">Deprecated</span></div></div>`:''}
-            ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${a.responsible}</div></div>`:''}
-            ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
-            ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
-            ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity}</div></div>`:''}
-            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${a.notes}</div></div>`:''}
+            ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${esc(a.responsible)}</div></div>`:''}
+            ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${esc(a.planned_date)}</div></div>`:''}
+            ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control)}</div></div>`:''}
+            ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${esc(a.essential_eight_maturity)}</div></div>`:''}
+            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${esc(a.notes)}</div></div>`:''}
           </div>
         </div>
       </div>
@@ -1913,18 +1919,18 @@ function actionDetailHtml(a) {
       ${prerequisitesHtml}
       ${stepsHtml}
       ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
-      ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${a.reference_url}" target="_blank" onclick="event.stopPropagation()">${a.reference_url}</a></div></div>`:''}
+      ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${esc(a.reference_url)}" target="_blank" onclick="event.stopPropagation()">${esc(a.reference_url)}</a></div></div>`:''}
       <div class="grid grid-4 mb-16">
-        <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control||'N/A'}</div></div>
-        <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity||'N/A'}</div></div>
-        <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${a.source_id||'N/A'}</code></div></div>
-        <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${a.reference_id||'N/A'}</code></div></div>
+        <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control||'N/A')}</div></div>
+        <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${esc(a.essential_eight_maturity||'N/A')}</div></div>
+        <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${esc(a.source_id||'N/A')}</code></div></div>
+        <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${esc(a.reference_id||'N/A')}</code></div></div>
       </div>
     </div>
     <!-- Notes Tab -->
     <div class="action-tab-content" id="atab-${uid}-notes">
       <div style="margin-bottom:12px">
-        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${a.notes||''}</textarea>
+        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${esc(a.notes||'')}</textarea>
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
@@ -1974,19 +1980,19 @@ async function addAction() {
 
 async function showEditAction(id) {
   const a = await api.get(`/api/actions/${id}`);
-  openModal('Edit Action: '+a.title.substring(0,40), `
-    <div class="form-group"><label>Title</label><input id="ae-title" value="${a.title.replace(/"/g,'&quot;')}"></div>
+  openModal('Edit Action: '+(a.title||'').substring(0,40), `
+    <div class="form-group"><label>Title</label><input id="ae-title" value="${esc(a.title||'')}"></div>
     <div class="form-row"><div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
     <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>Workload</label><select id="ae-workload">${selectOptions(state.enums.workloads,a.workload)}</select></div>
     <div class="form-group"><label>Risk Level</label><select id="ae-risk">${selectOptions(state.enums.risk_levels,a.risk_level)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>User Impact</label><select id="ae-impact">${selectOptions(state.enums.user_impacts,a.user_impact)}</select></div>
     <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${a.responsible||''}"></div>
-    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${a.planned_date||''}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${esc(a.responsible||'')}"></div>
+    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div></div>
     <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
     <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
-    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
+    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${esc(a.notes||'')}</textarea></div>
     <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
 }
@@ -2317,10 +2323,10 @@ async function loadZtReports(tenantName) {
     return `<tr>
       <td>${date}</td>
       <td>${execDate}</td>
-      <td>${r.report_domain || r.report_tenant_name || ''}</td>
+      <td>${esc(r.report_domain || r.report_tenant_name || '')}</td>
       <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
-      <td style="font-size:12px">${summaryText}</td>
-      <td>${r.tool_version || ''}</td>
+      <td style="font-size:12px">${esc(summaryText)}</td>
+      <td>${esc(r.tool_version || '')}</td>
       <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
     </tr>`;
   }).join('');
@@ -2347,7 +2353,7 @@ async function showZtReportDetail(reportId) {
   let overviewHtml = '';
   if(Object.keys(tenantOverview).length) {
     overviewHtml = '<div class="grid grid-4" style="margin:12px 0">' +
-      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k.replace(/([A-Z])/g,' $1').trim()}</div></div>`).join('') +
+      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${esc(v)}</div><div class="label">${esc(k.replace(/([A-Z])/g,' $1').trim())}</div></div>`).join('') +
       '</div>';
   }
 
@@ -2363,10 +2369,10 @@ async function showZtReportDetail(reportId) {
   openModal('Zero Trust Report Details', `
     <div style="margin-bottom:16px">
       <div class="grid grid-2" style="gap:8px;font-size:13px">
-        <div><strong>Domain:</strong> ${r.report_domain||'—'}</div>
-        <div><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
-        <div><strong>Account:</strong> ${r.report_account||'—'}</div>
-        <div><strong>Tool Version:</strong> ${r.tool_version||'—'}</div>
+        <div><strong>Domain:</strong> ${esc(r.report_domain||'—')}</div>
+        <div><strong>Tenant:</strong> ${esc(r.report_tenant_name||'—')}</div>
+        <div><strong>Account:</strong> ${esc(r.report_account||'—')}</div>
+        <div><strong>Tool Version:</strong> ${esc(r.tool_version||'—')}</div>
         <div><strong>Executed:</strong> ${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</div>
         <div><strong>Imported:</strong> ${new Date(r.imported_at).toLocaleString()}</div>
       </div>
@@ -2394,19 +2400,19 @@ async function renderPlans() {
     html = plans.map(p => `
       <div class="card mb-16" style="cursor:pointer" onclick="viewPlan('${p.id}')">
         <div class="flex justify-between items-center">
-          <div class="card-header" style="margin:0">${p.name} <span class="badge badge-${statusColors[p.status]||'gray'}">${p.status}</span></div>
+          <div class="card-header" style="margin:0">${esc(p.name||'')} <span class="badge badge-${statusColors[p.status]||'gray'}">${esc(p.status||'')}</span></div>
           <div class="flex gap-8">
             <button class="btn btn-sm btn-primary" onclick="viewPlan('${p.id}');event.stopPropagation()">Open</button>
             <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}');event.stopPropagation()">Delete</button>
           </div>
         </div>
-        <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${p.description||'No description'}</p>
+        <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${esc(p.description||'No description')}</p>
         <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
           <span>${p.item_count} actions</span>
-          ${p.responsible_person?`<span>&#128100; ${p.responsible_person}</span>`:''}
+          ${p.responsible_person?`<span>&#128100; ${esc(p.responsible_person)}</span>`:''}
           ${p.priority?`<span>${priorityBadge(p.priority)}</span>`:''}
-          ${p.implementation_effort?`<span>Effort: ${p.implementation_effort}</span>`:''}
-          ${p.start_date?`<span>${p.start_date}${p.end_date?' → '+p.end_date:''}</span>`:''}
+          ${p.implementation_effort?`<span>Effort: ${esc(p.implementation_effort)}</span>`:''}
+          ${p.start_date?`<span>${esc(p.start_date)}${p.end_date?' → '+esc(p.end_date):''}</span>`:''}
           <span style="color:var(--text-light)">Created ${p.created_at?.substring(0,10)}</span>
         </div>
       </div>`).join('');
@@ -2421,7 +2427,7 @@ async function showCreatePlan() {
   const inProgress = await api.get(`/api/tenants/${t}/actions?status=In Progress`);
   const allPending = [...actions, ...inProgress];
 
-  let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+  let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('');
 
   const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e==='Medium'?' selected':''}>${e}</option>`).join('');
   const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p==='Medium'?' selected':''}>${p}</option>`).join('');
@@ -2503,8 +2509,8 @@ async function viewPlan(planId) {
       <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
       <td>${statusBadge(a.status||'ToDo')}</td>
       <td>${priorityBadge(a.priority||'Medium')}</td>
-      <td style="font-size:12px">${a.workload||''}</td>
-      <td style="font-size:12px">${a.implementation_effort||''}</td>
+      <td style="font-size:12px">${esc(a.workload||'')}</td>
+      <td style="font-size:12px">${esc(a.implementation_effort||'')}</td>
       <td>${scoreDisplay}</td>
       <td><select style="padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:12px" title="Phase" onchange="updatePlanItemPhase('${planId}','${a.action_id}',this.value)">${phaseOpts}</select></td>
       <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
@@ -2527,7 +2533,7 @@ async function viewPlan(planId) {
           ondragstart="onPhaseDragStart(event,'${a.action_id||a.id}','${planId}')"
           style="cursor:grab">
           <td style="width:24px;color:var(--text-light);font-size:16px">&#8597;</td>
-          <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('')}
+          <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -2538,7 +2544,7 @@ async function viewPlan(planId) {
 
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-8">
-        <h2 style="margin:0">${plan.name}</h2>
+        <h2 style="margin:0">${esc(plan.name||'')}</h2>
         <div class="flex gap-8 items-center">
           <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
           <button class="btn btn-sm" onclick="showEditPlan('${planId}')">Edit</button>
@@ -2546,13 +2552,13 @@ async function viewPlan(planId) {
           <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
         </div>
       </div>
-      <p style="color:var(--text-light);margin:0 0 8px">${plan.description||'No description'}</p>
+      <p style="color:var(--text-light);margin:0 0 8px">${esc(plan.description||'No description')}</p>
       <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap">
-        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${plan.responsible_person}</strong></div>`:''}
+        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${esc(plan.responsible_person)}</strong></div>`:''}
         ${plan.priority?`<div><span style="color:var(--text-light)">Priority:</span> ${priorityBadge(plan.priority)}</div>`:''}
-        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${plan.implementation_effort}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
-        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${plan.start_date}</div>`:''}
-        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${plan.end_date}</div>`:''}
+        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${esc(plan.implementation_effort)}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
+        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${esc(plan.start_date)}</div>`:''}
+        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${esc(plan.end_date)}</div>`:''}
       </div>
     </div>
 
@@ -2602,15 +2608,15 @@ async function showEditPlan(planId) {
   const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p===(plan.priority||'Medium')?' selected':''}>${p}</option>`).join('');
 
   openModal('Edit Plan', `
-    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${(plan.name||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${plan.description||''}</textarea></div>
+    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${esc(plan.name||'')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${esc(plan.description||'')}</textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${plan.responsible_person||''}"></div>
+      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${esc(plan.responsible_person||'')}"></div>
       <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${plan.start_date||''}"></div>
-      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${plan.end_date||''}"></div>
+      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${esc(plan.start_date||'')}"></div>
+      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${esc(plan.end_date||'')}"></div>
     </div>
     <div class="form-group"><label>Implementation Effort</label><select id="ep-effort">${effortOpts}</select>
       <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
@@ -2656,7 +2662,7 @@ async function showAddActionsToPlan(planId) {
       '<button class="btn" onclick="closeModal()">Close</button>');
   }
 
-  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('');
 
   openModal('Add Actions to Plan', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${available.length} actions available (already in plan excluded)</div>
@@ -2698,14 +2704,14 @@ async function exportPlanPDF(planId) {
   (plan.items||[]).forEach(a => { statusCounts[a.status||'ToDo'] = (statusCounts[a.status||'ToDo']||0)+1; });
 
   let actionRows = (plan.items||[]).map((a,i) => `<tr>
-    <td>${i+1}</td><td>${a.title||''}</td><td>${a.status||''}</td><td>${a.priority||''}</td>
-    <td>${a.workload||''}</td><td>${a.implementation_effort||''}</td>
-    <td>${a.responsible||''}</td>
+    <td>${i+1}</td><td>${esc(a.title||'')}</td><td>${esc(a.status||'')}</td><td>${esc(a.priority||'')}</td>
+    <td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td>
+    <td>${esc(a.responsible||'')}</td>
     <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
   </tr>`).join('');
 
   const w = window.open('', '_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>${plan.name} - Plan Report</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(plan.name||'')} - Plan Report</title>
   <style>
     body{font-family:Arial,sans-serif;margin:40px;color:#1e293b;font-size:13px}
     h1{font-size:22px;margin-bottom:4px} h2{font-size:16px;margin-top:24px;border-bottom:2px solid #3b82f6;padding-bottom:4px}
@@ -2719,14 +2725,14 @@ async function exportPlanPDF(planId) {
     .green{color:#10b981} .red{color:#ef4444} .yellow{color:#f59e0b}
     @media print{body{margin:20px}}
   </style></head><body>
-  <h1>${plan.name}</h1>
-  <div class="meta">${tenant.display_name||tenant.name} &middot; ${today} &middot; Status: ${plan.status}</div>
-  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${plan.description}</p>`:''}
+  <h1>${esc(plan.name||'')}</h1>
+  <div class="meta">${esc(tenant.display_name||tenant.name||'')} &middot; ${today} &middot; Status: ${esc(plan.status||'')}</div>
+  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${esc(plan.description)}</p>`:''}
 
   <h2>Plan Details</h2>
   <table>
     <tbody>
-      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${plan.responsible_person}</td></tr>`:''}
+      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${esc(plan.responsible_person)}</td></tr>`:''}
       ${plan.start_date?`<tr><td style="font-weight:600">Start Date</td><td>${plan.start_date}</td></tr>`:''}
       ${plan.end_date?`<tr><td style="font-weight:600">End Date</td><td>${plan.end_date}</td></tr>`:''}
       ${plan.start_date&&plan.end_date?`<tr><td style="font-weight:600">Duration</td><td>${Math.ceil((new Date(plan.end_date)-new Date(plan.start_date))/(1000*60*60*24))} days</td></tr>`:''}
@@ -2804,13 +2810,13 @@ async function renderCorrelations() {
   let html = corr.map(g => `
     <div class="card mb-16">
       <div class="flex justify-between items-center">
-        <div class="card-header" style="margin:0">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+        <div class="card-header" style="margin:0">${esc(g.canonical_name||'')} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${esc(g.overall_status||'')}</span></div>
         <button class="btn btn-sm" onclick="showAddActionToGroup('${g.group_id}','${g.canonical_name.replace(/'/g,"\\'")}')">+ Add Action</button>
       </div>
-      <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${g.description}</p>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(g.description||'')}</p>
       <div style="font-size:13px;margin-bottom:8px">Found in ${g.source_count} tools: ${g.sources.join(', ')}</div>
       <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>
-        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
+        ${g.actions.map(a=>`<tr><td style="font-size:12px">${esc(a.source_tool||'')}</td><td>${esc((a.title||'').substring(0,60))}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -2828,7 +2834,7 @@ async function renderControlFamilies(tabBar) {
   let rows = groups.map(g => {
     const kw = (g.keywords||[]).join(', ');
     return `<tr>
-      <td style="font-weight:600">${g.canonical_name}</td>
+      <td style="font-weight:600">${esc(g.canonical_name||'')}</td>
       <td style="font-size:12px;max-width:200px">${g.description||''}</td>
       <td style="font-size:11px;max-width:400px;word-break:break-word">${kw}</td>
       <td style="white-space:nowrap">
@@ -2884,9 +2890,9 @@ async function editControlFamily(id) {
   const g = groups.find(x=>x.id===id);
   if(!g) return toast('Family not found','error');
   openModal('Edit Control Family', `
-    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${g.canonical_name}"></div>
-    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${g.description||''}"></div>
-    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>`,
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${esc(g.canonical_name||'')}"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${esc(g.description||'')}"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${esc((g.keywords||[]).join(', '))}</textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>`);
 }
 
@@ -2930,8 +2936,8 @@ async function showAddActionToGroup(groupId, groupName) {
 
   let rows = uncorrelated.map(a => `<tr>
     <td><input type="checkbox" value="${a.id}" class="corr-add-cb"></td>
-    <td style="font-size:12px">${a.source_tool}</td>
-    <td>${a.title.substring(0,55)}</td>
+    <td style="font-size:12px">${esc(a.source_tool||'')}</td>
+    <td>${esc((a.title||'').substring(0,55))}</td>
     <td>${statusBadge(a.status)}</td>
   </tr>`).join('');
 
@@ -3088,7 +3094,7 @@ async function renderE8() {
         <td style="font-size:11px">${a.maturity?.replace('Maturity ','')}</td>
         <td style="font-size:12px">${(a.title||'').substring(0,50)}</td>
         <td>${statusBadge(a.status)}</td>
-        <td style="font-size:11px">${a.source_tool||''}</td>
+        <td style="font-size:11px">${esc(a.source_tool||'')}</td>
       </tr>`).join('');
       gapSection = `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
         <div class="card-header" style="margin:0;font-size:13px;color:var(--danger)">Gap to Target: ${d.gap_action_count} actions needed</div>
@@ -3136,8 +3142,8 @@ async function renderE8() {
 
     // Action table
     let actionRows = (d.actions||[]).map(a => `<tr>
-      <td style="font-size:11px;font-family:monospace">${a.reference_id||''}</td>
-      <td style="font-size:12px">${a.source_tool||''}</td>
+      <td style="font-size:11px;font-family:monospace">${esc(a.reference_id||'')}</td>
+      <td style="font-size:12px">${esc(a.source_tool||'')}</td>
       <td>${(a.title||'').substring(0,55)}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
@@ -3391,7 +3397,7 @@ async function renderScuba() {
           <td style="font-size:12px">${(a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90)}</td>
           <td>${statusBadge(a.status)}</td>
           <td>${_scubaCritBadge(a.subcategory)}</td>
-          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
+          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.current_value||'')}">${esc(a.current_value||'')}</td>
         </tr>`;
       }).join('');
 
@@ -3659,7 +3665,7 @@ async function renderPlanExport(tabBar) {
   }
 
   const planOpts = plans.map(p=>`<option value="${p.id}">${p.name} (${p.item_count} actions)</option>`).join('');
-  const tplOpts = templates.map(t=>`<option value="${t.id}">${t.name} (${t.template_type})</option>`).join('');
+  const tplOpts = templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.template_type||'')})</option>`).join('');
 
   document.getElementById('content').innerHTML = `${tabBar}
     <div class="card mb-16">
@@ -3929,7 +3935,7 @@ async function renderCompliance() {
     for(const [fam, famData] of Object.entries(data.families||{})) {
       let controlRows = Object.entries(famData.controls||{}).map(([ctrlId, ctrl]) => {
         const statusCls = ctrl.status==='Completed'?'success':ctrl.status==='In Progress'?'info':'danger';
-        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)} <span style="color:var(--text-light)">(${a.source_tool||''})</span></div>`).join('');
+        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${esc((a.title||'').substring(0,50))} <span style="color:var(--text-light)">(${esc(a.source_tool||'')})</span></div>`).join('');
         return `<tr>
           <td><code style="font-size:12px">${ctrlId}</code></td>
           <td style="font-size:13px">${ctrl.control_name}</td>
@@ -4001,7 +4007,7 @@ async function renderRisks() {
   let expiredCards = summary.expired.map(a => `
     <div class="risk-card expired card mb-8">
       <div class="flex justify-between items-center">
-        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Expired: ${a.risk_expiry_date}</div></div>
+        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Expired: ${a.risk_expiry_date}</div></div>
         <button class="btn btn-sm btn-danger" onclick="showEditAction('${a.id}')">Review</button>
       </div>
     </div>`).join('');
@@ -4009,15 +4015,15 @@ async function renderRisks() {
   let upcomingCards = summary.upcoming_reviews.map(a => `
     <div class="risk-card upcoming card mb-8">
       <div class="flex justify-between items-center">
-        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Review by: ${a.risk_review_date}</div></div>
+        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Review by: ${a.risk_review_date}</div></div>
         <button class="btn btn-sm" onclick="showEditAction('${a.id}')">Review</button>
       </div>
     </div>`).join('');
 
   let acceptedRows = summary.accepted.map(a => `<tr>
-    <td>${a.title?.substring(0,45)}</td>
-    <td>${a.risk_owner||'N/A'}</td>
-    <td style="font-size:12px">${a.risk_justification?.substring(0,60)||'N/A'}</td>
+    <td>${esc((a.title||'').substring(0,45))}</td>
+    <td>${esc(a.risk_owner||'N/A')}</td>
+    <td style="font-size:12px">${esc(a.risk_justification?.substring(0,60)||'N/A')}</td>
     <td>${a.risk_accepted_at?.substring(0,10)||'N/A'}</td>
     <td>${a.risk_expiry_date||'No expiry'}</td>
     <td>${a.risk_review_date||'Not set'}</td>
@@ -4093,14 +4099,14 @@ async function loadActionDeps(actionId) {
     html += deps.depends_on.map(d => {
       const blocked = d.status !== 'Completed' && d.status !== 'Risk Accepted';
       return `<span class="dep-tag ${blocked?'blocked':''}">
-        ${blocked?'&#128274; ':'&#9989; '}${d.title?.substring(0,35)} (${d.status})
+        ${blocked?'&#128274; ':'&#9989; '}${esc((d.title||'').substring(0,35))} (${esc(d.status||'')})
         <button style="background:none;border:none;cursor:pointer;font-size:14px;color:#999" onclick="removeDep('${actionId}','${d.depends_on_id}');event.stopPropagation()">&times;</button>
       </span>`;
     }).join('');
   }
   if(deps.blocks.length) {
     html += `<div class="field-label mb-8 ${deps.depends_on.length?'mt-16':''}">Blocks</div>`;
-    html += deps.blocks.map(d => `<span class="dep-tag">${d.title?.substring(0,35)} (${d.status})</span>`).join('');
+    html += deps.blocks.map(d => `<span class="dep-tag">${esc((d.title||'').substring(0,35))} (${esc(d.status||'')})</span>`).join('');
   }
   el.innerHTML = `<div class="mb-16">${html}</div>`;
 }
@@ -4110,7 +4116,7 @@ function showAddDependency(actionId) {
   (async () => {
     const actions = await api.get(`/api/tenants/${state.activeTenant.name}/actions`);
     const otherActions = actions.filter(a => a.id !== actionId);
-    let options = otherActions.map(a => `<option value="${a.id}">${a.title.substring(0,60)} [${a.status}]</option>`).join('');
+    let options = otherActions.map(a => `<option value="${a.id}">${esc((a.title||'').substring(0,60))} [${esc(a.status||'')}]</option>`).join('');
     openModal('Add Dependency', `
       <p style="margin-bottom:12px;color:var(--text-light)">Select an action that must be completed before this one can proceed.</p>
       <div class="form-group"><label>Depends On</label><select id="dep-target">${options}</select></div>
@@ -4186,8 +4192,8 @@ async function renderCpGlobalActions() {
 
   const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
     <td><strong>${(a.title||'').substring(0,60)}</strong></td>
-    <td><span class="badge badge-info">${a.source_tool||''}</span></td>
-    <td>${a.workload||''}</td>
+    <td><span class="badge badge-info">${esc(a.source_tool||'')}</span></td>
+    <td>${esc(a.workload||'')}</td>
     <td>${priorityBadge(a.priority)}</td>
     <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${a.review_status||'To Review'}</span></td>
     <td style="text-align:center">${a.compliance_mapping_count||0}</td>
@@ -4284,26 +4290,26 @@ async function showCpGlobalActionDetail(id) {
   const rvOpts = ['To Review','Reviewed'].map(v=>`<option value="${v}" ${v===ga.review_status?'selected':''}>${v}</option>`).join('');
   const fwOpts = (state.enums.compliance_frameworks||[]).map(f=>`<option value="${f}">${f}</option>`).join('');
   const mappingRows = (ga.compliance_mappings||[]).map(m=>`<tr>
-    <td>${m.framework}</td><td>${m.control_id}</td><td>${m.control_name||''}</td>
+    <td>${esc(m.framework||'')}</td><td>${esc(m.control_id||'')}</td><td>${esc(m.control_name||'')}</td>
     <td><button class="btn btn-sm btn-danger" onclick="deleteCpComplianceMapping('${id}',${m.id})">&#x2715;</button></td>
   </tr>`).join('');
   const tenantRows = (ga.linked_tenant_actions||[]).map(a=>`<tr>
-    <td>${a.tenant_name}</td><td>${(a.title||'').substring(0,50)}</td><td>${statusBadge(a.status)}</td>
+    <td>${esc(a.tenant_name||'')}</td><td>${esc((a.title||'').substring(0,50))}</td><td>${statusBadge(a.status)}</td>
   </tr>`).join('');
-  openModal(`Global Action: ${ga.title.substring(0,50)}`, `
+  openModal(`Global Action: ${(ga.title||'').substring(0,50)}`, `
     <div class="action-tabs"><div class="atab active" onclick="switchTab(event,'ga-tab-details')">Details</div>
     <div class="atab" onclick="switchTab(event,'ga-tab-compliance')">Compliance Mappings</div>
     <div class="atab" onclick="switchTab(event,'ga-tab-tenants')">Tenant Instances (${ga.linked_tenant_actions?.length||0})</div></div>
     <div class="action-tab-content active" id="ga-tab-details">
-      <div class="form-row"><div class="form-group"><label>Title</label><input id="gae-title" value="${(ga.title||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-row"><div class="form-group"><label>Title</label><input id="gae-title" value="${esc(ga.title||'')}"></div>
       <div class="form-group"><label>Workload</label><select id="gae-workload">${wlOpts}</select></div></div>
       <div class="form-row"><div class="form-group"><label>Priority</label><select id="gae-priority">${prioOpts}</select></div>
       <div class="form-group"><label>Review Status</label><select id="gae-review">${rvOpts}</select></div></div>
-      <div class="form-group"><label>Description</label><textarea id="gae-desc" rows="2">${ga.description||''}</textarea></div>
-      <div class="form-group"><label>Implementation Steps</label><textarea id="gae-steps" rows="4">${ga.implementation_steps||''}</textarea></div>
-      <div class="form-group"><label>Risk Explanation</label><textarea id="gae-risk" rows="3">${ga.risk_explanation||''}</textarea></div>
-      <div class="form-group"><label>Additional Info</label><textarea id="gae-info" rows="2">${ga.additional_info||''}</textarea></div>
-      <div class="form-group"><label>Reference URL</label><input id="gae-url" value="${ga.reference_url||''}"></div>
+      <div class="form-group"><label>Description</label><textarea id="gae-desc" rows="2">${esc(ga.description||'')}</textarea></div>
+      <div class="form-group"><label>Implementation Steps</label><textarea id="gae-steps" rows="4">${esc(ga.implementation_steps||'')}</textarea></div>
+      <div class="form-group"><label>Risk Explanation</label><textarea id="gae-risk" rows="3">${esc(ga.risk_explanation||'')}</textarea></div>
+      <div class="form-group"><label>Additional Info</label><textarea id="gae-info" rows="2">${esc(ga.additional_info||'')}</textarea></div>
+      <div class="form-group"><label>Reference URL</label><input id="gae-url" value="${esc(ga.reference_url||'')}"></div>
     </div>
     <div class="action-tab-content" id="ga-tab-compliance">
       <div class="mb-12">
@@ -4391,13 +4397,13 @@ async function renderCpCrossTenant() {
       const ts = ga.tenant_status[t];
       if(!ts) return `<td style="text-align:center"><span style="color:var(--border)">—</span></td>`;
       const color = statusColors[ts.status]||'gray';
-      return `<td style="text-align:center"><span class="badge badge-${color}" style="font-size:10px">${ts.status}</span></td>`;
+      return `<td style="text-align:center"><span class="badge badge-${color}" style="font-size:10px">${esc(ts.status||'')}</span></td>`;
     }).join('');
     return `<tr>
-      <td style="max-width:220px"><strong>${(ga.title||'').substring(0,55)}</strong></td>
-      <td><span class="badge badge-info" style="font-size:10px">${ga.source_tool||''}</span></td>
-      <td>${ga.workload||''}</td>
-      <td><span class="cp-status-badge ${ga.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${ga.review_status||''}</span></td>
+      <td style="max-width:220px"><strong>${esc((ga.title||'').substring(0,55))}</strong></td>
+      <td><span class="badge badge-info" style="font-size:10px">${esc(ga.source_tool||'')}</span></td>
+      <td>${esc(ga.workload||'')}</td>
+      <td><span class="cp-status-badge ${ga.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${esc(ga.review_status||'')}</span></td>
       ${tenantCols}
     </tr>`;
   }).join('');
@@ -4442,7 +4448,7 @@ async function renderCpFrameworks() {
         ${f}
       </label>`).join('');
     return `<tr>
-      <td><strong>${t.display_name||t.name}</strong></td>
+      <td><strong>${esc(t.display_name||t.name)}</strong></td>
       <td>${fwBadges||'<span style="color:var(--text-light)">None assigned</span>'}</td>
       <td>${fwCheckboxes}</td>
     </tr>`;
@@ -4494,12 +4500,12 @@ async function renderCpUsers() {
   const rows = users.map(u => {
     const accessList = (u.tenant_access||[]).map(ta => {
       const wls = ta.workloads?.length ? ` (${ta.workloads.join(', ')})` : ' (all workloads)';
-      return `<span class="badge badge-gray" style="margin:1px">${ta.tenant_name}${wls}</span>`;
+      return `<span class="badge badge-gray" style="margin:1px">${esc(ta.tenant_name)}${esc(wls)}</span>`;
     }).join('');
     return `<tr>
-      <td><strong>${u.display_name||u.username}</strong><br><span style="font-size:11px;color:var(--text-light)">${u.username}</span></td>
-      <td>${u.email||'—'}</td>
-      <td><span class="badge badge-${roleColors[u.role]||'gray'}">${u.role}</span></td>
+      <td><strong>${esc(u.display_name||u.username)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(u.username)}</span></td>
+      <td>${esc(u.email||'—')}</td>
+      <td><span class="badge badge-${roleColors[u.role]||'gray'}">${esc(u.role||'')}</span></td>
       <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
       <td>${accessList||'<span style="color:var(--text-light);font-size:12px">${u.role==="admin"?"Full access":"No tenant access"}</span>'}</td>
       <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
@@ -4557,7 +4563,7 @@ function showCreateUser() {
 }
 
 function addTenantAccessRow(containerId) {
-  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${t.display_name||t.name}</option>`).join('');
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${esc(t.display_name||t.name)}</option>`).join('');
   const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
   const div = document.createElement('div');
   div.className = 'flex gap-8 mb-8 tenant-access-row';
@@ -4599,11 +4605,11 @@ async function showEditUser(userId) {
   if(user.error) return toast(user.error,'error');
   const roleOpts = ['admin','tenant_admin','analyst','viewer'].map(r=>`<option value="${r}" ${r===user.role?'selected':''}>${r}</option>`).join('');
   const activeOpts = [1,0].map(v=>`<option value="${v}" ${(user.is_active?1:0)===v?'selected':''}>${v?'Active':'Inactive'}</option>`).join('');
-  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${t.display_name||t.name}</option>`).join('');
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${esc(t.display_name||t.name)}</option>`).join('');
   const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
   const existingAccess = (user.tenant_access||[]).map(ta => {
     const wlSel = (state.enums.workloads||[]).map(w=>`<option value="${w}" ${(ta.workloads||[]).includes(w)?'selected':''}>${w}</option>`).join('');
-    const tSel = state.tenants.map(t=>`<option value="${t.name}" ${t.name===ta.tenant_name?'selected':''}>${t.display_name||t.name}</option>`).join('');
+    const tSel = state.tenants.map(t=>`<option value="${t.name}" ${t.name===ta.tenant_name?'selected':''}>${esc(t.display_name||t.name)}</option>`).join('');
     return `<div class="flex gap-8 mb-8 tenant-access-row">
       <select class="ta-tenant" style="flex:1">${tSel}</select>
       <select class="ta-workload" multiple style="flex:1;height:60px">${wlSel}</select>
@@ -4613,8 +4619,8 @@ async function showEditUser(userId) {
 
   openModal(`Edit User: ${user.display_name||user.username}`, `
     <div class="form-row">
-      <div class="form-group"><label>Display Name</label><input id="eu-display" value="${(user.display_name||'').replace(/"/g,'&quot;')}"></div>
-      <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${user.email||''}"></div>
+      <div class="form-group"><label>Display Name</label><input id="eu-display" value="${esc(user.display_name||'')}"></div>
+      <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${esc(user.email||'')}"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Role</label><select id="eu-role">${roleOpts}</select></div>
@@ -4668,9 +4674,9 @@ async function renderCpTenants() {
   const rows = tenants.map(t => {
     const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${f}</span>`).join('');
     const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
-    const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${u.display_name||u.username}</span>`).join('');
+    const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${esc(u.display_name||u.username)}</span>`).join('');
     return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
-      <td><strong>${t.display_name||t.name}</strong><br><span style="font-size:11px;color:var(--text-light)">${t.name}</span></td>
+      <td><strong>${esc(t.display_name||t.name)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
       <td>${t.action_count||0}</td>
       <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
       <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
@@ -4719,13 +4725,13 @@ async function showCpTenantDetail(tenantName) {
   const userRows = usersWithAccess.map(u=>{
     const ta = (u.tenant_access||[]).find(x=>x.tenant_name===tenantName);
     const wls = ta?.workloads?.length ? ta.workloads.join(', ') : (u.role==='admin'?'Full access':'All workloads');
-    return `<tr><td>${u.display_name||u.username}</td><td><span class="badge badge-gray">${u.role}</span></td>
+    return `<tr><td>${esc(u.display_name||u.username)}</td><td><span class="badge badge-gray">${esc(u.role||'')}</span></td>
       <td style="font-size:12px">${wls}</td>
       <td>${u.role!=='admin'?`<button class="btn btn-sm btn-danger" onclick="removeTenantUser('${u.id}','${tenantName}')">Revoke</button>`:'<span style="color:var(--text-light);font-size:11px">Always</span>'}</td>
     </tr>`;
   }).join('');
 
-  const addUserOpts = allOtherUsers.map(u=>`<option value="${u.id}">${u.display_name||u.username} (${u.role})</option>`).join('');
+  const addUserOpts = allOtherUsers.map(u=>`<option value="${u.id}">${esc(u.display_name||u.username)} (${esc(u.role||'')})</option>`).join('');
 
   openModal(`Tenant: ${tenant.display_name||tenantName}`, `
     <div class="action-tabs">
@@ -4736,10 +4742,10 @@ async function showCpTenantDetail(tenantName) {
     </div>
     <div class="action-tab-content active" id="cpt-general">
       <div class="form-row">
-        <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${(tenant.display_name||'').replace(/"/g,'&quot;')}"></div>
-        <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${tenant.tenant_id||''}"></div>
+        <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${esc(tenant.display_name||'')}"></div>
+        <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${esc(tenant.tenant_id||'')}"></div>
       </div>
-      <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${tenant.notes||''}</textarea></div>
+      <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
       <div style="margin-top:12px"><button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button></div>
     </div>
     <div class="action-tab-content" id="cpt-frameworks">
@@ -4764,8 +4770,8 @@ async function showCpTenantDetail(tenantName) {
         <div class="table-wrap"><table><thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th></th></tr></thead>
         <tbody>${unlinked.map(a=>`<tr>
           <td>${(a.title||'').substring(0,50)}</td>
-          <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
-          <td style="font-size:11px;color:var(--text-light)">${a.source_id||'—'}</td>
+          <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+          <td style="font-size:11px;color:var(--text-light)">${esc(a.source_id||'—')}</td>
           <td>${statusBadge(a.status)}</td>
           <td><button class="btn btn-sm" onclick="showLinkUnlinkedAction('${a.id}','${tenantName}')">Link</button>
           <button class="btn btn-sm btn-primary" onclick="createGlobalFromAction('${a.id}','${tenantName}')">Create in CP</button></td>
@@ -4840,7 +4846,7 @@ async function autoCreateUnlinked(tenantName) {
 
 async function showLinkUnlinkedAction(actionId, tenantName) {
   const globalActions = await api.get('/api/control-plane/global-actions');
-  const opts = globalActions.map(ga=>`<option value="${ga.id}">${ga.source_tool} · ${(ga.title||'').substring(0,60)}</option>`).join('');
+  const opts = globalActions.map(ga=>`<option value="${ga.id}">${esc(ga.source_tool||'')} · ${esc((ga.title||'').substring(0,60))}</option>`).join('');
   openModal('Link to Global Action', `
     <p style="margin-bottom:12px;color:var(--text-light)">Select the global action this tenant action corresponds to.</p>
     <div class="form-group"><label>Global Action</label>
@@ -4872,7 +4878,7 @@ async function renderCpCorrelations() {
     `<button class="btn btn-primary" onclick="showCreateCorrelationGroup()">+ New Group</button>`;
 
   const rows = (groups||[]).map(g => `<tr>
-    <td><strong>${g.canonical_name}</strong></td>
+    <td><strong>${esc(g.canonical_name||'')}</strong></td>
     <td style="font-size:12px;color:var(--text-light);max-width:200px">${(g.description||'').substring(0,80)}</td>
     <td style="font-size:12px">${(g.keywords||[]).slice(0,5).join(', ')}</td>
     <td style="text-align:center">${g.action_count||0}</td>
@@ -4956,7 +4962,7 @@ async function showGaLinks(gaId) {
   const allActions = await api.get('/api/control-plane/global-actions');
   const linkedIds = new Set([gaId, ...(links||[]).map(l=>l.id)]);
   const available = allActions.filter(a=>!linkedIds.has(a.id));
-  const availOpts = available.map(a=>`<option value="${a.id}">[${a.source_tool}] ${(a.title||'').substring(0,60)}</option>`).join('');
+  const availOpts = available.map(a=>`<option value="${a.id}">[${esc(a.source_tool||'')}] ${esc((a.title||'').substring(0,60))}</option>`).join('');
 
   const linkRows = (links||[]).map(l=>`<tr>
     <td>${(l.title||'').substring(0,55)}</td>
@@ -5021,18 +5027,18 @@ async function renderMergeTool() {
       ${group.map(a=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:6px;cursor:pointer;background:var(--bg)">
         <input type="checkbox" class="merge-cb" value="${a.id}" style="margin-top:2px;width:16px;height:16px" onchange="updateMergeSelection(this)">
         <div style="flex:1">
-          <div style="font-weight:600;font-size:13px">${(a.title||'').substring(0,70)}</div>
-          <div style="font-size:11px;color:var(--text-light)">${a.source_tool} · ${a.workload} · ${a.source_id||'no ID'} · ${a.tenant_action_count||0} tenant actions</div>
+          <div style="font-weight:600;font-size:13px">${esc((a.title||'').substring(0,70))}</div>
+          <div style="font-size:11px;color:var(--text-light)">${esc(a.source_tool||'')} · ${esc(a.workload||'')} · ${esc(a.source_id||'no ID')} · ${a.tenant_action_count||0} tenant actions</div>
         </div>
       </label>`).join('')}
     </div>`).join('');
 
   const allRows = actions.map(a=>`<tr>
     <td><input type="checkbox" class="merge-cb" value="${a.id}" style="width:15px;height:15px" onchange="updateMergeSelection(this)"></td>
-    <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
-    <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
-    <td>${a.workload||''}</td>
-    <td style="font-size:11px">${a.source_id||''}</td>
+    <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+    <td>${esc(a.workload||'')}</td>
+    <td style="font-size:11px">${esc(a.source_id||'')}</td>
     <td style="text-align:center">${a.tenant_action_count||0}</td>
   </tr>`).join('');
 
@@ -5076,7 +5082,7 @@ async function showMergeConfirm() {
   if(_mergeSelection.size < 2) return toast('Select at least 2 actions to merge','error');
   const ids = Array.from(_mergeSelection);
   const actions = await Promise.all(ids.map(id => api.get(`/api/control-plane/global-actions/${id}`)));
-  const primaryOpts = actions.map(a=>`<option value="${a.id}">[${a.source_tool}] ${(a.title||'').substring(0,60)} (${a.tenant_action_count||0} tenants)</option>`).join('');
+  const primaryOpts = actions.map(a=>`<option value="${a.id}">[${esc(a.source_tool||'')}] ${esc((a.title||'').substring(0,60))} (${a.tenant_action_count||0} tenants)</option>`).join('');
   openModal('Confirm Merge', `
     <p style="margin-bottom:12px;color:var(--text-light)">
       Merging <strong>${ids.length} actions</strong> into one. Select which action to keep as the primary record.
@@ -5085,7 +5091,7 @@ async function showMergeConfirm() {
     <div class="form-group"><label>Primary (Keep)</label><select id="merge-primary" style="width:100%">${primaryOpts}</select></div>
     <div class="ga-detail-section" style="font-size:12px">
       <strong>Actions to be merged:</strong><br>
-      ${actions.map(a=>`<div style="padding:4px 0">${a.source_tool} · ${(a.title||'').substring(0,60)}</div>`).join('')}
+      ${actions.map(a=>`<div style="padding:4px 0">${esc(a.source_tool||'')} · ${esc((a.title||'').substring(0,60))}</div>`).join('')}
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="submitMerge()">Merge</button>`);
@@ -5107,12 +5113,12 @@ async function handlePostImportUnlinked(tenantName, importResult) {
   if(!importResult.unlinked_actions || importResult.unlinked_actions.length === 0) return;
   const unlinked = importResult.unlinked_actions;
   const globalActions = await api.get('/api/control-plane/global-actions');
-  const gaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${ga.source_tool}] ${(ga.title||'').substring(0,60)}</option>`).join('');
+  const gaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${esc(ga.source_tool||'')}] ${esc((ga.title||'').substring(0,60))}</option>`).join('');
 
   const rows = unlinked.map((a,i) => `<tr id="unlinked-row-${i}">
-    <td>${(a.title||'').substring(0,50)}</td>
-    <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
-    <td style="font-size:11px">${a.source_id||'—'}</td>
+    <td>${esc((a.title||'').substring(0,50))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+    <td style="font-size:11px">${esc(a.source_id||'—')}</td>
     <td id="unlinked-action-${i}">
       <span class="badge badge-warning">Pending</span>
     </td>
