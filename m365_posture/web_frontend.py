@@ -36,6 +36,10 @@ a { color:var(--primary); text-decoration:none; }
 .sidebar nav a { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:6px; color:var(--text-sidebar); font-size:14px; margin-bottom:2px; transition:background .15s; }
 .sidebar nav a:hover, .sidebar nav a.active { background:var(--bg-sidebar-hover); color:#fff; }
 .sidebar nav a svg { width:18px; height:18px; flex-shrink:0; }
+#cp-nav-toggle { display:flex; align-items:center; justify-content:space-between; cursor:pointer; margin:12px 8px 4px; font-size:10px; font-weight:700; letter-spacing:1px; color:#475569; text-transform:uppercase; padding:0 6px; user-select:none; }
+#cp-nav-toggle:hover { color:#94a3b8; }
+#cp-nav-links { overflow:hidden; max-height:600px; transition:max-height .25s ease-out; }
+#cp-nav-links.cp-collapsed { max-height:0; }
 .sidebar .tenant-indicator { padding:12px 16px; border-top:1px solid #1e293b; font-size:12px; }
 .sidebar .tenant-indicator .name { color:#fff; font-weight:600; font-size:13px; }
 
@@ -337,7 +341,11 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
       History
     </a>
-    <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;letter-spacing:1px;color:#475569;text-transform:uppercase;padding:0 6px">Control Plane</div>
+    <div id="cp-nav-toggle" onclick="toggleCpNav()">
+      <span>Control Plane</span>
+      <svg id="cp-nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;transition:transform .25s;flex-shrink:0"><polyline points="6,9 12,15 18,9"/></svg>
+    </div>
+    <div id="cp-nav-links">
     <a href="#cp-global-actions" data-page="cp-global-actions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       Global Actions
@@ -366,6 +374,7 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       Merge / Dedup
     </a>
+    </div>
   </nav>
   <div style="padding:8px 16px;border-top:1px solid #1e293b">
     <div id="auth-user-info" style="font-size:12px;color:#94a3b8;margin-bottom:6px"></div>
@@ -619,6 +628,15 @@ function applySort() {
 // ── Router ──
 async function navigate(page) {
   state.currentPage = page;
+  if (page.startsWith('cp-')) {
+    const _cpLinks = document.getElementById('cp-nav-links');
+    if (_cpLinks && _cpLinks.classList.contains('cp-collapsed')) {
+      _cpLinks.classList.remove('cp-collapsed');
+      const _chv = document.getElementById('cp-nav-chevron');
+      if (_chv) _chv.style.transform = '';
+      localStorage.setItem('cpNavCollapsed', '0');
+    }
+  }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
   const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
@@ -652,6 +670,24 @@ async function navigateToCpAction(globalActionId) {
     if(row) { row.scrollIntoView({behavior:'smooth',block:'center'}); row.click(); }
   }, 300);
 }
+
+function toggleCpNav() {
+  const links = document.getElementById('cp-nav-links');
+  if (!links) return;
+  const collapsed = links.classList.toggle('cp-collapsed');
+  const chevron = document.getElementById('cp-nav-chevron');
+  if (chevron) chevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
+  localStorage.setItem('cpNavCollapsed', collapsed ? '1' : '0');
+}
+(function initCpNav() {
+  const links = document.getElementById('cp-nav-links');
+  if (!links) return;
+  if (localStorage.getItem('cpNavCollapsed') === '1') {
+    links.classList.add('cp-collapsed');
+    const chevron = document.getElementById('cp-nav-chevron');
+    if (chevron) chevron.style.transform = 'rotate(-90deg)';
+  }
+})();
 
 // ── Global keyboard shortcuts ──
 document.addEventListener('keydown', e => {
