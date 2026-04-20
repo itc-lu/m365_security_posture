@@ -501,13 +501,15 @@ function pctColor(p) {
 }
 
 function mdToHtml(text) {
-  // Convert markdown links [text](url) to clickable HTML, bold **text**, and headings
+  // Converts a constrained markdown subset to HTML. Full HTML-escape runs first
+  // so any literal <, >, ", ', & in the input cannot break out of the attributes
+  // injected by the patterns below.
   if(!text) return '';
-  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  // Markdown links: [label](url)
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" onclick="event.stopPropagation()">$1</a>');
-  // Bare URLs not already in an <a> tag
-  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"&]+)/g, '<a href="$1" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  // Markdown links: [label](url) — URL must start http(s):// and exclude quotes/whitespace
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'<>]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">$1</a>');
+  // Bare URLs not already wrapped
+  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"'&)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">$1</a>');
   // Bold **text**
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Headings
