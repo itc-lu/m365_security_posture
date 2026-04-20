@@ -625,6 +625,41 @@ async function navigate(page) {
 
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
 
+async function navigateToCpAction(globalActionId) {
+  await navigate('cp-global-actions');
+  // Highlight the action after render
+  setTimeout(() => {
+    const row = document.querySelector(`[data-ga-id="${globalActionId}"]`);
+    if(row) { row.scrollIntoView({behavior:'smooth',block:'center'}); row.click(); }
+  }, 300);
+}
+
+// ── Global keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') {
+    // Close confirm dialog first, then modal
+    const confirmOverlay = document.getElementById('confirm-overlay');
+    if(confirmOverlay && confirmOverlay.style.display !== 'none') {
+      closeConfirm(); return;
+    }
+    const modalOverlay = document.getElementById('modal-overlay');
+    if(modalOverlay && modalOverlay.classList.contains('open')) {
+      closeModal(); return;
+    }
+  }
+  if(e.key === 'Enter') {
+    const confirmOverlay = document.getElementById('confirm-overlay');
+    if(confirmOverlay && confirmOverlay.style.display !== 'none') {
+      resolveConfirm(true); return;
+    }
+  }
+});
+
+// Backdrop-click closes modal
+document.addEventListener('click', e => {
+  if(e.target && e.target.id === 'modal-overlay') closeModal();
+});
+
 // ── Auth state ──
 let _authUser = null;
 
@@ -1832,6 +1867,7 @@ function actionDetailHtml(a) {
         </div>
         <div>
           <div class="action-sidebar-card">
+            ${a.global_action_id ? `<div class="sidebar-field"><div class="field-label">Linked Global Action</div><div class="field-value"><a href="#" onclick="navigateToCpAction('${a.global_action_id}');event.preventDefault()" style="color:var(--primary);text-decoration:none;font-size:12px">&#8594; View in Control Plane</a></div></div>` : ''}
             ${isZTR ? `
             <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${a.reference_id||'N/A'}</div></div>
             <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
@@ -2462,6 +2498,7 @@ async function viewPlan(planId) {
   let planActionsRows = plan.items.map(item => {
     const a = item;
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    const phaseOpts = [1,2,3].map(p => `<option value="${p}"${p===(a.phase||1)?' selected':''}>${p}</option>`).join('');
     return `<tr>
       <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
       <td>${statusBadge(a.status||'ToDo')}</td>
@@ -2469,6 +2506,7 @@ async function viewPlan(planId) {
       <td style="font-size:12px">${a.workload||''}</td>
       <td style="font-size:12px">${a.implementation_effort||''}</td>
       <td>${scoreDisplay}</td>
+      <td><select style="padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:12px" title="Phase" onchange="updatePlanItemPhase('${planId}','${a.action_id}',this.value)">${phaseOpts}</select></td>
       <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
     </tr>`;
   }).join('');
@@ -2530,7 +2568,7 @@ async function viewPlan(planId) {
         <div class="card-header" style="margin:0">Plan Actions (${plan.items.length})</div>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
-      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
+      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th>Phase</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
 
     <div class="grid grid-2 mb-16">
@@ -2551,6 +2589,11 @@ async function viewPlan(planId) {
 async function updatePlanStatus(planId, status) {
   await api.put(`/api/plans/${planId}`, {status});
   toast('Plan status updated to ' + status, 'success');
+}
+
+async function updatePlanItemPhase(planId, actionId, phase) {
+  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(phase)});
+  toast(`Moved to Phase ${phase}`, 'success');
 }
 
 async function showEditPlan(planId) {
@@ -2859,7 +2902,7 @@ async function submitEditFamily(id) {
 }
 
 async function deleteControlFamily(id, name) {
-  if(!confirm(`Delete "${name}"? This will unlink all associated actions.`)) return;
+  if(!await showConfirm('Delete Correlation Family', `Delete "${name}"? This will unlink all associated actions.`)) return;
   await api.del(`/api/correlation-groups/${id}`);
   toast('Family deleted','success');
   renderCorrelations();
@@ -2872,7 +2915,7 @@ async function runCorrelation() {
 }
 
 async function unlinkActionFromGroup(actionId) {
-  if(!confirm('Remove this action from the correlation group?')) return;
+  if(!await showConfirm('Remove from Group', 'Remove this action from the correlation group?', 'Remove', 'btn-danger')) return;
   await api.post(`/api/actions/${actionId}/unlink`);
   toast('Action removed from group','success');
   renderCorrelations();
@@ -3593,7 +3636,7 @@ async function submitEditGitlabTemplate(id) {
 }
 
 async function deleteGitlabTemplate(id, name) {
-  if(!confirm(`Delete template "${name}"?`)) return;
+  if(!await showConfirm('Delete Template', `Delete template "${name}"?`)) return;
   await api.del(`/api/gitlab-templates/${id}`);
   toast('Template deleted','success');
   renderExport();
@@ -4141,7 +4184,7 @@ async function renderCpGlobalActions() {
   const rvOpts = ['','To Review','Reviewed'].map(v=>`<option value="${v}" ${v===_cpGaFilter.review_status?'selected':''}>${v||'All Status'}</option>`).join('');
   const totalActions = summary._total_actions || 0;
 
-  const rows = actions.map(a => `<tr onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
+  const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
     <td><strong>${(a.title||'').substring(0,60)}</strong></td>
     <td><span class="badge badge-info">${a.source_tool||''}</span></td>
     <td>${a.workload||''}</td>

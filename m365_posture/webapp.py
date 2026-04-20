@@ -48,11 +48,38 @@ PARSER_MAP = {
     "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
 }
 
+# Simple in-memory login rate limiter
+_login_attempts: dict = {}
+
+
+def _check_login_rate_limit(ip: str) -> bool:
+    """Returns True if allowed, False if rate-limited. Max 10 attempts per 5 minutes."""
+    import time
+    now = time.time()
+    window = 300  # 5 minutes
+    max_attempts = 10
+    attempts = _login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < window]
+    if len(attempts) >= max_attempts:
+        return False
+    attempts.append(now)
+    _login_attempts[ip] = attempts
+    return True
+
 
 def create_app(db_path: str = None) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(32))
+    _secret = os.environ.get("SECRET_KEY")
+    if not _secret:
+        import secrets as _secrets_mod
+        _secret = _secrets_mod.token_hex(32)
+        print(f"[WARNING] SECRET_KEY not set — generated ephemeral key. Set SECRET_KEY env var for production.", flush=True)
+    app.config["SECRET_KEY"] = _secret
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
+    app.config["PERMANENT_SESSION_LIFETIME"] = 28800  # 8 hours
     app.json.sort_keys = False
     db = Database(db_path)
 
@@ -78,6 +105,36 @@ def create_app(db_path: str = None) -> Flask:
 
     def _json_error(msg, code=400):
         return jsonify({"error": msg}), code
+
+    def _redact_tenant(t: dict) -> dict:
+        """Remove client_secret from tenant dict before sending to client."""
+        if t and "client_secret" in t:
+            t = dict(t)
+            t["client_secret"] = "***" if t["client_secret"] else ""
+        return t
+
+    # Public endpoints that don't require authentication
+    _PUBLIC_ENDPOINTS = {
+        "api_auth_login",
+        "api_auth_logout",
+        "serve_frontend",
+        "serve_static",
+        "index",
+    }
+
+    @app.before_request
+    def _require_auth():
+        """Enforce authentication on all /api/* routes except the allowlist."""
+        if request.endpoint in _PUBLIC_ENDPOINTS:
+            return
+        if not request.path.startswith("/api/"):
+            return
+        if "user_id" not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        # CSRF: state-changing requests must carry X-Requested-With header
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
+                return jsonify({"error": "CSRF check failed"}), 403
 
     # ── Serve SPA ──
 
@@ -107,7 +164,7 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/tenants", methods=["GET"])
     def api_list_tenants():
-        return jsonify(db.list_tenants())
+        return jsonify([_redact_tenant(t) for t in db.list_tenants()])
 
     @app.route("/api/tenants", methods=["POST"])
     def api_create_tenant():
@@ -136,15 +193,18 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
-        return jsonify(tenant)
+        return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         data = request.get_json() or {}
+        # Only admins may update client_secret
+        if "client_secret" in data and session.get("role") != "admin":
+            return _json_error("Admin role required to update client_secret", 403)
         tenant = db.update_tenant(name, **data)
-        return jsonify(tenant)
+        return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["DELETE"])
     def api_delete_tenant(name):
@@ -177,7 +237,19 @@ def create_app(db_path: str = None) -> Flask:
             val = request.args.get(key)
             if val:
                 filters[key] = val
-        actions = db.get_actions(name, filters)
+        # Workload-scoped access: derive allowed workloads from session user
+        allowed_workloads = None
+        user_id = session.get("user_id")
+        if user_id:
+            accesses = db.get_user_tenant_access(user_id)
+            for acc in accesses:
+                if acc.get("tenant_name") == name:
+                    wl = acc.get("workloads")
+                    if wl:
+                        import json as _json
+                        allowed_workloads = _json.loads(wl) if isinstance(wl, str) else wl
+                    break
+        actions = db.get_actions(name, filters, allowed_workloads=allowed_workloads)
         return jsonify(actions)
 
     @app.route("/api/tenants/<name>/actions", methods=["POST"])
@@ -387,21 +459,13 @@ def create_app(db_path: str = None) -> Flask:
             actions = parser.parse_file(tmp_path)
             actions = apply_e8_mapping(actions)
 
-            # Enrich Secure Score actions from the reference control table
-            if source == "secure-score":
-                actions = enrich_actions_from_controls(db, actions)
+            # Enrich actions from the reference control table
+            actions = enrich_actions_from_controls(db, actions)
 
-            new_count, updated_count, updated_details = db.merge_actions(name, actions, source_tool, file.filename)
+            new_count, updated_count, updated_details, imported_ids = db.merge_actions(name, actions, source_tool, file.filename)
 
             # Auto-link imported actions to global actions and enrich with CP data
             unlinked_actions = []
-            with db._conn() as conn:
-                imported_ids = [
-                    r["id"] for r in conn.execute(
-                        "SELECT id FROM actions WHERE tenant_name=? AND source_tool=? ORDER BY updated_at DESC LIMIT ?",
-                        (name, source_tool, len(actions) + 10),
-                    ).fetchall()
-                ]
             for aid in imported_ids:
                 with db._conn() as conn:
                     row = conn.execute("SELECT * FROM actions WHERE id=?", (aid,)).fetchone()
@@ -1643,7 +1707,7 @@ def create_app(db_path: str = None) -> Flask:
             actions = enrich_actions_from_controls(db, actions)
 
             source_tool = SourceTool.SECURE_SCORE.value
-            new_count, updated_count, _ = db.merge_actions(name, actions, source_tool, "graph_api")
+            new_count, updated_count, _, _imported_ids = db.merge_actions(name, actions, source_tool, "graph_api")
 
             # Remove any duplicates from previous imports with different source_id formats
             dedup = db.deduplicate_actions(name, source_tool)
@@ -1758,6 +1822,8 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/auth/login", methods=["POST"])
     def api_auth_login():
+        if not _check_login_rate_limit(request.remote_addr or "unknown"):
+            return jsonify({"error": "Too many login attempts. Try again in 5 minutes."}), 429
         data = request.get_json() or {}
         username = data.get("username", "").strip()
         password = data.get("password", "")
@@ -1800,14 +1866,15 @@ def create_app(db_path: str = None) -> Flask:
         if not _verify_password(data.get("current_password", ""), user.get("password_hash", "")):
             return _json_error("Current password is incorrect")
         new_pw = data.get("new_password", "")
-        if len(new_pw) < 6:
-            return _json_error("New password must be at least 6 characters")
+        if len(new_pw) < 12:
+            return _json_error("Password must be at least 12 characters")
         db.update_user(uid, password=new_pw)
         return jsonify({"status": "ok"})
 
     # ── Control Plane: Global Actions ──
 
     @app.route("/api/control-plane/global-actions", methods=["GET"])
+    @require_role("admin", "analyst")
     def api_cp_list_global_actions():
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")
@@ -1882,11 +1949,13 @@ def create_app(db_path: str = None) -> Flask:
         result = db.update_global_action(ga_id, **data)
         if not result:
             return _json_error("Not found", 404)
+        db.audit("global_action.update", actor=session.get("username"), entity_type="global_action", entity_id=ga_id)
         return jsonify(result)
 
     @app.route("/api/control-plane/global-actions/<ga_id>", methods=["DELETE"])
     def api_cp_delete_global_action(ga_id):
         db.delete_global_action(ga_id)
+        db.audit("global_action.delete", actor=session.get("username"), entity_type="global_action", entity_id=ga_id)
         return jsonify({"status": "deleted"})
 
     @app.route("/api/control-plane/global-actions/<ga_id>/compliance", methods=["GET"])
@@ -1960,6 +2029,7 @@ def create_app(db_path: str = None) -> Flask:
     # ── Control Plane: Users ──
 
     @app.route("/api/control-plane/users", methods=["GET"])
+    @require_role("admin", "analyst")
     def api_cp_list_users():
         users = db.list_users()
         for u in users:
@@ -1967,14 +2037,15 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(users)
 
     @app.route("/api/control-plane/users", methods=["POST"])
+    @require_role("admin", "analyst")
     def api_cp_create_user():
         data = request.get_json() or {}
         username = data.get("username", "").strip()
         password = data.get("password", "")
         if not username or not password:
             return _json_error("username and password required")
-        if len(password) < 6:
-            return _json_error("Password must be at least 6 characters")
+        if len(password) < 12:
+            return _json_error("Password must be at least 12 characters")
         existing = db.get_user_by_username(username)
         if existing:
             return _json_error(f"User '{username}' already exists")
@@ -2003,6 +2074,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["PUT"])
+    @require_role("admin", "analyst")
     def api_cp_update_user(user_id):
         data = request.get_json() or {}
         allowed = {"display_name", "email", "role", "is_active", "password"}
@@ -2011,6 +2083,10 @@ def create_app(db_path: str = None) -> Flask:
             valid_roles = [r.value for r in UserRole]
             if kwargs["role"] not in valid_roles:
                 return _json_error(f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+        if str(user_id) == str(session.get("user_id")) and "role" in data:
+            return jsonify({"error": "Cannot change your own role"}), 403
+        if str(user_id) == str(session.get("user_id")) and data.get("is_active") is False:
+            return jsonify({"error": "Cannot deactivate yourself"}), 403
         user = db.update_user(user_id, **kwargs)
         if not user:
             return _json_error("Not found", 404)
@@ -2027,6 +2103,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
+    @require_role("admin", "analyst")
     def api_cp_delete_user(user_id):
         if user_id == session.get("user_id"):
             return _json_error("Cannot delete your own account")

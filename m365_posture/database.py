@@ -127,6 +127,9 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
                 CREATE INDEX IF NOT EXISTS idx_actions_correlation ON actions(correlation_group_id);
                 CREATE INDEX IF NOT EXISTS idx_actions_source_id ON actions(tenant_name, source_tool, source_id);
+                CREATE INDEX IF NOT EXISTS idx_actions_global_action ON actions(global_action_id);
+                CREATE INDEX IF NOT EXISTS idx_actions_tenant_tool_title ON actions(tenant_name, source_tool, title);
+                CREATE INDEX IF NOT EXISTS idx_actions_updated_at ON actions(updated_at);
 
                 CREATE TABLE IF NOT EXISTS action_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -422,6 +425,18 @@ class Database:
                     UNIQUE(source_tool, source_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_gasa_ga ON global_action_source_aliases(global_action_id);
+
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    actor TEXT,
+                    action TEXT NOT NULL,
+                    entity_type TEXT,
+                    entity_id TEXT,
+                    detail TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp DESC);
+                CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -504,6 +519,21 @@ class Database:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+            # Auto-run CP migration once, guarded by schema_migrations table
+            try:
+                conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )""")
+                row = conn.execute("SELECT name FROM schema_migrations WHERE name='cp_migration_v1'").fetchone()
+                if row is None:
+                    count = self.migrate_actions_to_global()
+                    conn.execute("INSERT INTO schema_migrations(name, applied_at) VALUES('cp_migration_v1', ?)", (datetime.utcnow().isoformat(),))
+                    if count:
+                        print(f"[INFO] Auto-migrated {count} actions to Control Plane global actions.", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Auto-migration skipped: {e}", flush=True)
 
     # ── Zero Trust Reports ──
 
@@ -896,7 +926,8 @@ class Database:
             d["history"] = []
         return d
 
-    def get_actions(self, tenant_name: str, filters: dict = None) -> list[dict]:
+    def get_actions(self, tenant_name: str, filters: dict = None,
+                    allowed_workloads: list = None) -> list[dict]:
         filters = filters or {}
         where = ["tenant_name=?"]
         params = [tenant_name]
@@ -907,6 +938,11 @@ class Database:
                 where.append(f"{key}=?")
                 params.append(filters[key])
 
+
+        if allowed_workloads:
+            placeholders = ",".join("?" * len(allowed_workloads))
+            where.append(f"workload IN ({placeholders})")
+            params.extend(allowed_workloads)
         if filters.get("search"):
             where.append("(title LIKE ? OR description LIKE ?)")
             term = f"%{filters['search']}%"
@@ -1029,15 +1065,17 @@ class Database:
             conn.execute("DELETE FROM actions WHERE id=?", (action_id,))
 
     def merge_actions(self, tenant_name: str, new_actions: list[Action],
-                      source_tool: str, source_file: str) -> tuple[int, int, list[dict]]:
+                      source_tool: str, source_file: str) -> tuple[int, int, list[dict], list[str]]:
         """Smart merge: update existing actions, add new ones.
 
-        Returns (new_count, updated_count, updated_details).
+        Returns (new_count, updated_count, updated_details, touched_ids).
         updated_details is a list of {id, title, source_id, matched_by} for transparency.
+        touched_ids is the list of action IDs that were inserted or updated.
         """
         new_count = 0
         updated_count = 0
         updated_details = []
+        touched_ids = []
         # Secure Score legacy fallbacks only apply to Secure Score imports
         is_secure_score = (source_tool == SourceTool.SECURE_SCORE.value)
 
@@ -1184,6 +1222,7 @@ class Database:
                     vals = list(changes.values()) + [existing["id"]]
                     conn.execute(f"UPDATE actions SET {sets} WHERE id=?", vals)
                     updated_count += 1
+                    touched_ids.append(existing["id"])
                     updated_details.append({
                         "id": existing["id"],
                         "title": action.title,
@@ -1227,6 +1266,7 @@ class Database:
                          action.remediation_impact, 1 if action.deprecated else 0),
                     )
                     new_count += 1
+                    touched_ids.append(action_id)
 
             # Record import
             conn.execute(
@@ -1237,7 +1277,7 @@ class Database:
                  source_file, len(new_actions), new_count, updated_count),
             )
 
-        return new_count, updated_count, updated_details
+        return new_count, updated_count, updated_details, touched_ids
 
     def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
         """Remove duplicate actions, keeping the most recently updated one.
@@ -1310,29 +1350,6 @@ class Database:
 
     # ── Correlation groups ──
 
-    def create_correlation_group(self, canonical_name: str, description: str = "",
-                                  keywords: list[str] = None) -> dict:
-        gid = _generate_id()
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT INTO correlation_groups (id, canonical_name, description,
-                   keywords, created_at) VALUES (?, ?, ?, ?, ?)""",
-                (gid, canonical_name, description,
-                 json.dumps(keywords or []), datetime.utcnow().isoformat()),
-            )
-        return {"id": gid, "canonical_name": canonical_name,
-                "description": description, "keywords": keywords or []}
-
-    def get_correlation_groups(self) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM correlation_groups ORDER BY canonical_name").fetchall()
-            result = []
-            for r in rows:
-                d = dict(r)
-                d["keywords"] = json.loads(d.get("keywords") or "[]")
-                result.append(d)
-            return result
-
     def get_correlated_actions(self, group_id: str) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
@@ -1347,24 +1364,6 @@ class Database:
                 "UPDATE actions SET correlation_group_id=? WHERE id=?",
                 (group_id, action_id),
             )
-
-    def update_correlation_group(self, group_id: str, canonical_name: str,
-                                  description: str = "", keywords: list[str] = None) -> dict:
-        with self._conn() as conn:
-            conn.execute(
-                """UPDATE correlation_groups SET canonical_name=?, description=?, keywords=?
-                   WHERE id=?""",
-                (canonical_name, description, json.dumps(keywords or []), group_id),
-            )
-        return {"id": group_id, "canonical_name": canonical_name,
-                "description": description, "keywords": keywords or []}
-
-    def delete_correlation_group(self, group_id: str):
-        with self._conn() as conn:
-            # Unlink all actions first
-            conn.execute("UPDATE actions SET correlation_group_id=NULL WHERE correlation_group_id=?",
-                         (group_id,))
-            conn.execute("DELETE FROM correlation_groups WHERE id=?", (group_id,))
 
     def unlink_action(self, action_id: str):
         with self._conn() as conn:
@@ -1767,16 +1766,17 @@ class Database:
 
     def bulk_add_compliance_mappings(self, mappings: list[dict]):
         """Add many compliance mappings at once."""
+        if not mappings:
+            return
         with self._conn() as conn:
-            for m in mappings:
-                conn.execute(
-                    """INSERT OR IGNORE INTO compliance_mappings
-                       (action_id, framework, control_id, control_name, control_family, notes)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (m["action_id"], m["framework"], m["control_id"],
-                     m.get("control_name", ""), m.get("control_family", ""),
-                     m.get("notes", "")),
-                )
+            conn.executemany(
+                """INSERT OR IGNORE INTO compliance_mappings
+                   (action_id, framework, control_id, control_name, control_family, notes)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                [(m["action_id"], m["framework"], m["control_id"],
+                  m.get("control_name", ""), m.get("control_family", ""),
+                  m.get("notes", "")) for m in mappings],
+            )
 
     def clear_compliance_mappings(self, tenant_name: str, framework: str = None):
         """Clear compliance mappings for a tenant (optionally for a specific framework)."""
@@ -2094,6 +2094,17 @@ class Database:
             vals = list(updates.values()) + [ga_id]
             with self._conn() as conn:
                 conn.execute(f"UPDATE global_actions SET {sets} WHERE id=?", vals)
+                # Propagate enrichment fields to linked tenant actions (only overwrite if tenant field is empty)
+                enrichment_fields = [
+                    ("remediation_steps", kwargs.get("implementation_steps") or kwargs.get("remediation_steps")),
+                    ("risk_level", kwargs.get("risk_level")),
+                ]
+                for col, val in enrichment_fields:
+                    if val:
+                        conn.execute(
+                            f"UPDATE actions SET {col}=? WHERE global_action_id=? AND ({col} IS NULL OR {col}='')",
+                            (val, ga_id)
+                        )
         return self.get_global_action(ga_id)
 
     def delete_global_action(self, ga_id: str):
@@ -2112,16 +2123,31 @@ class Database:
         created = 0
         linked = 0
         with self._conn() as conn:
-            # Get all distinct (source_tool, source_id) combinations with their data
-            rows = conn.execute(
-                """SELECT source_tool, source_id, title, description, workload, category,
-                          subcategory, priority, risk_level, user_impact, implementation_effort,
-                          required_licence, score, max_score, essential_eight_control,
-                          essential_eight_maturity, remediation_steps, reference_url, tags
-                   FROM actions
-                   WHERE source_id != '' AND global_action_id IS NULL
-                   GROUP BY source_tool, source_id"""
-            ).fetchall()
+            # Get all distinct (source_tool, source_id) combinations — pick latest row
+            rows = conn.execute("""
+                SELECT a.source_tool, a.source_id, a.title, a.description, a.workload,
+                       a.category, a.subcategory, a.priority, a.risk_level, a.user_impact,
+                       a.implementation_effort, a.required_licence, a.score, a.max_score,
+                       a.essential_eight_control, a.essential_eight_maturity,
+                       a.remediation_steps, a.reference_url, a.tags
+                FROM actions a
+                INNER JOIN (
+                    SELECT source_tool, source_id, MAX(updated_at) as max_updated
+                    FROM actions
+                    WHERE source_id != '' AND source_id IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM global_action_source_aliases gas
+                        WHERE gas.source_tool = actions.source_tool AND gas.source_id = actions.source_id
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1 FROM global_actions ga
+                        WHERE ga.source_tool = actions.source_tool AND ga.source_id = actions.source_id
+                      )
+                    GROUP BY source_tool, source_id
+                ) latest ON a.source_tool = latest.source_tool
+                       AND a.source_id = latest.source_id
+                       AND a.updated_at = latest.max_updated
+            """).fetchall()
 
             now = datetime.utcnow().isoformat()
             for row in rows:
@@ -2353,31 +2379,6 @@ class Database:
             result.setdefault(r["tenant_name"], []).append(r["framework"])
         return result
 
-    # ── Import linking helpers ──
-
-    def find_global_action_for_import(self, source_tool: str, source_id: str,
-                                       title: str = "") -> dict | None:
-        """Try to find a matching global action for an incoming import."""
-        with self._conn() as conn:
-            # Exact source_id match first
-            if source_id:
-                row = conn.execute(
-                    "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
-                    (source_tool, source_id),
-                ).fetchone()
-                if row:
-                    return self._row_to_global_action(row)
-            # Fuzzy title match fallback
-            if title:
-                row = conn.execute(
-                    "SELECT * FROM global_actions WHERE source_tool=? AND title=?",
-                    (source_tool, title),
-                ).fetchone()
-                if row:
-                    return self._row_to_global_action(row)
-        return None
-
-
     # ── Global Action Links (equivalences) ──
 
     def get_global_action_links(self, ga_id: str) -> list[dict]:
@@ -2460,13 +2461,17 @@ class Database:
                          cm["control_name"], cm["control_family"], cm["notes"]),
                     )
                     mappings_merged += 1
-                # Migrate equivalence links
+                # Migrate equivalence links — delete any that would become duplicates first
                 conn.execute(
-                    "UPDATE global_action_links SET action_a_id=? WHERE action_a_id=?",
+                    "DELETE FROM global_action_links WHERE (action_a_id=? AND action_b_id=?) OR (action_a_id=? AND action_b_id=?)",
+                    (keep_id, mid, mid, keep_id),
+                )
+                conn.execute(
+                    "UPDATE OR IGNORE global_action_links SET action_a_id=? WHERE action_a_id=?",
                     (keep_id, mid),
                 )
                 conn.execute(
-                    "UPDATE global_action_links SET action_b_id=? WHERE action_b_id=?",
+                    "UPDATE OR IGNORE global_action_links SET action_b_id=? WHERE action_b_id=?",
                     (keep_id, mid),
                 )
                 # Remove self-links created by the above
@@ -2612,3 +2617,34 @@ class Database:
         result = self.create_global_action(ga)
         self.link_action_to_global(action_id, result["id"])
         return result
+
+    def audit(self, action: str, actor: str = None, entity_type: str = None,
+              entity_id: str = None, detail: str = None):
+        """Append an immutable audit record."""
+        from datetime import datetime
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO audit_log(timestamp, actor, action, entity_type, entity_id, detail) VALUES(?,?,?,?,?,?)",
+                (datetime.utcnow().isoformat(), actor, action, entity_type, entity_id, detail),
+            )
+
+    def get_audit_log(self, entity_type: str = None, entity_id: str = None,
+                      limit: int = 100, offset: int = 0) -> list[dict]:
+        """Fetch audit records, optionally filtered by entity."""
+        with self._conn() as conn:
+            if entity_type and entity_id:
+                rows = conn.execute(
+                    "SELECT * FROM audit_log WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                    (entity_type, entity_id, limit, offset),
+                ).fetchall()
+            elif entity_type:
+                rows = conn.execute(
+                    "SELECT * FROM audit_log WHERE entity_type=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                    (entity_type, limit, offset),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
+            return [dict(r) for r in rows]
