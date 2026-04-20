@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import webbrowser
@@ -65,6 +66,12 @@ def _check_login_rate_limit(ip: str) -> bool:
     attempts.append(now)
     _login_attempts[ip] = attempts
     return True
+
+
+# Identifier validators (prevent attribute-context injection in onclick handlers).
+# Tenant names are lowercased and space-normalized before validation.
+_TENANT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
 
 
 def create_app(db_path: str = None) -> Flask:
@@ -188,6 +195,8 @@ def create_app(db_path: str = None) -> Flask:
         if not data or not data.get("name"):
             return _json_error("name is required")
         name = data["name"].strip().lower().replace(" ", "-")
+        if not _TENANT_NAME_RE.match(name):
+            return _json_error("Tenant name must be 1-63 chars, start alphanumeric, letters/digits/._- only")
         existing = db.get_tenant(name)
         if existing:
             return _json_error(f"Tenant '{name}' already exists")
@@ -2067,6 +2076,8 @@ def create_app(db_path: str = None) -> Flask:
         password = data.get("password", "")
         if not username or not password:
             return _json_error("username and password required")
+        if not _USERNAME_RE.match(username):
+            return _json_error("Username must be 1-63 chars, start alphanumeric, letters/digits/._- only")
         if len(password) < 12:
             return _json_error("Password must be at least 12 characters")
         existing = db.get_user_by_username(username)
