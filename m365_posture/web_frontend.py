@@ -400,6 +400,19 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
   </div>
 </div>
 
+<!-- Force password-change overlay -->
+<div class="login-overlay hidden" id="pwchange-overlay">
+  <div class="login-card">
+    <h2>&#128273; Change Password</h2>
+    <p class="subtitle">You must change your password before continuing.</p>
+    <div class="form-group"><label>Current password</label><input id="pwchange-current" type="password" autocomplete="current-password"></div>
+    <div class="form-group"><label>New password</label><input id="pwchange-new" type="password" autocomplete="new-password"></div>
+    <div class="form-group"><label>Confirm new password</label><input id="pwchange-confirm" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doForcedPasswordChange()"></div>
+    <div id="pwchange-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doForcedPasswordChange()">Update Password</button>
+  </div>
+</div>
+
 <!-- Confirm dialog -->
 <div class="confirm-overlay" id="confirm-overlay" style="display:none">
   <div class="confirm-dialog">
@@ -667,6 +680,7 @@ async function checkAuth() {
   const me = await api.get('/api/auth/me');
   _authUser = me.authenticated ? me : null;
   updateAuthUI();
+  if(_authUser && _authUser.must_change_password) showForcedPasswordChange('');
 }
 
 function updateAuthUI() {
@@ -700,7 +714,40 @@ async function doLogin() {
   updateAuthUI();
   document.getElementById('login-overlay').classList.add('hidden');
   document.getElementById('login-password').value = '';
+  if(r.must_change_password) {
+    showForcedPasswordChange(password);
+    return;
+  }
   toast(`Welcome, ${r.display_name||r.username}!`, 'success');
+}
+
+function showForcedPasswordChange(prefillCurrent) {
+  const cur = document.getElementById('pwchange-current');
+  if(typeof prefillCurrent === 'string') cur.value = prefillCurrent;
+  document.getElementById('pwchange-new').value = '';
+  document.getElementById('pwchange-confirm').value = '';
+  document.getElementById('pwchange-error').style.display = 'none';
+  document.getElementById('pwchange-overlay').classList.remove('hidden');
+  setTimeout(() => (cur.value ? document.getElementById('pwchange-new') : cur).focus(), 50);
+}
+
+async function doForcedPasswordChange() {
+  const current = document.getElementById('pwchange-current').value;
+  const next = document.getElementById('pwchange-new').value;
+  const confirmVal = document.getElementById('pwchange-confirm').value;
+  const errEl = document.getElementById('pwchange-error');
+  errEl.style.display = 'none';
+  if(!current || !next) { errEl.textContent = 'Both fields are required'; errEl.style.display = 'block'; return; }
+  if(next !== confirmVal) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
+  if(next.length < 8) { errEl.textContent = 'New password must be at least 8 characters'; errEl.style.display = 'block'; return; }
+  const r = await api.post('/api/auth/change-password', {current_password: current, new_password: next});
+  if(r && r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
+  document.getElementById('pwchange-overlay').classList.add('hidden');
+  document.getElementById('pwchange-current').value = '';
+  document.getElementById('pwchange-new').value = '';
+  document.getElementById('pwchange-confirm').value = '';
+  if(_authUser) _authUser.must_change_password = false;
+  toast('Password updated', 'success');
 }
 
 async function doLogout() {
@@ -808,7 +855,7 @@ async function renderDashboard(sourceFilter) {
 
   // Topbar: tenant switcher, compare button, PDF download
   let tenantSwitchOpts = state.tenants.map(tn =>
-    `<option value="${tn.name}" ${tn.name===t?'selected':''}>${tn.display_name||tn.name}</option>`
+    `<option value="${tn.name}" ${tn.name===t?'selected':''}>${esc(tn.display_name||tn.name)}</option>`
   ).join('');
   document.getElementById('topbar-actions').innerHTML = `
     <select id="dash-tenant-switch" onchange="switchTenantFromDashboard(this.value)" style="max-width:200px;font-size:13px">${tenantSwitchOpts}</select>
@@ -860,7 +907,7 @@ async function renderDashboard(sourceFilter) {
   // Build source filter options
   const sourceTools = Object.keys(scores.by_tool||{});
   const sourceOpts = [`<option value="">All Sources (Overall)</option>`].concat(
-    sourceTools.map(s => `<option value="${s}" ${sf===s?'selected':''}>${s}</option>`)
+    sourceTools.map(s => `<option value="${esc(s)}" ${sf===s?'selected':''}>${esc(s)}</option>`)
   ).join('');
 
   // Tool gauge cards
@@ -868,7 +915,7 @@ async function renderDashboard(sourceFilter) {
   for(const [tool, d] of Object.entries(scores.by_tool||{})) {
     const isActive = sf === tool;
     toolCards += `<div class="card stat-card" style="${isActive?'border:2px solid var(--primary);':''}cursor:pointer" onclick="renderDashboard('${tool}')">
-      <div class="card-header">${tool}</div>${gauge(d.percentage, 100)}
+      <div class="card-header">${esc(tool)}</div>${gauge(d.percentage, 100)}
       <div class="label">${d.score}/${d.max_score} pts &middot; ${d.completed}/${d.total} actions</div>
     </div>`;
   }
@@ -888,12 +935,12 @@ async function renderDashboard(sourceFilter) {
     for(const [wl, d] of Object.entries(wlMap)) {
       const pct = d.max_score > 0 ? (d.score/d.max_score*100) : 0;
       const color = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
-      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${pct.toFixed(2)}%</span></div>${progressBar(pct, color)}</div>`;
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${esc(wl)}</span><span style="font-size:13px;font-weight:600">${pct.toFixed(2)}%</span></div>${progressBar(pct, color)}</div>`;
     }
   } else {
     for(const [wl, d] of Object.entries(scores.by_workload||{})) {
       const color = d.percentage >= 80 ? 'var(--success)' : d.percentage >= 40 ? 'var(--warning)' : 'var(--danger)';
-      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(2)}%</span></div>${progressBar(d.percentage, color)}</div>`;
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${esc(wl)}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(2)}%</span></div>${progressBar(d.percentage, color)}</div>`;
     }
   }
 
@@ -950,8 +997,8 @@ async function renderDashboard(sourceFilter) {
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
       <div class="flex justify-between items-center">
         <div>
-          <div style="font-size:24px;font-weight:700">${displayName}</div>
-          <div style="font-size:13px;opacity:.7;margin-top:4px">${state.activeTenant.tenant_id||'No Tenant ID'} &middot; ${today}</div>
+          <div style="font-size:24px;font-weight:700">${esc(displayName)}</div>
+          <div style="font-size:13px;opacity:.7;margin-top:4px">${esc(state.activeTenant.tenant_id||'No Tenant ID')} &middot; ${today}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:42px;font-weight:800">${(dispPct||0).toFixed(2)}%</div>
@@ -1084,7 +1131,7 @@ async function doSnapshotCompare() {
       const pct = (data[l]?.percentage||0).toFixed(2);
       return `<td>${pct}%</td>`;
     }).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
+    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
@@ -1092,7 +1139,7 @@ async function doSnapshotCompare() {
       const pct = (data[l]?.percentage||0).toFixed(2);
       return `<td>${pct}%</td>`;
     }).join('');
-    return `<tr><td>${wl}</td>${cells}</tr>`;
+    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
 
   const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
@@ -1111,7 +1158,7 @@ async function doSnapshotCompare() {
 
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
-      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${tenantDisplay}</h2>
+      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${esc(tenantDisplay)}</h2>
       <div class="flex gap-8">
         <button class="btn btn-sm btn-primary" onclick="downloadComparisonPDF()">PDF Report</button>
         <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
@@ -1122,16 +1169,16 @@ async function doSnapshotCompare() {
       <table><thead><tr><th>State</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">By Source Tool</div>
-        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
-        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
       <div class="card-header">Action Changes <span class="badge badge-danger">${r.actions_differing||0} changed</span> <span class="badge badge-success">${sameCount} unchanged</span></div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions whose status changed since the snapshot, or new actions added after the snapshot. Click current status to view details.</div>
       ${snapActionRows ? `
         <div class="table-wrap" style="max-height:500px;overflow-y:auto">
-          <table><thead><tr><th>Action</th><th>${labels[1]}</th><th>${labels[0]}</th></tr></thead>
+          <table><thead><tr><th>Action</th><th>${esc(labels[1])}</th><th>${esc(labels[0])}</th></tr></thead>
           <tbody>${snapActionRows}</tbody></table>
         </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No changes found - all actions have the same status as the snapshot.</div>'}
     </div>
@@ -1152,17 +1199,17 @@ async function doDashboardCompare() {
 
   let rows = tenants.map(t => {
     const d = r.overall[t]||{};
-    return `<tr><td><strong>${t}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+    return `<tr><td><strong>${esc(t)}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
   }).join('');
 
   let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
     let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
+    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
     let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${wl}</td>${cells}</tr>`;
+    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
 
   // Action-level comparison
@@ -1284,7 +1331,7 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
     // Reuse the full action detail panel with all tabs (General, Implementation, Notes, History)
     contentEl.innerHTML = `
       <div style="padding:8px 0 4px;margin-bottom:4px;border-bottom:1px solid var(--border)">
-        <span class="badge badge-info" style="font-size:12px">${tenantName}</span>
+        <span class="badge badge-info" style="font-size:12px">${esc(tenantName)}</span>
         <strong style="font-size:14px;margin-left:8px">${esc(a.title||'')}</strong>
       </div>
       ${actionDetailHtml(a)}`;
@@ -1589,7 +1636,7 @@ function _renderActionsTableSorted() {
   let rows = actions.map(a => {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
     const plans = _actionPlanMap[a.id] || [];
-    const planBadge = plans.length ? `<span class="badge badge-info" title="${plans.map(p=>p.plan_name).join(', ')}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
+    const planBadge = plans.length ? `<span class="badge badge-info" title="${esc(plans.map(p=>p.plan_name).join(', '))}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
@@ -1704,7 +1751,7 @@ async function showAddToPlan(actionIds) {
   let planOptions = planData.map(p => {
     const dupes = _addToPlanIds.filter(id => p.existingActionIds.includes(id)).length;
     const dupeNote = dupes ? ` - ${dupes} already in plan` : '';
-    return `<option value="${p.id}">${p.name} (${p.item_count} actions, ${p.status})${dupeNote}</option>`;
+    return `<option value="${p.id}">${esc(p.name||'')} (${p.item_count} actions, ${esc(p.status||'')})${dupeNote}</option>`;
   }).join('');
 
   openModal(`Add ${_addToPlanIds.length} Action${_addToPlanIds.length>1?'s':''} to Plan`, `
@@ -2247,10 +2294,10 @@ async function doImport() {
             <span style="font-size:12px;color:var(--text-light)">Compared: ${drift.previous_timestamp?.substring(0,16)} vs ${drift.current_timestamp?.substring(0,16)}</span>
           </div>
         </div>
-        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${r.scope}</strong>: ${r.old_value.toFixed(2)}% → ${r.new_value.toFixed(2)}% <span class="drift-negative">(${r.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
-        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${i.scope}</strong>: ${i.old_value.toFixed(2)}% → ${i.new_value.toFixed(2)}% <span class="drift-positive">(+${i.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
-        ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.scope}: <strong>${f.count}</strong> new action(s) from ${f.file||'import'}</div>`).join('')}</div>`:''}
-        ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.title} (was: ${f.old_status})</div>`).join('')}</div>`:''}
+        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${esc(r.scope||'')}</strong>: ${r.old_value.toFixed(2)}% → ${r.new_value.toFixed(2)}% <span class="drift-negative">(${r.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${esc(i.scope||'')}</strong>: ${i.old_value.toFixed(2)}% → ${i.new_value.toFixed(2)}% <span class="drift-positive">(+${i.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${esc(f.scope||'')}: <strong>${f.count}</strong> new action(s) from ${esc(f.file||'import')}</div>`).join('')}</div>`:''}
+        ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${esc(f.title||'')} (was: ${esc(f.old_status||'')})</div>`).join('')}</div>`:''}
       </div>`;
   }
 
@@ -2269,7 +2316,7 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
-      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${esc(d.title||'')}</td><td><code>${esc(d.source_id||'')}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+esc(d.existing_source_id||'')+'</code>':''}</td><td>${esc(d.matched_by||'')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
   // Reload ZT reports after import
@@ -2506,7 +2553,7 @@ async function viewPlan(planId) {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
     const phaseOpts = [1,2,3].map(p => `<option value="${p}"${p===(a.phase||1)?' selected':''}>${p}</option>`).join('');
     return `<tr>
-      <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
+      <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
       <td>${statusBadge(a.status||'ToDo')}</td>
       <td>${priorityBadge(a.priority||'Medium')}</td>
       <td style="font-size:12px">${esc(a.workload||'')}</td>
@@ -2520,13 +2567,13 @@ async function viewPlan(planId) {
   let phaseHtml = phases.map((ph,i) => `
     <div class="card phase-card phase-${i+1} mb-16" data-phase="${i+1}"
          ondragover="onPhaseDragOver(event,this)" ondragleave="onPhaseDragLeave(this)" ondrop="onPhaseDrop(event,'${planId}',${i+1})">
-      <div class="card-header">${ph.name} <span class="badge badge-info">${ph.action_count} actions</span>
+      <div class="card-header">${esc(ph.name||'')} <span class="badge badge-info">${ph.action_count} actions</span>
         <span style="font-size:11px;color:var(--text-light);margin-left:8px">&#8693; drag actions between phases</span>
       </div>
       <div class="grid grid-3 mb-8">
         <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', ')}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${ph.licences_needed.join(', ')||'None required'}</div></div>
+        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${esc(Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', '))}</div></div>
+        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${esc(ph.licences_needed.join(', ')||'None required')}</div></div>
       </div>
       <div class="table-wrap"><table><thead><tr><th></th><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
         ${ph.actions.map(a=>`<tr draggable="true" data-action-id="${a.action_id||a.id}" data-plan-id="${planId}"
@@ -2753,7 +2800,7 @@ async function exportPlanPDF(planId) {
 
   <h2>By Priority</h2>
   <table><thead><tr><th>Priority</th><th>Count</th><th>Actions</th></tr></thead><tbody>
-  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${p}</td><td>${acts.length}</td><td style="font-size:11px">${acts.map(a=>a.title?.substring(0,40)).join(', ')}</td></tr>`).join('')}
+  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${esc(p)}</td><td>${acts.length}</td><td style="font-size:11px">${esc(acts.map(a=>(a.title||'').substring(0,40)).join(', '))}</td></tr>`).join('')}
   </tbody></table>
 
   <h2>By Workload</h2>
@@ -2835,7 +2882,7 @@ async function renderControlFamilies(tabBar) {
     const kw = (g.keywords||[]).join(', ');
     return `<tr>
       <td style="font-weight:600">${esc(g.canonical_name||'')}</td>
-      <td style="font-size:12px;max-width:200px">${g.description||''}</td>
+      <td style="font-size:12px;max-width:200px">${esc(g.description||'')}</td>
       <td style="font-size:11px;max-width:400px;word-break:break-word">${kw}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick="editControlFamily('${g.id}')">Edit</button>
@@ -3085,14 +3132,14 @@ async function renderE8() {
     // M365 products & features
     const products = (d.m365_products||[]).map(p=>`<span class="badge badge-info" style="font-size:10px;margin:1px">${p}</span>`).join(' ');
     const allFeatures = [...new Set([...(d.m365_features||[]), ...(d.asd_technologies||[])])];
-    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
+    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${esc(f)}</div>`).join('');
 
     // Gap analysis
     let gapSection = '';
     if(d.gap_action_count > 0) {
       const gapRows = (d.gap_actions||[]).slice(0,10).map(a => `<tr>
-        <td style="font-size:11px">${a.maturity?.replace('Maturity ','')}</td>
-        <td style="font-size:12px">${(a.title||'').substring(0,50)}</td>
+        <td style="font-size:11px">${esc(a.maturity?.replace('Maturity ','')||'')}</td>
+        <td style="font-size:12px">${esc((a.title||'').substring(0,50))}</td>
         <td>${statusBadge(a.status)}</td>
         <td style="font-size:11px">${esc(a.source_tool||'')}</td>
       </tr>`).join('');
@@ -3112,13 +3159,13 @@ async function renderE8() {
         if(!r || !r.requirements?.length) return '';
         const items = r.requirements.map(req =>
           `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--bg-hover)">
-            <code style="font-size:10px;color:var(--primary)">${req.id}</code> ${req.text.substring(0,120)}${req.text.length>120?'...':''}
-            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${req.ism.join(', ')}]</span>`:''}
+            <code style="font-size:10px;color:var(--primary)">${esc(req.id||'')}</code> ${esc((req.text||'').substring(0,120))}${req.text && req.text.length>120?'...':''}
+            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${esc(req.ism.join(', '))}]</span>`:''}
           </div>`
         ).join('');
-        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${r.m365_implementation}</div>` : '';
+        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${esc(r.m365_implementation)}</div>` : '';
         return `<div style="margin-bottom:8px">
-          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${ml.replace('Maturity ','')} (${r.requirement_count} requirements)</div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${esc(ml.replace('Maturity ',''))} (${r.requirement_count} requirements)</div>
           ${items}${implNote}
         </div>`;
       }).join('');
@@ -3137,17 +3184,17 @@ async function renderE8() {
       if(a.status === 'Completed') sourceBreakdown[s].completed++;
     });
     const sourceBadges = Object.entries(sourceBreakdown).map(([s,c]) =>
-      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${s} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
+      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${esc(s)} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
     ).join(' ');
 
     // Action table
     let actionRows = (d.actions||[]).map(a => `<tr>
       <td style="font-size:11px;font-family:monospace">${esc(a.reference_id||'')}</td>
       <td style="font-size:12px">${esc(a.source_tool||'')}</td>
-      <td>${(a.title||'').substring(0,55)}</td>
+      <td>${esc((a.title||'').substring(0,55))}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
-      <td style="font-size:12px">${a.maturity?.replace('Maturity ','')||'—'}</td>
+      <td style="font-size:12px">${esc(a.maturity?.replace('Maturity ','')||'—')}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
     </tr>`).join('');
 
@@ -3155,8 +3202,8 @@ async function renderE8() {
       <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('e8-detail-${idx}').classList.toggle('hidden')">
         <div>
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="card-header" style="margin:0;font-size:14px">${ctrl}</span>
-            <span style="font-size:11px;color:var(--text-light)">${d.control_id||''}</span>
+            <span class="card-header" style="margin:0;font-size:14px">${esc(ctrl)}</span>
+            <span style="font-size:11px;color:var(--text-light)">${esc(d.control_id||'')}</span>
           </div>
           <div style="font-size:12px;color:var(--text-light);margin-top:4px">
             ${d.completed_actions}/${d.total_actions} actions &middot;
@@ -3229,7 +3276,7 @@ async function renderE8() {
       const clr = md.total>0?'#fff':'var(--text-light)';
       return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${clr};min-width:40px">${txt}</span></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${ctrl}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
+    return `<tr><td style="font-size:12px">${esc(ctrl)}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
   }).join('');
 
   const radarChart = renderRadarChart(controls);
@@ -3293,7 +3340,7 @@ async function renderE8() {
             return c > 0 ? '<td style="text-align:center"><span class="badge badge-success" style="min-width:28px">'+c+'</span></td>'
                          : '<td style="text-align:center;color:var(--text-light)">—</td>';
           };
-          return '<tr><td style="font-size:12px">'+ctrl+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
+          return '<tr><td style="font-size:12px">'+esc(ctrl)+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
             +'<td style="text-align:center;font-weight:600">'+(total||'<span style="color:var(--danger)">0</span>')+'</td></tr>';
         }).join('')}</tbody>
       </table></div>
@@ -3393,8 +3440,8 @@ async function renderScuba() {
       let rows = (grp.actions || []).map(a => {
         const cid = a.reference_id || a.source_id?.replace('scuba_','') || '';
         return `<tr>
-          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${cid}</td>
-          <td style="font-size:12px">${(a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90)}</td>
+          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${esc(cid)}</td>
+          <td style="font-size:12px">${esc((a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90))}</td>
           <td>${statusBadge(a.status)}</td>
           <td>${_scubaCritBadge(a.subcategory)}</td>
           <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.current_value||'')}">${esc(a.current_value||'')}</td>
@@ -3406,7 +3453,7 @@ async function renderScuba() {
       return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px">
         <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-grp-${gi}').classList.toggle('hidden')">
           <div>
-            <div style="font-size:13px;font-weight:600">${grpName}</div>
+            <div style="font-size:13px;font-weight:600">${esc(grpName)}</div>
             <div style="font-size:11px;color:var(--text-light);margin-top:2px">
               <span class="badge badge-success" style="font-size:10px">Pass ${grp.pass}</span>
               <span class="badge badge-danger" style="font-size:10px">Fail ${grp.fail}</span>
@@ -3427,7 +3474,7 @@ async function renderScuba() {
     return `<div class="card mb-16">
       <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-prod-${pi}').classList.toggle('hidden')">
         <div>
-          <div class="card-header" style="margin:0;font-size:16px">${prod}</div>
+          <div class="card-header" style="margin:0;font-size:16px">${esc(prod)}</div>
           <div style="font-size:12px;color:var(--text-light);margin-top:4px">
             ${pd.pass}/${pd.total} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings &middot; ${pd.na} N/A
             &middot; ${Object.keys(pd.groups||{}).length} groups
@@ -3449,12 +3496,12 @@ async function renderScuba() {
       const pr = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
       const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/scuba-reports/${r.id}/html','_blank')">Open Report</button>` : '';
       return `<tr>
-        <td>${r.imported_at?.substring(0,19) || ''}</td>
-        <td>${r.executed_at?.substring(0,19) || ''}</td>
-        <td>${r.report_tenant_name || ''}</td>
-        <td>${r.report_domain || ''}</td>
-        <td>${products}</td>
-        <td>${r.tool_version || ''}</td>
+        <td>${esc(r.imported_at?.substring(0,19) || '')}</td>
+        <td>${esc(r.executed_at?.substring(0,19) || '')}</td>
+        <td>${esc(r.report_tenant_name || '')}</td>
+        <td>${esc(r.report_domain || '')}</td>
+        <td>${esc(products)}</td>
+        <td>${esc(r.tool_version || '')}</td>
         <td>${gauge(pr, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
         <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
@@ -3562,10 +3609,10 @@ async function renderGitlabTemplates(tabBar) {
   const templates = await api.get(`/api/tenants/${t}/gitlab-templates`);
 
   let rows = templates.map(tpl => `<tr>
-    <td style="font-weight:600">${tpl.name}</td>
-    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${tpl.template_type}</span></td>
-    <td style="font-size:12px;max-width:300px">${tpl.title_template.substring(0,60)||'—'}</td>
-    <td style="font-size:11px">${(tpl.labels||[]).join(', ')||'—'}</td>
+    <td style="font-weight:600">${esc(tpl.name||'')}</td>
+    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${esc(tpl.template_type||'')}</span></td>
+    <td style="font-size:12px;max-width:300px">${esc((tpl.title_template||'').substring(0,60)||'—')}</td>
+    <td style="font-size:11px">${esc((tpl.labels||[]).join(', ')||'—')}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editGitlabTemplate('${tpl.id}')">Edit</button>
       <button class="btn btn-sm btn-danger" onclick="deleteGitlabTemplate('${tpl.id}','${tpl.name.replace(/'/g,"\\'")}')">Delete</button>
@@ -3616,11 +3663,11 @@ async function editGitlabTemplate(id) {
   const tpl = await api.get(`/api/gitlab-templates/${id}`);
   if(!tpl||tpl.error) return toast('Template not found','error');
   openModal('Edit GitLab Template', `
-    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${tpl.name||''}"></div>
+    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${esc(tpl.name||'')}"></div>
     <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment" ${tpl.template_type==='assessment'?'selected':''}>Assessment Issue</option><option value="implementation" ${tpl.template_type==='implementation'?'selected':''}>Implementation Issue</option></select></div>
-    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${(tpl.title_template||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${tpl.body_template||''}</textarea></div>
-    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${(tpl.labels||[]).join(', ')}"></div>`,
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${esc(tpl.title_template||'')}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${esc(tpl.body_template||'')}</textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${esc((tpl.labels||[]).join(', '))}"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditGitlabTemplate('${id}')">Save</button>`);
 }
 
@@ -3664,7 +3711,7 @@ async function renderPlanExport(tabBar) {
     return;
   }
 
-  const planOpts = plans.map(p=>`<option value="${p.id}">${p.name} (${p.item_count} actions)</option>`).join('');
+  const planOpts = plans.map(p=>`<option value="${p.id}">${esc(p.name||'')} (${p.item_count} actions)</option>`).join('');
   const tplOpts = templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.template_type||'')})</option>`).join('');
 
   document.getElementById('content').innerHTML = `${tabBar}
@@ -3692,9 +3739,9 @@ async function previewPlanExport() {
 
   let preview = r.issues.slice(0,5).map((iss,i) => `
     <div class="card mb-8" style="border-left:3px solid var(--primary)">
-      <div style="font-weight:600;margin-bottom:4px">${iss.title}</div>
-      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${iss.body.substring(0,500)}${iss.body.length>500?'...':''}</div>
-      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+l+'</span>').join(' ')}</div>` : ''}
+      <div style="font-weight:600;margin-bottom:4px">${esc(iss.title||'')}</div>
+      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${esc((iss.body||'').substring(0,500))}${iss.body && iss.body.length>500?'...':''}</div>
+      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+esc(l)+'</span>').join(' ')}</div>` : ''}
     </div>`).join('');
 
   document.getElementById('plan-export-result').innerHTML = `
@@ -3736,13 +3783,13 @@ async function renderHistory() {
   const t = state.activeTenant.name;
   const [imports, changelog] = await Promise.all([api.get(`/api/tenants/${t}/history`), api.get(`/api/tenants/${t}/changelog?limit=50`)]);
 
-  let impRows = imports.map(h => `<tr><td>${h.timestamp?.substring(0,19)}</td><td>${h.source_tool}</td><td>${h.file_path?.split('/').pop()?.split('\\\\').pop()}</td><td>${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
+  let impRows = imports.map(h => `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(h.file_path?.split('/').pop()?.split('\\\\').pop()||'')}</td><td>${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
 
   let clRows = changelog.map(h => {
     let desc = [];
     if(h.old_status) desc.push(`${h.old_status} → ${h.new_status}`);
     if(h.old_score!=null) desc.push(`Score: ${h.old_score} → ${h.new_score}`);
-    return `<tr><td>${h.timestamp?.substring(0,19)}</td><td>${h.action_title||''}</td><td>${h.source_tool||''}</td><td>${desc.join('; ')}</td><td>${h.changed_by||''}</td></tr>`;
+    return `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.action_title||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(desc.join('; '))}</td><td>${esc(h.changed_by||'')}</td></tr>`;
   }).join('');
 
   document.getElementById('content').innerHTML = `
@@ -3851,13 +3898,13 @@ async function renderTrending() {
   let driftRows = driftReports.map(d => {
     const cls = d.score_delta > 0 ? 'drift-positive' : d.score_delta < 0 ? 'drift-negative' : 'drift-neutral';
     return `<tr>
-      <td><code>${d.timestamp?.substring(0,16)}</code></td>
-      <td>${d.source_tool}</td>
+      <td><code>${esc(d.timestamp?.substring(0,16)||'')}</code></td>
+      <td>${esc(d.source_tool||'')}</td>
       <td class="${cls}">${d.score_delta>=0?'+':''}${d.score_delta?.toFixed(2)}%</td>
       <td>${d.score_before?.toFixed(2)}% → ${d.score_after?.toFixed(2)}%</td>
       <td>${d.regressions?.length||0}</td>
       <td>${d.improvements?.length||0}</td>
-      <td style="font-size:12px;max-width:200px">${d.summary}</td>
+      <td style="font-size:12px;max-width:200px">${esc(d.summary||'')}</td>
     </tr>`;
   }).join('');
 
@@ -4185,17 +4232,17 @@ async function renderCpGlobalActions() {
   const summary = await api.get('/api/control-plane/compliance-summary');
   const tools = [...new Set(actions.map(a=>a.source_tool))].sort();
   const workloads = [...new Set(actions.map(a=>a.workload))].sort();
-  const toolOpts = ['', ...tools].map(v=>`<option value="${v}" ${v===_cpGaFilter.source_tool?'selected':''}>${v||'All Tools'}</option>`).join('');
-  const wlOpts = ['', ...workloads].map(v=>`<option value="${v}" ${v===_cpGaFilter.workload?'selected':''}>${v||'All Workloads'}</option>`).join('');
+  const toolOpts = ['', ...tools].map(v=>`<option value="${esc(v)}" ${v===_cpGaFilter.source_tool?'selected':''}>${esc(v||'All Tools')}</option>`).join('');
+  const wlOpts = ['', ...workloads].map(v=>`<option value="${esc(v)}" ${v===_cpGaFilter.workload?'selected':''}>${esc(v||'All Workloads')}</option>`).join('');
   const rvOpts = ['','To Review','Reviewed'].map(v=>`<option value="${v}" ${v===_cpGaFilter.review_status?'selected':''}>${v||'All Status'}</option>`).join('');
   const totalActions = summary._total_actions || 0;
 
   const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
-    <td><strong>${(a.title||'').substring(0,60)}</strong></td>
+    <td><strong>${esc((a.title||'').substring(0,60))}</strong></td>
     <td><span class="badge badge-info">${esc(a.source_tool||'')}</span></td>
     <td>${esc(a.workload||'')}</td>
     <td>${priorityBadge(a.priority)}</td>
-    <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${a.review_status||'To Review'}</span></td>
+    <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${esc(a.review_status||'To Review')}</span></td>
     <td style="text-align:center">${a.compliance_mapping_count||0}</td>
     <td style="text-align:center">${a.tenant_action_count||0}</td>
     <td onclick="event.stopPropagation()" style="white-space:nowrap">
@@ -4441,11 +4488,11 @@ async function renderCpFrameworks() {
 
   const rows = tenants.map(t => {
     const assigned = allFrameworks[t.name] || [];
-    const fwBadges = assigned.map(f=>`<span class="badge badge-info" style="margin:2px">${f}</span>`).join('');
+    const fwBadges = assigned.map(f=>`<span class="badge badge-info" style="margin:2px">${esc(f)}</span>`).join('');
     const fwCheckboxes = frameworks.map(f=>`
       <label style="display:inline-flex;align-items:center;gap:6px;margin:4px 8px 4px 0;font-size:13px;cursor:pointer">
-        <input type="checkbox" value="${f}" ${assigned.includes(f)?'checked':''} onchange="toggleTenantFramework('${t.name}','${f}',this.checked)" style="width:16px;height:16px">
-        ${f}
+        <input type="checkbox" value="${esc(f)}" ${assigned.includes(f)?'checked':''} onchange="toggleTenantFramework('${t.name}','${f}',this.checked)" style="width:16px;height:16px">
+        ${esc(f)}
       </label>`).join('');
     return `<tr>
       <td><strong>${esc(t.display_name||t.name)}</strong></td>
@@ -4460,7 +4507,7 @@ async function renderCpFrameworks() {
     const total = compSummary._total_actions || 1;
     const pct = total ? Math.round(count/total*100) : 0;
     return `<div class="card stat-card"><div class="value" style="font-size:20px">${count}</div>
-      <div class="label">${f}</div>
+      <div class="label">${esc(f)}</div>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">${pct}% of actions mapped</div>
       ${progressBar(pct)}</div>`;
   }).join('');
@@ -4672,7 +4719,7 @@ async function renderCpTenants() {
     `<button class="btn btn-primary" onclick="showCreateTenantCp()">+ New Tenant</button>`;
 
   const rows = tenants.map(t => {
-    const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${f}</span>`).join('');
+    const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${esc(f)}</span>`).join('');
     const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
     const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${esc(u.display_name||u.username)}</span>`).join('');
     return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
@@ -4680,7 +4727,7 @@ async function renderCpTenants() {
       <td>${t.action_count||0}</td>
       <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
       <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
-      <td style="font-size:12px;color:var(--text-light)">${t.created_at?t.created_at.substring(0,10):''}</td>
+      <td style="font-size:12px;color:var(--text-light)">${esc(t.created_at?t.created_at.substring(0,10):'')}</td>
       <td onclick="event.stopPropagation()">
         <button class="btn btn-sm" onclick="showCpTenantDetail('${t.name}')">Configure</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTenantCp('${t.name}')">&#x2715;</button>
@@ -4769,7 +4816,7 @@ async function showCpTenantDetail(tenantName) {
         </div>
         <div class="table-wrap"><table><thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th></th></tr></thead>
         <tbody>${unlinked.map(a=>`<tr>
-          <td>${(a.title||'').substring(0,50)}</td>
+          <td>${esc((a.title||'').substring(0,50))}</td>
           <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
           <td style="font-size:11px;color:var(--text-light)">${esc(a.source_id||'—')}</td>
           <td>${statusBadge(a.status)}</td>
@@ -4879,7 +4926,7 @@ async function renderCpCorrelations() {
 
   const rows = (groups||[]).map(g => `<tr>
     <td><strong>${esc(g.canonical_name||'')}</strong></td>
-    <td style="font-size:12px;color:var(--text-light);max-width:200px">${(g.description||'').substring(0,80)}</td>
+    <td style="font-size:12px;color:var(--text-light);max-width:200px">${esc((g.description||'').substring(0,80))}</td>
     <td style="font-size:12px">${(g.keywords||[]).slice(0,5).join(', ')}</td>
     <td style="text-align:center">${g.action_count||0}</td>
     <td>
@@ -4931,8 +4978,8 @@ async function showEditCorrelationGroup(groupId) {
   const g = groups.find(x=>x.id===groupId);
   if(!g) return;
   openModal('Edit Correlation Group', `
-    <div class="form-group"><label>Group Name</label><input id="eg-name" value="${(g.canonical_name||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="eg-desc" rows="2">${g.description||''}</textarea></div>
+    <div class="form-group"><label>Group Name</label><input id="eg-name" value="${esc(g.canonical_name||'')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="eg-desc" rows="2">${esc(g.description||'')}</textarea></div>
     <div class="form-group"><label>Keywords (comma-separated)</label><input id="eg-kw" value="${(g.keywords||[]).join(', ')}"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditCorrelationGroup('${groupId}')">Save</button>`);
 }
@@ -4965,10 +5012,10 @@ async function showGaLinks(gaId) {
   const availOpts = available.map(a=>`<option value="${a.id}">[${esc(a.source_tool||'')}] ${esc((a.title||'').substring(0,60))}</option>`).join('');
 
   const linkRows = (links||[]).map(l=>`<tr>
-    <td>${(l.title||'').substring(0,55)}</td>
-    <td><span class="badge badge-info" style="font-size:10px">${l.source_tool}</span></td>
+    <td>${esc((l.title||'').substring(0,55))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(l.source_tool||'')}</span></td>
     <td>${l.workload||''}</td>
-    <td style="font-size:11px;color:var(--text-light)">${l.notes||''}</td>
+    <td style="font-size:11px;color:var(--text-light)">${esc(l.notes||'')}</td>
     <td><button class="btn btn-sm btn-danger" onclick="unlinkGlobalAction('${gaId}','${l.link_id}')">Unlink</button></td>
   </tr>`).join('');
 
