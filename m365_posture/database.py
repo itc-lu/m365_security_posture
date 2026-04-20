@@ -400,6 +400,28 @@ class Database:
                     UNIQUE(tenant_name, framework)
                 );
                 CREATE INDEX IF NOT EXISTS idx_tf_tenant ON tenant_frameworks(tenant_name);
+
+                -- Global action equivalence links (cross-tool)
+                CREATE TABLE IF NOT EXISTS global_action_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    action_a_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    action_b_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    notes TEXT DEFAULT '',
+                    created_at TEXT,
+                    UNIQUE(action_a_id, action_b_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gal_a ON global_action_links(action_a_id);
+                CREATE INDEX IF NOT EXISTS idx_gal_b ON global_action_links(action_b_id);
+
+                -- Source aliases for merged global actions
+                CREATE TABLE IF NOT EXISTS global_action_source_aliases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_action_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    source_tool TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    UNIQUE(source_tool, source_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gasa_ga ON global_action_source_aliases(global_action_id);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -2355,3 +2377,238 @@ class Database:
                     return self._row_to_global_action(row)
         return None
 
+
+    # ── Global Action Links (equivalences) ──
+
+    def get_global_action_links(self, ga_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT gal.id as link_id, ga.id, ga.title, ga.source_tool, ga.workload,
+                          ga.review_status, gal.notes
+                   FROM global_action_links gal
+                   JOIN global_actions ga ON (
+                     CASE WHEN gal.action_a_id=? THEN gal.action_b_id ELSE gal.action_a_id END = ga.id
+                   )
+                   WHERE gal.action_a_id=? OR gal.action_b_id=?""",
+                (ga_id, ga_id, ga_id),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_global_action_link(self, action_a_id: str, action_b_id: str, notes: str = "") -> dict:
+        now = datetime.utcnow().isoformat()
+        # Insert both directions for easy querying
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO global_action_links (action_a_id, action_b_id, notes, created_at) VALUES (?,?,?,?)",
+                (action_a_id, action_b_id, notes, now),
+            )
+            row = conn.execute(
+                "SELECT * FROM global_action_links WHERE action_a_id=? AND action_b_id=?",
+                (action_a_id, action_b_id),
+            ).fetchone()
+        return dict(row) if row else {}
+
+    def remove_global_action_link(self, link_id: int):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM global_action_links WHERE id=?", (link_id,))
+
+    # ── Global Action Source Aliases ──
+
+    def get_source_aliases(self, ga_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM global_action_source_aliases WHERE global_action_id=?", (ga_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_source_alias(self, ga_id: str, source_tool: str, source_id: str):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO global_action_source_aliases (global_action_id, source_tool, source_id) VALUES (?,?,?)",
+                (ga_id, source_tool, source_id),
+            )
+
+    # ── Merge Global Actions ──
+
+    def merge_global_actions(self, keep_id: str, merge_ids: list[str]) -> dict:
+        """Merge merge_ids into keep_id. Returns stats."""
+        relinked = 0
+        mappings_merged = 0
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            for mid in merge_ids:
+                src = conn.execute("SELECT * FROM global_actions WHERE id=?", (mid,)).fetchone()
+                if not src:
+                    continue
+                src = dict(src)
+                # Re-link all tenant actions
+                r = conn.execute(
+                    "UPDATE actions SET global_action_id=? WHERE global_action_id=?",
+                    (keep_id, mid),
+                )
+                relinked += r.rowcount
+                # Merge compliance mappings (ignore duplicates)
+                cmaps = conn.execute(
+                    "SELECT * FROM global_compliance_mappings WHERE global_action_id=?", (mid,)
+                ).fetchall()
+                for cm in cmaps:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO global_compliance_mappings
+                           (global_action_id, framework, control_id, control_name, control_family, notes)
+                           VALUES (?,?,?,?,?,?)""",
+                        (keep_id, cm["framework"], cm["control_id"],
+                         cm["control_name"], cm["control_family"], cm["notes"]),
+                    )
+                    mappings_merged += 1
+                # Migrate equivalence links
+                conn.execute(
+                    "UPDATE global_action_links SET action_a_id=? WHERE action_a_id=?",
+                    (keep_id, mid),
+                )
+                conn.execute(
+                    "UPDATE global_action_links SET action_b_id=? WHERE action_b_id=?",
+                    (keep_id, mid),
+                )
+                # Remove self-links created by the above
+                conn.execute(
+                    "DELETE FROM global_action_links WHERE action_a_id=action_b_id"
+                )
+                # Add source alias so future imports of this source_id still match
+                if src.get("source_id"):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO global_action_source_aliases (global_action_id, source_tool, source_id) VALUES (?,?,?)",
+                        (keep_id, src["source_tool"], src["source_id"]),
+                    )
+                # Re-link existing aliases
+                conn.execute(
+                    "UPDATE global_action_source_aliases SET global_action_id=? WHERE global_action_id=?",
+                    (keep_id, mid),
+                )
+                # Delete merged action
+                conn.execute("DELETE FROM global_actions WHERE id=?", (mid,))
+            conn.execute("UPDATE global_actions SET updated_at=? WHERE id=?", (now, keep_id))
+        return {"kept_id": keep_id, "tenant_actions_relinked": relinked, "mappings_merged": mappings_merged}
+
+    # ── Updated find_global_action_for_import (checks aliases) ──
+
+    def find_global_action_for_import(self, source_tool: str, source_id: str,
+                                       title: str = "") -> dict | None:
+        with self._conn() as conn:
+            if source_id:
+                # Check primary source_id
+                row = conn.execute(
+                    "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
+                    (source_tool, source_id),
+                ).fetchone()
+                if row:
+                    return self._row_to_global_action(row)
+                # Check aliases (created by merges)
+                alias = conn.execute(
+                    """SELECT ga.* FROM global_action_source_aliases sa
+                       JOIN global_actions ga ON ga.id=sa.global_action_id
+                       WHERE sa.source_tool=? AND sa.source_id=?""",
+                    (source_tool, source_id),
+                ).fetchone()
+                if alias:
+                    return self._row_to_global_action(alias)
+            if title:
+                row = conn.execute(
+                    "SELECT * FROM global_actions WHERE source_tool=? AND title=?",
+                    (source_tool, title),
+                ).fetchone()
+                if row:
+                    return self._row_to_global_action(row)
+        return None
+
+    # ── Correlation groups (control plane CRUD) ──
+
+    def list_correlation_groups(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT cg.*, COUNT(a.id) as action_count FROM correlation_groups cg"
+                " LEFT JOIN actions a ON a.correlation_group_id=cg.id"
+                " GROUP BY cg.id ORDER BY cg.canonical_name"
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["keywords"] = json.loads(d.get("keywords") or "[]")
+            result.append(d)
+        return result
+
+    def create_correlation_group(self, canonical_name: str, description: str = "",
+                                  keywords: list[str] = None) -> dict:
+        gid = _generate_id()
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO correlation_groups (id, canonical_name, description, keywords, created_at) VALUES (?,?,?,?,?)",
+                (gid, canonical_name, description, json.dumps(keywords or []), now),
+            )
+        return self.get_correlation_group(gid)
+
+    def get_correlation_group(self, group_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM correlation_groups WHERE id=?", (group_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["keywords"] = json.loads(d.get("keywords") or "[]")
+        return d
+
+    def update_correlation_group(self, group_id: str, **kwargs) -> dict | None:
+        allowed = {"canonical_name", "description", "keywords"}
+        updates = {}
+        for k, v in kwargs.items():
+            if k in allowed:
+                updates[k] = json.dumps(v) if k == "keywords" else v
+        if updates:
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [group_id]
+            with self._conn() as conn:
+                conn.execute(f"UPDATE correlation_groups SET {sets} WHERE id=?", vals)
+        return self.get_correlation_group(group_id)
+
+    def delete_correlation_group(self, group_id: str):
+        with self._conn() as conn:
+            conn.execute("UPDATE actions SET correlation_group_id=NULL WHERE correlation_group_id=?", (group_id,))
+            conn.execute("DELETE FROM correlation_groups WHERE id=?", (group_id,))
+
+    # ── Create global action from a single tenant action ──
+
+    def create_global_action_from_tenant_action(self, action_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone()
+        if not row:
+            return None
+        a = dict(row)
+        # Check if a global action already exists for this source
+        existing = self.find_global_action_for_import(a["source_tool"], a["source_id"], a["title"])
+        if existing:
+            self.link_action_to_global(action_id, existing["id"])
+            return existing
+        ga = GlobalAction(
+            source_tool=a["source_tool"],
+            source_id=a.get("source_id", ""),
+            title=a["title"],
+            description=a.get("description", ""),
+            workload=a.get("workload", "General"),
+            category=a.get("category", ""),
+            subcategory=a.get("subcategory", ""),
+            priority=a.get("priority", "Medium"),
+            risk_level=a.get("risk_level", "Medium"),
+            user_impact=a.get("user_impact", "Low"),
+            implementation_effort=a.get("implementation_effort", "Medium"),
+            required_licence=a.get("required_licence", ""),
+            score=a.get("score"),
+            max_score=a.get("max_score"),
+            essential_eight_control=a.get("essential_eight_control"),
+            essential_eight_maturity=a.get("essential_eight_maturity"),
+            implementation_steps=a.get("remediation_steps", ""),
+            reference_url=a.get("reference_url", ""),
+            tags=json.loads(a.get("tags") or "[]"),
+            review_status="To Review",
+        )
+        result = self.create_global_action(ga)
+        self.link_action_to_global(action_id, result["id"])
+        return result

@@ -350,6 +350,18 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
       User Management
     </a>
+    <a href="#cp-tenants" data-page="cp-tenants">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+      Tenant Config
+    </a>
+    <a href="#cp-correlations" data-page="cp-correlations">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      Correlations
+    </a>
+    <a href="#cp-merge" data-page="cp-merge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Merge / Dedup
+    </a>
   </nav>
   <div style="padding:8px 16px;border-top:1px solid #1e293b">
     <div id="auth-user-info" style="font-size:12px;color:#94a3b8;margin-bottom:6px"></div>
@@ -589,7 +601,7 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -603,6 +615,9 @@ async function navigate(page) {
     'cp-cross-tenant':renderCpCrossTenant,
     'cp-frameworks':renderCpFrameworks,
     'cp-users':renderCpUsers,
+    'cp-tenants':renderCpTenants,
+    'cp-correlations':renderCpCorrelations,
+    'cp-merge':renderMergeTool,
   };
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
@@ -2217,6 +2232,10 @@ async function doImport() {
   selectedFile=null;
   // Reload ZT reports after import
   if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+  // Show unlinked action dialog if any couldn't be matched to global actions
+  if(r.unlinked_actions && r.unlinked_actions.length > 0) {
+    setTimeout(() => handlePostImportUnlinked(state.activeTenant.name, r), 400);
+  }
 }
 
 function onSourceChange() {
@@ -4258,7 +4277,7 @@ async function showCpGlobalActionDetail(id) {
     <div class="action-tab-content" id="ga-tab-tenants">
       ${tenantRows ? `<table><thead><tr><th>Tenant</th><th>Action Title</th><th>Status</th></tr></thead><tbody>${tenantRows}</tbody></table>` : '<p style="color:var(--text-light)">Not linked to any tenant actions yet. Run migration to link automatically.</p>'}
     </div>`,
-    `<button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="saveCpGlobalAction('${id}')">Save Changes</button>`);
+    `<button class="btn" onclick="closeModal()">Close</button><button class="btn" onclick="showGaLinks('${id}')">&#128279; Link Equivalents</button><button class="btn btn-primary" onclick="saveCpGlobalAction('${id}')">Save Changes</button>`);
 }
 
 async function saveCpGlobalAction(id) {
@@ -4590,6 +4609,512 @@ async function deleteUser(userId, username) {
   const r = await api.del(`/api/control-plane/users/${userId}`);
   if(r.error) return toast(r.error,'error');
   toast('User deleted','success'); renderCpUsers();
+}
+
+
+
+// ── Control Plane: Tenant Management ──
+async function renderCpTenants() {
+  const tenants = await api.get('/api/tenants');
+  const allFw = await api.get('/api/control-plane/tenant-frameworks');
+  const allUsers = await api.get('/api/control-plane/users');
+
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-primary" onclick="showCreateTenantCp()">+ New Tenant</button>`;
+
+  const rows = tenants.map(t => {
+    const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${f}</span>`).join('');
+    const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
+    const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${u.display_name||u.username}</span>`).join('');
+    return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
+      <td><strong>${t.display_name||t.name}</strong><br><span style="font-size:11px;color:var(--text-light)">${t.name}</span></td>
+      <td>${t.action_count||0}</td>
+      <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
+      <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
+      <td style="font-size:12px;color:var(--text-light)">${t.created_at?t.created_at.substring(0,10):''}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="btn btn-sm" onclick="showCpTenantDetail('${t.name}')">Configure</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTenantCp('${t.name}')">&#x2715;</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-4 mb-16">
+      <div class="card stat-card"><div class="value">${tenants.length}</div><div class="label">Total Tenants</div></div>
+      <div class="card stat-card"><div class="value">${tenants.reduce((s,t)=>s+(t.action_count||0),0)}</div><div class="label">Total Actions</div></div>
+      <div class="card stat-card"><div class="value">${tenants.filter(t=>(allFw[t.name]||[]).length>0).length}</div><div class="label">Framework Assigned</div></div>
+      <div class="card stat-card"><div class="value">${allUsers.length}</div><div class="label">Users</div></div>
+    </div>
+    <div class="card">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Tenant Overview</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateTenantCp()">+ New Tenant</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tenant</th><th>Actions</th><th>Frameworks</th><th>Users</th><th>Created</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light)">No tenants yet.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function showCpTenantDetail(tenantName) {
+  const tenant = await api.get(`/api/tenants/${tenantName}`);
+  const frameworks = await api.get(`/api/control-plane/tenants/${tenantName}/frameworks`);
+  const allFwList = state.enums.compliance_frameworks||['Essential Eight','NIST 800-53','CIS Microsoft 365','ISO 27001'];
+  const allUsers = await api.get('/api/control-plane/users');
+  const unlinked = await api.get(`/api/control-plane/unlinked-actions?tenant=${tenantName}`);
+
+  const fwChecks = allFwList.map(f=>`
+    <label style="display:inline-flex;align-items:center;gap:8px;margin:6px 16px 6px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" value="${f}" ${frameworks.includes(f)?'checked':''} onchange="toggleTenantFramework('${tenantName}','${f}',this.checked)" style="width:16px;height:16px"> ${f}
+    </label>`).join('');
+
+  const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===tenantName));
+  const allOtherUsers = allUsers.filter(u=>u.role!=='admin'&&!(u.tenant_access||[]).some(ta=>ta.tenant_name===tenantName));
+
+  const userRows = usersWithAccess.map(u=>{
+    const ta = (u.tenant_access||[]).find(x=>x.tenant_name===tenantName);
+    const wls = ta?.workloads?.length ? ta.workloads.join(', ') : (u.role==='admin'?'Full access':'All workloads');
+    return `<tr><td>${u.display_name||u.username}</td><td><span class="badge badge-gray">${u.role}</span></td>
+      <td style="font-size:12px">${wls}</td>
+      <td>${u.role!=='admin'?`<button class="btn btn-sm btn-danger" onclick="removeTenantUser('${u.id}','${tenantName}')">Revoke</button>`:'<span style="color:var(--text-light);font-size:11px">Always</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const addUserOpts = allOtherUsers.map(u=>`<option value="${u.id}">${u.display_name||u.username} (${u.role})</option>`).join('');
+
+  openModal(`Tenant: ${tenant.display_name||tenantName}`, `
+    <div class="action-tabs">
+      <div class="atab active" onclick="switchTab(event,'cpt-general')">General</div>
+      <div class="atab" onclick="switchTab(event,'cpt-frameworks')">Frameworks</div>
+      <div class="atab" onclick="switchTab(event,'cpt-users')">Users (${usersWithAccess.length})</div>
+      <div class="atab" onclick="switchTab(event,'cpt-unlinked')">Unlinked Actions (${unlinked.length})</div>
+    </div>
+    <div class="action-tab-content active" id="cpt-general">
+      <div class="form-row">
+        <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${(tenant.display_name||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${tenant.tenant_id||''}"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${tenant.notes||''}</textarea></div>
+      <div style="margin-top:12px"><button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button></div>
+    </div>
+    <div class="action-tab-content" id="cpt-frameworks">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select which compliance frameworks this tenant must follow.</p>
+      <div>${fwChecks}</div>
+    </div>
+    <div class="action-tab-content" id="cpt-users">
+      <div class="table-wrap mb-12"><table><thead><tr><th>User</th><th>Role</th><th>Workload Access</th><th></th></tr></thead>
+        <tbody>${userRows||'<tr><td colspan="4" style="color:var(--text-light)">No users assigned</td></tr>'}</tbody>
+      </table></div>
+      ${addUserOpts?`<div class="flex gap-8">
+        <select id="cpt-add-user" style="flex:1">${addUserOpts}</select>
+        <button class="btn btn-sm btn-primary" onclick="grantTenantUser('${tenantName}')">+ Grant Access</button>
+      </div>`:'<p style="font-size:12px;color:var(--text-light)">All users already have access.</p>'}
+    </div>
+    <div class="action-tab-content" id="cpt-unlinked">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">These actions have no global action link. Link them manually or auto-create them in the Control Plane.</p>
+      ${unlinked.length ? `
+        <div class="flex gap-8 mb-8">
+          <button class="btn btn-sm btn-primary" onclick="autoCreateUnlinked('${tenantName}')">&#x2795; Auto-create all in Control Plane</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th></th></tr></thead>
+        <tbody>${unlinked.map(a=>`<tr>
+          <td>${(a.title||'').substring(0,50)}</td>
+          <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
+          <td style="font-size:11px;color:var(--text-light)">${a.source_id||'—'}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td><button class="btn btn-sm" onclick="showLinkUnlinkedAction('${a.id}','${tenantName}')">Link</button>
+          <button class="btn btn-sm btn-primary" onclick="createGlobalFromAction('${a.id}','${tenantName}')">Create in CP</button></td>
+        </tr>`).join('')}</tbody></table></div>` :
+        '<div style="padding:20px;text-align:center;color:var(--success)">&#10003; All actions are linked to global actions.</div>'}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
+}
+
+async function saveTenantConfigCp(tenantName) {
+  const r = await api.put(`/api/tenants/${tenantName}`, {
+    display_name: document.getElementById('cpt-display').value,
+    tenant_id: document.getElementById('cpt-tid').value,
+    notes: document.getElementById('cpt-notes').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  toast('Tenant updated','success');
+}
+
+async function grantTenantUser(tenantName) {
+  const userId = document.getElementById('cpt-add-user').value;
+  if(!userId) return;
+  await api.post(`/api/control-plane/users/${userId}/tenant-access`, {tenant_name: tenantName, workloads: []});
+  toast('Access granted','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function removeTenantUser(userId, tenantName) {
+  await api.del(`/api/control-plane/users/${userId}/tenant-access/${tenantName}`);
+  toast('Access revoked','success');
+  showCpTenantDetail(tenantName);
+}
+
+function showCreateTenantCp() {
+  openModal('Create New Tenant', `
+    <div class="form-row">
+      <div class="form-group"><label>Internal Name (slug)</label><input id="nt-name" placeholder="contoso-prod"></div>
+      <div class="form-group"><label>Display Name</label><input id="nt-display" placeholder="Contoso Production"></div>
+    </div>
+    <div class="form-group"><label>Azure Tenant ID</label><input id="nt-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2"></textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateTenantCp()">Create</button>`);
+}
+
+async function submitCreateTenantCp() {
+  const name = document.getElementById('nt-name').value.trim();
+  if(!name) return toast('Internal name required','error');
+  const r = await api.post('/api/tenants', {
+    name, display_name: document.getElementById('nt-display').value,
+    tenant_id: document.getElementById('nt-tid').value,
+    notes: document.getElementById('nt-notes').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  state.tenants = await api.get('/api/tenants');
+  closeModal(); toast('Tenant created','success'); renderCpTenants();
+}
+
+async function deleteTenantCp(name) {
+  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and ALL its data including actions, plans and reports? This cannot be undone.`)) return;
+  const r = await api.del(`/api/tenants/${name}`);
+  if(r && r.error) return toast(r.error,'error');
+  state.tenants = await api.get('/api/tenants');
+  toast('Tenant deleted','success'); renderCpTenants();
+}
+
+async function autoCreateUnlinked(tenantName) {
+  const r = await api.post('/api/control-plane/migrate', {tenant_name: tenantName});
+  if(r.error) return toast(r.error,'error');
+  toast(`Created ${r.global_actions_created} global actions, linked ${r.tenant_actions_linked} actions`,'success');
+  showCpTenantDetail(tenantName);
+}
+
+async function showLinkUnlinkedAction(actionId, tenantName) {
+  const globalActions = await api.get('/api/control-plane/global-actions');
+  const opts = globalActions.map(ga=>`<option value="${ga.id}">${ga.source_tool} · ${(ga.title||'').substring(0,60)}</option>`).join('');
+  openModal('Link to Global Action', `
+    <p style="margin-bottom:12px;color:var(--text-light)">Select the global action this tenant action corresponds to.</p>
+    <div class="form-group"><label>Global Action</label>
+      <select id="link-ga-select" style="width:100%">${opts}</select>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="submitLinkAction('${actionId}','${tenantName}')">Link</button>`);
+}
+
+async function submitLinkAction(actionId, tenantName) {
+  const gaId = document.getElementById('link-ga-select').value;
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/link-action`, {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Action linked','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function createGlobalFromAction(actionId, tenantName) {
+  const r = await api.post('/api/control-plane/create-from-action', {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  toast('Global action created and linked','success');
+  showCpTenantDetail(tenantName);
+}
+
+// ── Control Plane: Correlations ──
+async function renderCpCorrelations() {
+  const groups = await api.get('/api/control-plane/correlation-groups');
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-primary" onclick="showCreateCorrelationGroup()">+ New Group</button>`;
+
+  const rows = (groups||[]).map(g => `<tr>
+    <td><strong>${g.canonical_name}</strong></td>
+    <td style="font-size:12px;color:var(--text-light);max-width:200px">${(g.description||'').substring(0,80)}</td>
+    <td style="font-size:12px">${(g.keywords||[]).slice(0,5).join(', ')}</td>
+    <td style="text-align:center">${g.action_count||0}</td>
+    <td>
+      <button class="btn btn-sm" onclick="showEditCorrelationGroup('${g.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteCorrelationGroup('${g.id}')">&#x2715;</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+        Correlation groups link actions from different source tools (SCuBA, ZeroTrust, Secure Score) that address the same security topic.
+        Actions in the same group are shown together in the Correlations view.
+      </p>
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Correlation Groups (${(groups||[]).length})</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateCorrelationGroup()">+ New Group</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Group Name</th><th>Description</th><th>Keywords</th><th>Actions</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-light)">No correlation groups. They are created automatically during import.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function showCreateCorrelationGroup() {
+  openModal('New Correlation Group', `
+    <div class="form-group"><label>Group Name</label><input id="cg-name" placeholder="e.g. Multi-Factor Authentication"></div>
+    <div class="form-group"><label>Description</label><textarea id="cg-desc" rows="2" placeholder="What security topic does this group address?"></textarea></div>
+    <div class="form-group"><label>Keywords (comma-separated)</label><input id="cg-kw" placeholder="mfa, multi-factor, authenticator, phishing-resistant"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateCorrelationGroup()">Create</button>`);
+}
+
+async function submitCreateCorrelationGroup() {
+  const name = document.getElementById('cg-name').value.trim();
+  if(!name) return toast('Name required','error');
+  const keywords = document.getElementById('cg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  const r = await api.post('/api/control-plane/correlation-groups', {
+    canonical_name: name,
+    description: document.getElementById('cg-desc').value,
+    keywords,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Group created','success'); renderCpCorrelations();
+}
+
+async function showEditCorrelationGroup(groupId) {
+  const groups = await api.get('/api/control-plane/correlation-groups');
+  const g = groups.find(x=>x.id===groupId);
+  if(!g) return;
+  openModal('Edit Correlation Group', `
+    <div class="form-group"><label>Group Name</label><input id="eg-name" value="${(g.canonical_name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="eg-desc" rows="2">${g.description||''}</textarea></div>
+    <div class="form-group"><label>Keywords (comma-separated)</label><input id="eg-kw" value="${(g.keywords||[]).join(', ')}"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditCorrelationGroup('${groupId}')">Save</button>`);
+}
+
+async function submitEditCorrelationGroup(groupId) {
+  const keywords = document.getElementById('eg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  const r = await api.put(`/api/control-plane/correlation-groups/${groupId}`, {
+    canonical_name: document.getElementById('eg-name').value,
+    description: document.getElementById('eg-desc').value,
+    keywords,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Saved','success'); renderCpCorrelations();
+}
+
+async function deleteCorrelationGroup(groupId) {
+  if(!await showConfirm('Delete Group','Delete this correlation group? Actions will be unlinked but not deleted.')) return;
+  await api.del(`/api/control-plane/correlation-groups/${groupId}`);
+  toast('Deleted','success'); renderCpCorrelations();
+}
+
+
+// ── Control Plane: Action Linking (cross-tool equivalences) ──
+async function showGaLinks(gaId) {
+  const ga = await api.get(`/api/control-plane/global-actions/${gaId}`);
+  const links = await api.get(`/api/control-plane/global-actions/${gaId}/links`);
+  const allActions = await api.get('/api/control-plane/global-actions');
+  const linkedIds = new Set([gaId, ...(links||[]).map(l=>l.id)]);
+  const available = allActions.filter(a=>!linkedIds.has(a.id));
+  const availOpts = available.map(a=>`<option value="${a.id}">[${a.source_tool}] ${(a.title||'').substring(0,60)}</option>`).join('');
+
+  const linkRows = (links||[]).map(l=>`<tr>
+    <td>${(l.title||'').substring(0,55)}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${l.source_tool}</span></td>
+    <td>${l.workload||''}</td>
+    <td style="font-size:11px;color:var(--text-light)">${l.notes||''}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="unlinkGlobalAction('${gaId}','${l.link_id}')">Unlink</button></td>
+  </tr>`).join('');
+
+  openModal(`Linked Equivalents: ${(ga.title||'').substring(0,40)}`, `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+      Link global actions from different source tools that represent the same security control.
+      Linked actions share status awareness — completing one highlights the others.
+    </p>
+    <div class="table-wrap mb-16"><table>
+      <thead><tr><th>Linked Action</th><th>Tool</th><th>Workload</th><th>Notes</th><th></th></tr></thead>
+      <tbody>${linkRows||'<tr><td colspan="5" style="color:var(--text-light);padding:12px">No linked actions yet.</td></tr>'}</tbody>
+    </table></div>
+    ${availOpts ? `<div class="flex gap-8">
+      <select id="link-target-select" style="flex:1">${availOpts}</select>
+      <input id="link-notes" placeholder="Why equivalent?" style="width:200px">
+      <button class="btn btn-sm btn-primary" onclick="addGaLink('${gaId}')">+ Link</button>
+    </div>` : '<p style="font-size:12px;color:var(--text-light)">All actions are already linked.</p>'}`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
+}
+
+async function addGaLink(gaId) {
+  const targetId = document.getElementById('link-target-select').value;
+  const notes = document.getElementById('link-notes').value;
+  if(!targetId) return toast('Select an action to link','error');
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/links`, {target_id: targetId, notes});
+  if(r.error) return toast(r.error,'error');
+  toast('Actions linked as equivalent','success');
+  showGaLinks(gaId);
+}
+
+async function unlinkGlobalAction(gaId, linkId) {
+  await api.del(`/api/control-plane/global-actions/${gaId}/links/${linkId}`);
+  toast('Link removed','success');
+  showGaLinks(gaId);
+}
+
+// ── Control Plane: Merge Global Actions ──
+let _mergeSelection = new Set();
+
+async function renderMergeTool() {
+  _mergeSelection.clear();
+  const actions = await api.get('/api/control-plane/global-actions');
+
+  // Group by source_id to highlight likely duplicates
+  const byTitle = {};
+  actions.forEach(a => {
+    const key = (a.title||'').toLowerCase().replace(/\s+/g,' ').trim().substring(0,60);
+    if(!byTitle[key]) byTitle[key] = [];
+    byTitle[key].push(a);
+  });
+  const duplicates = Object.values(byTitle).filter(g=>g.length>1);
+
+  const dupHtml = duplicates.map(group => `
+    <div class="ga-detail-section" style="margin-bottom:8px">
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:8px">Possible duplicates (${group.length})</div>
+      ${group.map(a=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:6px;cursor:pointer;background:var(--bg)">
+        <input type="checkbox" class="merge-cb" value="${a.id}" style="margin-top:2px;width:16px;height:16px" onchange="updateMergeSelection(this)">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${(a.title||'').substring(0,70)}</div>
+          <div style="font-size:11px;color:var(--text-light)">${a.source_tool} · ${a.workload} · ${a.source_id||'no ID'} · ${a.tenant_action_count||0} tenant actions</div>
+        </div>
+      </label>`).join('')}
+    </div>`).join('');
+
+  const allRows = actions.map(a=>`<tr>
+    <td><input type="checkbox" class="merge-cb" value="${a.id}" style="width:15px;height:15px" onchange="updateMergeSelection(this)"></td>
+    <td style="max-width:250px">${(a.title||'').substring(0,60)}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
+    <td>${a.workload||''}</td>
+    <td style="font-size:11px">${a.source_id||''}</td>
+    <td style="text-align:center">${a.tenant_action_count||0}</td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16" style="border-left:4px solid var(--warning)">
+      <div class="card-header">&#9888; Merge Global Actions</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+        Select 2 or more global actions to merge. The first selected becomes the <strong>primary</strong> — it inherits all tenant action links,
+        compliance mappings, and source aliases from the others. Merged actions are deleted.
+        Future imports of any merged source ID will match the primary.
+      </p>
+      <div id="merge-bar" style="display:none;padding:12px;background:var(--warning-light);border-radius:6px;margin-bottom:12px">
+        <span id="merge-count">0</span> actions selected &mdash;
+        <button class="btn btn-sm" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="showMergeConfirm()">Merge Selected</button>
+        <button class="btn btn-sm" onclick="_mergeSelection.clear();document.querySelectorAll('.merge-cb').forEach(c=>c.checked=false);updateMergeBar()">Clear</button>
+      </div>
+      ${duplicates.length ? `<div class="card-header mb-8">&#128269; Likely Duplicates</div>${dupHtml}` : ''}
+      <div class="card-header mb-8 mt-16">All Global Actions</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:30px"></th><th>Title</th><th>Tool</th><th>Workload</th><th>Source ID</th><th>Tenants</th></tr></thead>
+        <tbody>${allRows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function updateMergeSelection(cb) {
+  if(cb.checked) _mergeSelection.add(cb.value);
+  else _mergeSelection.delete(cb.value);
+  updateMergeBar();
+}
+
+function updateMergeBar() {
+  const bar = document.getElementById('merge-bar');
+  const cnt = document.getElementById('merge-count');
+  if(!bar || !cnt) return;
+  bar.style.display = _mergeSelection.size >= 2 ? 'block' : 'none';
+  cnt.textContent = _mergeSelection.size;
+}
+
+async function showMergeConfirm() {
+  if(_mergeSelection.size < 2) return toast('Select at least 2 actions to merge','error');
+  const ids = Array.from(_mergeSelection);
+  const actions = await Promise.all(ids.map(id => api.get(`/api/control-plane/global-actions/${id}`)));
+  const primaryOpts = actions.map(a=>`<option value="${a.id}">[${a.source_tool}] ${(a.title||'').substring(0,60)} (${a.tenant_action_count||0} tenants)</option>`).join('');
+  openModal('Confirm Merge', `
+    <p style="margin-bottom:12px;color:var(--text-light)">
+      Merging <strong>${ids.length} actions</strong> into one. Select which action to keep as the primary record.
+      All tenant links, compliance mappings, and source IDs from the others will be merged into it.
+    </p>
+    <div class="form-group"><label>Primary (Keep)</label><select id="merge-primary" style="width:100%">${primaryOpts}</select></div>
+    <div class="ga-detail-section" style="font-size:12px">
+      <strong>Actions to be merged:</strong><br>
+      ${actions.map(a=>`<div style="padding:4px 0">${a.source_tool} · ${(a.title||'').substring(0,60)}</div>`).join('')}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="submitMerge()">Merge</button>`);
+}
+
+async function submitMerge() {
+  const keepId = document.getElementById('merge-primary').value;
+  const mergeIds = Array.from(_mergeSelection).filter(id=>id!==keepId);
+  const r = await api.post('/api/control-plane/global-actions/merge', {keep_id: keepId, merge_ids: mergeIds});
+  if(r.error) return toast(r.error,'error');
+  closeModal();
+  _mergeSelection.clear();
+  toast(`Merged ${mergeIds.length + 1} actions into one. ${r.tenant_actions_relinked} tenant actions relinked, ${r.mappings_merged} compliance mappings merged.`, 'success');
+  renderMergeTool();
+}
+
+// ── Import: unlinked action handling (shown after import) ──
+async function handlePostImportUnlinked(tenantName, importResult) {
+  if(!importResult.unlinked_actions || importResult.unlinked_actions.length === 0) return;
+  const unlinked = importResult.unlinked_actions;
+  const globalActions = await api.get('/api/control-plane/global-actions');
+  const gaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${ga.source_tool}] ${(ga.title||'').substring(0,60)}</option>`).join('');
+
+  const rows = unlinked.map((a,i) => `<tr id="unlinked-row-${i}">
+    <td>${(a.title||'').substring(0,50)}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${a.source_tool}</span></td>
+    <td style="font-size:11px">${a.source_id||'—'}</td>
+    <td id="unlinked-action-${i}">
+      <span class="badge badge-warning">Pending</span>
+    </td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-primary" onclick="autoCreateOneUnlinked('${a.id}','${tenantName}',${i})">Create in CP</button>
+      <button class="btn btn-sm" onclick="showInlineLink('${a.id}','${tenantName}',${i},'${encodeURIComponent(JSON.stringify(gaOpts))}')">Link</button>
+      <button class="btn btn-sm" style="color:var(--text-light)" onclick="skipUnlinked(${i})">Skip</button>
+    </td>
+  </tr>`).join('');
+
+  openModal(`${unlinked.length} New Unrecognised Action${unlinked.length>1?'s':''} Found`, `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+      These actions from the import could not be matched to any global action.
+      Create them in the Control Plane so they appear on future imports, or link them to an existing global action.
+    </p>
+    <div class="flex gap-8 mb-12">
+      <button class="btn btn-sm btn-primary" onclick="autoCreateAllUnlinked('${tenantName}')">&#x2795; Create All in Control Plane</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`,
+    `<button class="btn btn-primary" onclick="closeModal()">Done</button>`);
+}
+
+async function autoCreateOneUnlinked(actionId, tenantName, rowIdx) {
+  const r = await api.post('/api/control-plane/create-from-action', {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-success">Created in CP</span>';
+  toast('Global action created and linked','success');
+}
+
+async function autoCreateAllUnlinked(tenantName) {
+  const r = await api.post('/api/control-plane/migrate', {tenant_name: tenantName});
+  if(r.error) return toast(r.error,'error');
+  document.querySelectorAll('[id^="unlinked-action-"]').forEach(el => {
+    el.innerHTML = '<span class="badge badge-success">Created in CP</span>';
+  });
+  toast(`Created ${r.global_actions_created} global actions, linked ${r.tenant_actions_linked} actions`,'success');
+}
+
+async function skipUnlinked(rowIdx) {
+  document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-gray">Skipped</span>';
+  const actionBtns = document.querySelector(`#unlinked-row-${rowIdx} td:last-child`);
+  if(actionBtns) actionBtns.innerHTML = '';
 }
 
 

@@ -393,6 +393,52 @@ def create_app(db_path: str = None) -> Flask:
 
             new_count, updated_count, updated_details = db.merge_actions(name, actions, source_tool, file.filename)
 
+            # Auto-link imported actions to global actions and enrich with CP data
+            unlinked_actions = []
+            with db._conn() as conn:
+                imported_ids = [
+                    r["id"] for r in conn.execute(
+                        "SELECT id FROM actions WHERE tenant_name=? AND source_tool=? ORDER BY updated_at DESC LIMIT ?",
+                        (name, source_tool, len(actions) + 10),
+                    ).fetchall()
+                ]
+            for aid in imported_ids:
+                with db._conn() as conn:
+                    row = conn.execute("SELECT * FROM actions WHERE id=?", (aid,)).fetchone()
+                if not row:
+                    continue
+                a = dict(row)
+                if a.get("global_action_id"):
+                    # Already linked — refresh enrichment from global action
+                    ga = db.get_global_action(a["global_action_id"])
+                    if ga:
+                        updates = {}
+                        if ga.get("implementation_steps") and not a.get("remediation_steps"):
+                            updates["remediation_steps"] = ga["implementation_steps"]
+                        if updates:
+                            with db._conn() as conn:
+                                sets = ", ".join(f"{k}=?" for k in updates)
+                                conn.execute(f"UPDATE actions SET {sets} WHERE id=?",
+                                             list(updates.values()) + [aid])
+                    continue
+                ga = db.find_global_action_for_import(
+                    a["source_tool"], a.get("source_id", ""), a["title"]
+                )
+                if ga:
+                    db.link_action_to_global(aid, ga["id"])
+                    if ga.get("implementation_steps") and not a.get("remediation_steps"):
+                        with db._conn() as conn:
+                            conn.execute(
+                                "UPDATE actions SET remediation_steps=? WHERE id=?",
+                                (ga["implementation_steps"], aid),
+                            )
+                else:
+                    unlinked_actions.append({
+                        "id": aid, "title": a["title"],
+                        "source_tool": a["source_tool"], "source_id": a.get("source_id", ""),
+                        "status": a["status"],
+                    })
+
             # For Zero Trust Report: store HTML report and metadata
             zt_report_id = None
             if source == "zero-trust-report":
@@ -436,6 +482,7 @@ def create_app(db_path: str = None) -> Flask:
                 result["zt_report_id"] = zt_report_id
             if scuba_report_id:
                 result["scuba_report_id"] = scuba_report_id
+            result["unlinked_actions"] = unlinked_actions
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
@@ -2026,7 +2073,6 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/control-plane/unlinked-actions", methods=["GET"])
     def api_cp_unlinked_actions():
-        """Return tenant actions that have no global_action_id link."""
         tenant_name = request.args.get("tenant")
         with db._conn() as conn:
             if tenant_name:
@@ -2043,6 +2089,84 @@ def create_app(db_path: str = None) -> Flask:
                        ORDER BY source_tool, title"""
                 ).fetchall()
         return jsonify([dict(r) for r in rows])
+
+    # ── Global Action Links ──
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links", methods=["GET"])
+    def api_cp_get_ga_links(ga_id):
+        return jsonify(db.get_global_action_links(ga_id))
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links", methods=["POST"])
+    def api_cp_add_ga_link(ga_id):
+        data = request.get_json() or {}
+        target_id = data.get("target_id")
+        if not target_id:
+            return _json_error("target_id required")
+        if target_id == ga_id:
+            return _json_error("Cannot link an action to itself")
+        result = db.add_global_action_link(ga_id, target_id, data.get("notes", ""))
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links/<int:link_id>", methods=["DELETE"])
+    def api_cp_delete_ga_link(ga_id, link_id):
+        db.remove_global_action_link(link_id)
+        return jsonify({"status": "deleted"})
+
+    # ── Merge Global Actions ──
+
+    @app.route("/api/control-plane/global-actions/merge", methods=["POST"])
+    def api_cp_merge_global_actions():
+        data = request.get_json() or {}
+        keep_id = data.get("keep_id")
+        merge_ids = data.get("merge_ids", [])
+        if not keep_id or not merge_ids:
+            return _json_error("keep_id and merge_ids required")
+        if keep_id in merge_ids:
+            return _json_error("keep_id cannot also be in merge_ids")
+        result = db.merge_global_actions(keep_id, merge_ids)
+        return jsonify(result)
+
+    # ── Create global action from a tenant action ──
+
+    @app.route("/api/control-plane/create-from-action", methods=["POST"])
+    def api_cp_create_from_action():
+        data = request.get_json() or {}
+        action_id = data.get("action_id")
+        if not action_id:
+            return _json_error("action_id required")
+        result = db.create_global_action_from_tenant_action(action_id)
+        if not result:
+            return _json_error("Action not found", 404)
+        return jsonify(result), 201
+
+    # ── Correlation groups (CP management) ──
+
+    @app.route("/api/control-plane/correlation-groups", methods=["GET"])
+    def api_cp_list_correlation_groups():
+        return jsonify(db.list_correlation_groups())
+
+    @app.route("/api/control-plane/correlation-groups", methods=["POST"])
+    def api_cp_create_correlation_group():
+        data = request.get_json() or {}
+        if not data.get("canonical_name"):
+            return _json_error("canonical_name required")
+        result = db.create_correlation_group(
+            data["canonical_name"], data.get("description", ""), data.get("keywords", [])
+        )
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["PUT"])
+    def api_cp_update_correlation_group(group_id):
+        data = request.get_json() or {}
+        result = db.update_correlation_group(group_id, **data)
+        if not result:
+            return _json_error("Not found", 404)
+        return jsonify(result)
+
+    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["DELETE"])
+    def api_cp_delete_correlation_group(group_id):
+        db.delete_correlation_group(group_id)
+        return jsonify({"status": "deleted"})
 
     return app
 
