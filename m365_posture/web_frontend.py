@@ -451,17 +451,17 @@ const api = {
   },
   async get(url) { const r = await fetch(url); return this._handle(r); },
   async post(url, data) {
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body:JSON.stringify(data)});
     return this._handle(r);
   },
   async put(url, data) {
-    const r = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    const r = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body:JSON.stringify(data)});
     return this._handle(r);
   },
-  async del(url) { const r = await fetch(url, {method:'DELETE'}); return this._handle(r); },
-  async upload(url, formData) { const r = await fetch(url, {method:'POST', body:formData}); return this._handle(r); },
+  async del(url) { const r = await fetch(url, {method:'DELETE', headers:{'X-Requested-With':'XMLHttpRequest'}}); return this._handle(r); },
+  async upload(url, formData) { const r = await fetch(url, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:formData}); return this._handle(r); },
   async download(url, data) {
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body:JSON.stringify(data)});
     return r;
   }
 };
