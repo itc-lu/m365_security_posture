@@ -8,20 +8,23 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import webbrowser
 import zipfile
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_file, Response
+from flask import Flask, jsonify, request, send_file, Response, session
 
 from .database import Database
 from .models import (
     Action, TenantConfig, ActionStatus, Priority, RiskLevel,
     UserImpact, ImplementationEffort, SourceTool, Workload,
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
+    GlobalAction, UserRole,
 )
 from .parsers import (
     SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
@@ -50,15 +53,115 @@ PARSER_MAP = {
     "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
 }
 
+# Simple in-memory login rate limiter
+_login_attempts: dict = {}
+
+
+def _check_login_rate_limit(ip: str) -> bool:
+    """Returns True if allowed, False if rate-limited. Max 10 attempts per 5 minutes."""
+    import time
+    now = time.time()
+    window = 300  # 5 minutes
+    max_attempts = 10
+    attempts = _login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < window]
+    if len(attempts) >= max_attempts:
+        return False
+    attempts.append(now)
+    _login_attempts[ip] = attempts
+    return True
+
+
+# Identifier validators (prevent attribute-context injection in onclick handlers).
+# Tenant names are lowercased and space-normalized before validation.
+_TENANT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+
 
 def create_app(db_path: str = None) -> Flask:
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB (ZT reports with data can be large)
-    app.json.sort_keys = False  # Preserve dict insertion order (E8 controls, etc.)
+    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+    _secret = os.environ.get("SECRET_KEY")
+    if not _secret:
+        import secrets as _secrets_mod
+        _secret = _secrets_mod.token_hex(32)
+        print(f"[WARNING] SECRET_KEY not set — generated ephemeral key. Set SECRET_KEY env var for production.", flush=True)
+    app.config["SECRET_KEY"] = _secret
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
+    app.config["PERMANENT_SESSION_LIFETIME"] = 28800  # 8 hours
+    app.json.sort_keys = False
     db = Database(db_path)
+
+    def login_required(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not session.get("user_id"):
+                return jsonify({"error": "Unauthorized", "login_required": True}), 401
+            return f(*args, **kwargs)
+        return decorated
+
+    def require_role(*roles):
+        def decorator(f):
+            @wraps(f)
+            def decorated(*args, **kwargs):
+                if not session.get("user_id"):
+                    return jsonify({"error": "Unauthorized", "login_required": True}), 401
+                if session.get("role") not in roles:
+                    return jsonify({"error": "Forbidden"}), 403
+                return f(*args, **kwargs)
+            return decorated
+        return decorator
 
     def _json_error(msg, code=400):
         return jsonify({"error": msg}), code
+
+    def _redact_tenant(t: dict) -> dict:
+        """Remove client_secret from tenant dict before sending to client."""
+        if t and "client_secret" in t:
+            t = dict(t)
+            t["client_secret"] = "***" if t["client_secret"] else ""
+        return t
+
+    # Public endpoints that don't require authentication
+    _PUBLIC_ENDPOINTS = {
+        "api_auth_login",
+        "api_auth_logout",
+        "serve_frontend",
+        "serve_static",
+        "index",
+    }
+
+    # Endpoints allowed while user has must_change_password=1
+    _PASSWORD_RESET_ALLOWED = {
+        "api_auth_login",
+        "api_auth_logout",
+        "api_auth_me",
+        "api_auth_change_password",
+        "api_enums",
+        "serve_frontend",
+        "serve_static",
+        "index",
+    }
+
+    @app.before_request
+    def _require_auth():
+        """Enforce authentication on all /api/* routes except the allowlist."""
+        if request.endpoint in _PUBLIC_ENDPOINTS:
+            return
+        if not request.path.startswith("/api/"):
+            return
+        if "user_id" not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        # CSRF: state-changing requests must carry X-Requested-With header
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
+                return jsonify({"error": "CSRF check failed"}), 403
+        # Force password-change: restrict access until the flag is cleared
+        if session.get("must_change_password"):
+            if request.endpoint not in _PASSWORD_RESET_ALLOWED:
+                return jsonify({"error": "Password change required", "must_change_password": True}), 403
 
     # ── Serve SPA ──
 
@@ -88,7 +191,7 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/tenants", methods=["GET"])
     def api_list_tenants():
-        return jsonify(db.list_tenants())
+        return jsonify([_redact_tenant(t) for t in db.list_tenants()])
 
     @app.route("/api/tenants", methods=["POST"])
     def api_create_tenant():
@@ -96,6 +199,8 @@ def create_app(db_path: str = None) -> Flask:
         if not data or not data.get("name"):
             return _json_error("name is required")
         name = data["name"].strip().lower().replace(" ", "-")
+        if not _TENANT_NAME_RE.match(name):
+            return _json_error("Tenant name must be 1-63 chars, start alphanumeric, letters/digits/._- only")
         existing = db.get_tenant(name)
         if existing:
             return _json_error(f"Tenant '{name}' already exists")
@@ -117,15 +222,18 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
-        return jsonify(tenant)
+        return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         data = request.get_json() or {}
+        # Only admins may update client_secret
+        if "client_secret" in data and session.get("role") != "admin":
+            return _json_error("Admin role required to update client_secret", 403)
         tenant = db.update_tenant(name, **data)
-        return jsonify(tenant)
+        return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["DELETE"])
     def api_delete_tenant(name):
@@ -158,7 +266,19 @@ def create_app(db_path: str = None) -> Flask:
             val = request.args.get(key)
             if val:
                 filters[key] = val
-        actions = db.get_actions(name, filters)
+        # Workload-scoped access: derive allowed workloads from session user
+        allowed_workloads = None
+        user_id = session.get("user_id")
+        if user_id:
+            accesses = db.get_user_tenant_access(user_id)
+            for acc in accesses:
+                if acc.get("tenant_name") == name:
+                    wl = acc.get("workloads")
+                    if wl:
+                        import json as _json
+                        allowed_workloads = _json.loads(wl) if isinstance(wl, str) else wl
+                    break
+        actions = db.get_actions(name, filters, allowed_workloads=allowed_workloads)
         return jsonify(actions)
 
     @app.route("/api/tenants/<name>/actions", methods=["POST"])
@@ -368,11 +488,14 @@ def create_app(db_path: str = None) -> Flask:
             actions = parser.parse_file(tmp_path)
             actions = apply_e8_mapping(actions)
 
-            # Enrich Secure Score actions from the reference control table
-            if source == "secure-score":
-                actions = enrich_actions_from_controls(db, actions)
+            # Enrich actions from the reference control table
+            actions = enrich_actions_from_controls(db, actions)
 
-            new_count, updated_count, updated_details = db.merge_actions(name, actions, source_tool, file.filename)
+            new_count, updated_count, updated_details, imported_ids = db.merge_actions(name, actions, source_tool, file.filename)
+
+            # Auto-link imported actions to global actions (single transaction)
+            link_result = db.bulk_auto_link_imported(imported_ids)
+            unlinked_actions = link_result["unlinked"]
 
             # For Zero Trust Report: store HTML report and metadata
             zt_report_id = None
@@ -436,6 +559,7 @@ def create_app(db_path: str = None) -> Flask:
                 result["zt_report_id"] = zt_report_id
             if scuba_report_id:
                 result["scuba_report_id"] = scuba_report_id
+            result["unlinked_actions"] = unlinked_actions
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
@@ -1671,7 +1795,7 @@ def create_app(db_path: str = None) -> Flask:
             actions = enrich_actions_from_controls(db, actions)
 
             source_tool = SourceTool.SECURE_SCORE.value
-            new_count, updated_count, _ = db.merge_actions(name, actions, source_tool, "graph_api")
+            new_count, updated_count, _, _imported_ids = db.merge_actions(name, actions, source_tool, "graph_api")
 
             # Remove any duplicates from previous imports with different source_id formats
             dedup = db.deduplicate_actions(name, source_tool)
@@ -1887,6 +2011,490 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/enums/frameworks", methods=["GET"])
     def api_frameworks():
         return jsonify([f.value for f in ComplianceFramework])
+
+    # ── Auth ──
+
+    @app.route("/api/auth/login", methods=["POST"])
+    def api_auth_login():
+        if not _check_login_rate_limit(request.remote_addr or "unknown"):
+            return jsonify({"error": "Too many login attempts. Try again in 5 minutes."}), 429
+        data = request.get_json() or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
+        if not username or not password:
+            return _json_error("Username and password required")
+        user = db.authenticate_user(username, password)
+        if not user:
+            return _json_error("Invalid credentials", 401)
+        session.permanent = True
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        session["role"] = user["role"]
+        session["must_change_password"] = bool(user.get("must_change_password"))
+        return jsonify(user)
+
+    @app.route("/api/auth/logout", methods=["POST"])
+    def api_auth_logout():
+        session.clear()
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/auth/me", methods=["GET"])
+    def api_auth_me():
+        uid = session.get("user_id")
+        if not uid:
+            return jsonify({"authenticated": False})
+        user = db.get_user(uid)
+        if not user:
+            session.clear()
+            return jsonify({"authenticated": False})
+        return jsonify({**user, "authenticated": True})
+
+    @app.route("/api/auth/change-password", methods=["POST"])
+    @login_required
+    def api_auth_change_password():
+        data = request.get_json() or {}
+        uid = session["user_id"]
+        user = db.get_user_by_username(session["username"], include_hash=True)
+        if not user:
+            return _json_error("User not found", 404)
+        from .database import _verify_password
+        if not _verify_password(data.get("current_password", ""), user.get("password_hash", "")):
+            return _json_error("Current password is incorrect")
+        new_pw = data.get("new_password", "")
+        if len(new_pw) < 12:
+            return _json_error("Password must be at least 12 characters")
+        db.update_user(uid, password=new_pw)
+        session["must_change_password"] = False
+        db.audit("user.password_change", actor=session.get("username"), entity_type="user", entity_id=uid)
+        return jsonify({"status": "ok"})
+
+    # ── Control Plane: Global Actions ──
+
+    @app.route("/api/control-plane/global-actions", methods=["GET"])
+    @require_role("admin", "analyst")
+    def api_cp_list_global_actions():
+        source_tool = request.args.get("source_tool")
+        workload = request.args.get("workload")
+        review_status = request.args.get("review_status")
+        search = request.args.get("search")
+        actions = db.list_global_actions(source_tool=source_tool, workload=workload,
+                                          review_status=review_status, search=search)
+        # Enrich with compliance mapping counts
+        with db._conn() as conn:
+            counts = {r["global_action_id"]: r["c"] for r in conn.execute(
+                "SELECT global_action_id, COUNT(*) as c FROM global_compliance_mappings GROUP BY global_action_id"
+            ).fetchall()}
+            tenant_counts = {r["global_action_id"]: r["c"] for r in conn.execute(
+                "SELECT global_action_id, COUNT(*) as c FROM actions WHERE global_action_id IS NOT NULL GROUP BY global_action_id"
+            ).fetchall()}
+        for a in actions:
+            a["compliance_mapping_count"] = counts.get(a["id"], 0)
+            a["tenant_action_count"] = tenant_counts.get(a["id"], 0)
+        return jsonify(actions)
+
+    @app.route("/api/control-plane/global-actions", methods=["POST"])
+    def api_cp_create_global_action():
+        data = request.get_json() or {}
+        if not data.get("title"):
+            return _json_error("title is required")
+        ga = GlobalAction(
+            source_tool=data.get("source_tool", "Manual"),
+            source_id=data.get("source_id", ""),
+            title=data["title"],
+            description=data.get("description", ""),
+            workload=data.get("workload", "General"),
+            category=data.get("category", ""),
+            subcategory=data.get("subcategory", ""),
+            priority=data.get("priority", "Medium"),
+            risk_level=data.get("risk_level", "Medium"),
+            user_impact=data.get("user_impact", "Low"),
+            implementation_effort=data.get("implementation_effort", "Medium"),
+            required_licence=data.get("required_licence", ""),
+            score=data.get("score"),
+            max_score=data.get("max_score"),
+            essential_eight_control=data.get("essential_eight_control"),
+            essential_eight_maturity=data.get("essential_eight_maturity"),
+            implementation_steps=data.get("implementation_steps", ""),
+            risk_explanation=data.get("risk_explanation", ""),
+            additional_info=data.get("additional_info", ""),
+            reference_url=data.get("reference_url", ""),
+            tags=data.get("tags", []),
+            review_status=data.get("review_status", "To Review"),
+        )
+        result = db.create_global_action(ga)
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/global-actions/<ga_id>", methods=["GET"])
+    def api_cp_get_global_action(ga_id):
+        ga = db.get_global_action(ga_id)
+        if not ga:
+            return _json_error("Not found", 404)
+        ga["compliance_mappings"] = db.get_global_compliance_mappings(ga_id)
+        # Get linked tenant actions count
+        with db._conn() as conn:
+            rows = conn.execute(
+                """SELECT a.id, a.title, a.status, a.tenant_name, a.source_report_date
+                   FROM actions a WHERE a.global_action_id=? ORDER BY a.tenant_name""",
+                (ga_id,),
+            ).fetchall()
+        ga["linked_tenant_actions"] = [dict(r) for r in rows]
+        return jsonify(ga)
+
+    @app.route("/api/control-plane/global-actions/<ga_id>", methods=["PUT"])
+    def api_cp_update_global_action(ga_id):
+        data = request.get_json() or {}
+        result = db.update_global_action(ga_id, **data)
+        if not result:
+            return _json_error("Not found", 404)
+        db.audit("global_action.update", actor=session.get("username"), entity_type="global_action", entity_id=ga_id)
+        return jsonify(result)
+
+    @app.route("/api/control-plane/global-actions/<ga_id>", methods=["DELETE"])
+    def api_cp_delete_global_action(ga_id):
+        db.delete_global_action(ga_id)
+        db.audit("global_action.delete", actor=session.get("username"), entity_type="global_action", entity_id=ga_id)
+        return jsonify({"status": "deleted"})
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/compliance", methods=["GET"])
+    def api_cp_get_ga_compliance(ga_id):
+        return jsonify(db.get_global_compliance_mappings(ga_id))
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/compliance", methods=["POST"])
+    def api_cp_add_ga_compliance(ga_id):
+        data = request.get_json() or {}
+        if not data.get("framework") or not data.get("control_id"):
+            return _json_error("framework and control_id required")
+        result = db.add_global_compliance_mapping(
+            ga_id, data["framework"], data["control_id"],
+            data.get("control_name", ""), data.get("control_family", ""), data.get("notes", ""),
+        )
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/compliance/<int:mapping_id>", methods=["DELETE"])
+    def api_cp_delete_ga_compliance(ga_id, mapping_id):
+        db.remove_global_compliance_mapping(mapping_id)
+        return jsonify({"status": "deleted"})
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/link-action", methods=["POST"])
+    def api_cp_link_action(ga_id):
+        data = request.get_json() or {}
+        action_id = data.get("action_id")
+        if not action_id:
+            return _json_error("action_id required")
+        db.link_action_to_global(action_id, ga_id)
+        return jsonify({"status": "linked"})
+
+    @app.route("/api/control-plane/migrate", methods=["POST"])
+    def api_cp_migrate():
+        result = db.migrate_actions_to_global()
+        return jsonify(result)
+
+    @app.route("/api/control-plane/compliance-summary", methods=["GET"])
+    def api_cp_compliance_summary():
+        return jsonify(db.get_global_compliance_summary())
+
+    @app.route("/api/control-plane/cross-tenant", methods=["GET"])
+    def api_cp_cross_tenant():
+        """Show implementation status of global actions across all tenants.
+        Supports pagination (limit/offset) and filtering by source_tool/workload."""
+        limit = min(int(request.args.get("limit", 100)), 500)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        source_tool = request.args.get("source_tool")
+        workload = request.args.get("workload")
+
+        where = []
+        params: list = []
+        if source_tool:
+            where.append("ga.source_tool=?")
+            params.append(source_tool)
+        if workload:
+            where.append("ga.workload=?")
+            params.append(workload)
+        where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+        with db._conn() as conn:
+            tenants = [r["name"] for r in conn.execute("SELECT name FROM tenants ORDER BY name").fetchall()]
+            total = conn.execute(
+                f"SELECT COUNT(*) as c FROM global_actions ga {where_clause}",
+                params,
+            ).fetchone()["c"]
+            page_ga_ids = [
+                r["id"] for r in conn.execute(
+                    f"""SELECT ga.id FROM global_actions ga {where_clause}
+                        ORDER BY ga.source_tool, ga.title LIMIT ? OFFSET ?""",
+                    params + [limit, offset],
+                ).fetchall()
+            ]
+            if not page_ga_ids:
+                return jsonify({
+                    "tenants": tenants, "global_actions": [],
+                    "total": total, "limit": limit, "offset": offset,
+                })
+            placeholders = ",".join("?" * len(page_ga_ids))
+            rows = conn.execute(
+                f"""SELECT ga.id, ga.title, ga.source_tool, ga.workload, ga.review_status,
+                          a.tenant_name, a.status, a.id as action_id
+                   FROM global_actions ga
+                   LEFT JOIN actions a ON a.global_action_id=ga.id
+                   WHERE ga.id IN ({placeholders})
+                   ORDER BY ga.source_tool, ga.title, a.tenant_name""",
+                page_ga_ids,
+            ).fetchall()
+
+        by_ga: dict = {}
+        for r in rows:
+            d = dict(r)
+            gid = d["id"]
+            if gid not in by_ga:
+                by_ga[gid] = {
+                    "id": gid, "title": d["title"], "source_tool": d["source_tool"],
+                    "workload": d["workload"], "review_status": d["review_status"],
+                    "tenant_status": {},
+                }
+            if d["tenant_name"]:
+                by_ga[gid]["tenant_status"][d["tenant_name"]] = {
+                    "status": d["status"], "action_id": d["action_id"],
+                }
+
+        return jsonify({
+            "tenants": tenants,
+            "global_actions": list(by_ga.values()),
+            "total": total, "limit": limit, "offset": offset,
+        })
+
+    # ── Control Plane: Users ──
+
+    @app.route("/api/control-plane/users", methods=["GET"])
+    @require_role("admin", "analyst")
+    def api_cp_list_users():
+        users = db.list_users()
+        for u in users:
+            u["tenant_access"] = db.get_user_tenant_access(u["id"])
+        return jsonify(users)
+
+    @app.route("/api/control-plane/users", methods=["POST"])
+    @require_role("admin", "analyst")
+    def api_cp_create_user():
+        data = request.get_json() or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
+        if not username or not password:
+            return _json_error("username and password required")
+        if not _USERNAME_RE.match(username):
+            return _json_error("Username must be 1-63 chars, start alphanumeric, letters/digits/._- only")
+        if len(password) < 12:
+            return _json_error("Password must be at least 12 characters")
+        existing = db.get_user_by_username(username)
+        if existing:
+            return _json_error(f"User '{username}' already exists")
+        valid_roles = [r.value for r in UserRole]
+        role = data.get("role", "viewer")
+        if role not in valid_roles:
+            return _json_error(f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+        user = db.create_user(
+            username=username, password=password,
+            display_name=data.get("display_name", ""),
+            email=data.get("email", ""),
+            role=role,
+        )
+        # Set tenant access if provided
+        for ta in data.get("tenant_access", []):
+            if ta.get("tenant_name"):
+                db.set_user_tenant_access(user["id"], ta["tenant_name"], ta.get("workloads", []))
+        db.audit("user.create", actor=session.get("username"), entity_type="user", entity_id=user["id"], detail=f"role={role}")
+        return jsonify(user), 201
+
+    @app.route("/api/control-plane/users/<user_id>", methods=["GET"])
+    def api_cp_get_user(user_id):
+        user = db.get_user(user_id)
+        if not user:
+            return _json_error("Not found", 404)
+        user["tenant_access"] = db.get_user_tenant_access(user_id)
+        return jsonify(user)
+
+    @app.route("/api/control-plane/users/<user_id>", methods=["PUT"])
+    @require_role("admin", "analyst")
+    def api_cp_update_user(user_id):
+        data = request.get_json() or {}
+        allowed = {"display_name", "email", "role", "is_active", "password"}
+        kwargs = {k: v for k, v in data.items() if k in allowed}
+        if "role" in kwargs:
+            valid_roles = [r.value for r in UserRole]
+            if kwargs["role"] not in valid_roles:
+                return _json_error(f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+        if str(user_id) == str(session.get("user_id")) and "role" in data:
+            return jsonify({"error": "Cannot change your own role"}), 403
+        if str(user_id) == str(session.get("user_id")) and data.get("is_active") is False:
+            return jsonify({"error": "Cannot deactivate yourself"}), 403
+        user = db.update_user(user_id, **kwargs)
+        if not user:
+            return _json_error("Not found", 404)
+        # Update tenant access if provided
+        if "tenant_access" in data:
+            # Remove old access and re-set
+            old_access = db.get_user_tenant_access(user_id)
+            for ta in old_access:
+                db.remove_user_tenant_access(user_id, ta["tenant_name"])
+            for ta in data["tenant_access"]:
+                if ta.get("tenant_name"):
+                    db.set_user_tenant_access(user_id, ta["tenant_name"], ta.get("workloads", []))
+        user["tenant_access"] = db.get_user_tenant_access(user_id)
+        db.audit("user.update", actor=session.get("username"), entity_type="user", entity_id=user_id, detail=",".join(kwargs.keys()))
+        return jsonify(user)
+
+    @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
+    @require_role("admin", "analyst")
+    def api_cp_delete_user(user_id):
+        if user_id == session.get("user_id"):
+            return _json_error("Cannot delete your own account")
+        db.delete_user(user_id)
+        db.audit("user.delete", actor=session.get("username"), entity_type="user", entity_id=user_id)
+        return jsonify({"status": "deleted"})
+
+    @app.route("/api/control-plane/users/<user_id>/tenant-access", methods=["POST"])
+    def api_cp_set_user_tenant_access(user_id):
+        data = request.get_json() or {}
+        tenant_name = data.get("tenant_name")
+        if not tenant_name:
+            return _json_error("tenant_name required")
+        db.set_user_tenant_access(user_id, tenant_name, data.get("workloads", []))
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/control-plane/users/<user_id>/tenant-access/<tenant_name>", methods=["DELETE"])
+    def api_cp_remove_user_tenant_access(user_id, tenant_name):
+        db.remove_user_tenant_access(user_id, tenant_name)
+        return jsonify({"status": "deleted"})
+
+    # ── Control Plane: Tenant Frameworks ──
+
+    @app.route("/api/control-plane/tenants/<tenant_name>/frameworks", methods=["GET"])
+    def api_cp_get_tenant_frameworks(tenant_name):
+        return jsonify(db.get_tenant_frameworks(tenant_name))
+
+    @app.route("/api/control-plane/tenants/<tenant_name>/frameworks", methods=["PUT"])
+    def api_cp_set_tenant_frameworks(tenant_name):
+        data = request.get_json() or {}
+        frameworks = data.get("frameworks", [])
+        db.set_tenant_frameworks(tenant_name, frameworks)
+        return jsonify(db.get_tenant_frameworks(tenant_name))
+
+    @app.route("/api/control-plane/tenants/<tenant_name>/frameworks/<framework>", methods=["DELETE"])
+    def api_cp_remove_tenant_framework(tenant_name, framework):
+        db.remove_tenant_framework(tenant_name, framework)
+        return jsonify({"status": "deleted"})
+
+    @app.route("/api/control-plane/tenant-frameworks", methods=["GET"])
+    def api_cp_all_tenant_frameworks():
+        return jsonify(db.get_all_tenant_frameworks())
+
+    # ── Enhanced import: auto-link to global actions ──
+
+    @app.route("/api/control-plane/unlinked-actions", methods=["GET"])
+    def api_cp_unlinked_actions():
+        tenant_name = request.args.get("tenant")
+        source_tool = request.args.get("source_tool")
+        limit = min(int(request.args.get("limit", 200)), 1000)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        where = ["global_action_id IS NULL"]
+        params: list = []
+        if tenant_name:
+            where.append("tenant_name=?"); params.append(tenant_name)
+        if source_tool:
+            where.append("source_tool=?"); params.append(source_tool)
+        where_clause = " AND ".join(where)
+        with db._conn() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) as c FROM actions WHERE {where_clause}", params
+            ).fetchone()["c"]
+            rows = conn.execute(
+                f"""SELECT id, title, source_tool, source_id, workload, status, tenant_name
+                    FROM actions WHERE {where_clause}
+                    ORDER BY source_tool, title LIMIT ? OFFSET ?""",
+                params + [limit, offset],
+            ).fetchall()
+        # Preserve legacy list shape; total available via X-Total-Count header
+        resp = jsonify([dict(r) for r in rows])
+        resp.headers["X-Total-Count"] = str(total)
+        return resp
+
+    # ── Global Action Links ──
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links", methods=["GET"])
+    def api_cp_get_ga_links(ga_id):
+        return jsonify(db.get_global_action_links(ga_id))
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links", methods=["POST"])
+    def api_cp_add_ga_link(ga_id):
+        data = request.get_json() or {}
+        target_id = data.get("target_id")
+        if not target_id:
+            return _json_error("target_id required")
+        if target_id == ga_id:
+            return _json_error("Cannot link an action to itself")
+        result = db.add_global_action_link(ga_id, target_id, data.get("notes", ""))
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/global-actions/<ga_id>/links/<int:link_id>", methods=["DELETE"])
+    def api_cp_delete_ga_link(ga_id, link_id):
+        db.remove_global_action_link(link_id)
+        return jsonify({"status": "deleted"})
+
+    # ── Merge Global Actions ──
+
+    @app.route("/api/control-plane/global-actions/merge", methods=["POST"])
+    def api_cp_merge_global_actions():
+        data = request.get_json() or {}
+        keep_id = data.get("keep_id")
+        merge_ids = data.get("merge_ids", [])
+        if not keep_id or not merge_ids:
+            return _json_error("keep_id and merge_ids required")
+        if keep_id in merge_ids:
+            return _json_error("keep_id cannot also be in merge_ids")
+        result = db.merge_global_actions(keep_id, merge_ids)
+        db.audit("global_action.merge", actor=session.get("username"), entity_type="global_action", entity_id=keep_id, detail=f"merged={','.join(merge_ids)}")
+        return jsonify(result)
+
+    # ── Create global action from a tenant action ──
+
+    @app.route("/api/control-plane/create-from-action", methods=["POST"])
+    def api_cp_create_from_action():
+        data = request.get_json() or {}
+        action_id = data.get("action_id")
+        if not action_id:
+            return _json_error("action_id required")
+        result = db.create_global_action_from_tenant_action(action_id)
+        if not result:
+            return _json_error("Action not found", 404)
+        return jsonify(result), 201
+
+    # ── Correlation groups (CP management) ──
+
+    @app.route("/api/control-plane/correlation-groups", methods=["GET"])
+    def api_cp_list_correlation_groups():
+        return jsonify(db.list_correlation_groups())
+
+    @app.route("/api/control-plane/correlation-groups", methods=["POST"])
+    def api_cp_create_correlation_group():
+        data = request.get_json() or {}
+        if not data.get("canonical_name"):
+            return _json_error("canonical_name required")
+        result = db.create_correlation_group(
+            data["canonical_name"], data.get("description", ""), data.get("keywords", [])
+        )
+        return jsonify(result), 201
+
+    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["PUT"])
+    def api_cp_update_correlation_group(group_id):
+        data = request.get_json() or {}
+        result = db.update_correlation_group(group_id, **data)
+        if not result:
+            return _json_error("Not found", 404)
+        return jsonify(result)
+
+    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["DELETE"])
+    def api_cp_delete_correlation_group(group_id):
+        db.delete_correlation_group(group_id)
+        return jsonify({"status": "deleted"})
 
     # ── Database Migration ──
 

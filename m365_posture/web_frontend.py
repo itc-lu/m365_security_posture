@@ -158,6 +158,30 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .phase-card.phase-3 { border-left-color:var(--purple); }
 .phase-card table { table-layout:fixed; width:100%; }
 .phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
+.phase-card.drag-over { background:var(--primary-light); border:2px dashed var(--primary); border-left:4px solid var(--primary); }
+.phase-card [draggable] { cursor:grab; }
+.phase-card [draggable]:active { cursor:grabbing; opacity:.7; }
+
+/* Login overlay */
+.login-overlay { position:fixed; inset:0; background:rgba(15,23,42,.85); z-index:1000; display:flex; align-items:center; justify-content:center; }
+.login-overlay.hidden { display:none; }
+.login-card { background:var(--bg-card); border-radius:12px; padding:40px; width:360px; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+.login-card h2 { margin-bottom:8px; font-size:22px; }
+.login-card .subtitle { color:var(--text-light); font-size:13px; margin-bottom:28px; }
+
+/* Control Plane styles */
+.cp-status-badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.cp-status-reviewed { background:#d1fae5; color:#065f46; }
+.cp-status-to-review { background:#fef3c7; color:#92400e; }
+.cross-tenant-table td { vertical-align:middle; }
+.cross-tenant-status { display:inline-block; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:600; min-width:70px; text-align:center; }
+.ga-detail-section { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; }
+.ga-detail-section h4 { font-size:13px; color:var(--text-light); text-transform:uppercase; letter-spacing:.5px; margin-bottom:12px; }
+.confirm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2000; display:flex; align-items:center; justify-content:center; }
+.confirm-dialog { background:var(--bg-card); border-radius:10px; padding:28px; width:360px; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+.confirm-dialog h3 { margin-bottom:10px; font-size:17px; }
+.confirm-dialog p { color:var(--text-light); font-size:14px; margin-bottom:24px; line-height:1.5; }
+.confirm-dialog .btn-row { display:flex; gap:10px; justify-content:flex-end; }
 
 /* Correlation badge */
 .corr-badge { display:inline-flex; gap:4px; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--purple-light); color:#5b21b6; }
@@ -313,7 +337,40 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
       History
     </a>
+    <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;letter-spacing:1px;color:#475569;text-transform:uppercase;padding:0 6px">Control Plane</div>
+    <a href="#cp-global-actions" data-page="cp-global-actions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Global Actions
+    </a>
+    <a href="#cp-cross-tenant" data-page="cp-cross-tenant">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      Cross-Tenant View
+    </a>
+    <a href="#cp-frameworks" data-page="cp-frameworks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      Frameworks
+    </a>
+    <a href="#cp-users" data-page="cp-users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      User Management
+    </a>
+    <a href="#cp-tenants" data-page="cp-tenants">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+      Tenant Config
+    </a>
+    <a href="#cp-correlations" data-page="cp-correlations">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      Correlations
+    </a>
+    <a href="#cp-merge" data-page="cp-merge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Merge / Dedup
+    </a>
   </nav>
+  <div style="padding:8px 16px;border-top:1px solid #1e293b">
+    <div id="auth-user-info" style="font-size:12px;color:#94a3b8;margin-bottom:6px"></div>
+    <button class="btn btn-sm" id="auth-btn" onclick="showLoginModal()" style="width:100%;background:#1e293b;color:#cbd5e1;border-color:#334155">Login</button>
+  </div>
   <div class="tenant-indicator" id="tenant-indicator" onclick="toggleTenantDropdown(event)">
     <div class="tenant-dropdown" id="tenant-dropdown"></div>
     <div style="color:var(--text-sidebar)">Active Tenant</div>
@@ -333,6 +390,44 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 
 <!-- Toast container -->
 <div class="toast-container" id="toasts"></div>
+
+<!-- Login overlay -->
+<div class="login-overlay hidden" id="login-overlay">
+  <div class="login-card">
+    <h2>&#128274; Sign In</h2>
+    <p class="subtitle">M365 Security Posture Manager</p>
+    <div class="form-group"><label>Username</label><input id="login-username" placeholder="admin" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="form-group"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">Sign In</button>
+    <p style="font-size:11px;color:var(--text-light);margin-top:16px;text-align:center">Default credentials: admin / admin &mdash; change after first login</p>
+  </div>
+</div>
+
+<!-- Force password-change overlay -->
+<div class="login-overlay hidden" id="pwchange-overlay">
+  <div class="login-card">
+    <h2>&#128273; Change Password</h2>
+    <p class="subtitle">You must change your password before continuing.</p>
+    <div class="form-group"><label>Current password</label><input id="pwchange-current" type="password" autocomplete="current-password"></div>
+    <div class="form-group"><label>New password</label><input id="pwchange-new" type="password" autocomplete="new-password"></div>
+    <div class="form-group"><label>Confirm new password</label><input id="pwchange-confirm" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doForcedPasswordChange()"></div>
+    <div id="pwchange-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doForcedPasswordChange()">Update Password</button>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="confirm-overlay" id="confirm-overlay" style="display:none">
+  <div class="confirm-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-message">Are you sure?</p>
+    <div class="btn-row">
+      <button class="btn" id="confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok" onclick="resolveConfirm(true)">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -410,13 +505,15 @@ function pctColor(p) {
 }
 
 function mdToHtml(text) {
-  // Convert markdown links [text](url) to clickable HTML, bold **text**, and headings
+  // Converts a constrained markdown subset to HTML. Full HTML-escape runs first
+  // so any literal <, >, ", ', & in the input cannot break out of the attributes
+  // injected by the patterns below.
   if(!text) return '';
-  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  // Markdown links: [label](url)
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" onclick="event.stopPropagation()">$1</a>');
-  // Bare URLs not already in an <a> tag
-  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"&]+)/g, '<a href="$1" target="_blank" onclick="event.stopPropagation()">$1</a>');
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  // Markdown links: [label](url) — URL must start http(s):// and exclude quotes/whitespace
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'<>]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">$1</a>');
+  // Bare URLs not already wrapped
+  s = s.replace(/(?<!href=")(https?:\/\/[^\s<"'&)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">$1</a>');
   // Bold **text**
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Headings
@@ -523,20 +620,183 @@ function applySort() {
 async function navigate(page) {
   state.currentPage = page;
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',people:'People & Assignments',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History'};
+  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
-  const render = {dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,plans:renderPlans,people:renderPeople,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,history:renderHistory};
+  const render = {
+    dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,
+    plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
+    compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
+    history:renderHistory,
+    'cp-global-actions':renderCpGlobalActions,
+    'cp-cross-tenant':renderCpCrossTenant,
+    'cp-frameworks':renderCpFrameworks,
+    'cp-users':renderCpUsers,
+    'cp-tenants':renderCpTenants,
+    'cp-correlations':renderCpCorrelations,
+    'cp-merge':renderMergeTool,
+  };
   if(render[page]) await render[page]();
   setTimeout(applySort, 50);
 }
 
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
 
+async function navigateToCpAction(globalActionId) {
+  await navigate('cp-global-actions');
+  // Highlight the action after render
+  setTimeout(() => {
+    const row = document.querySelector(`[data-ga-id="${globalActionId}"]`);
+    if(row) { row.scrollIntoView({behavior:'smooth',block:'center'}); row.click(); }
+  }, 300);
+}
+
+// ── Global keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') {
+    // Close confirm dialog first, then modal
+    const confirmOverlay = document.getElementById('confirm-overlay');
+    if(confirmOverlay && confirmOverlay.style.display !== 'none') {
+      closeConfirm(); return;
+    }
+    const modalOverlay = document.getElementById('modal-overlay');
+    if(modalOverlay && modalOverlay.classList.contains('open')) {
+      closeModal(); return;
+    }
+  }
+  if(e.key === 'Enter') {
+    const confirmOverlay = document.getElementById('confirm-overlay');
+    if(confirmOverlay && confirmOverlay.style.display !== 'none') {
+      resolveConfirm(true); return;
+    }
+  }
+});
+
+// Backdrop-click closes modal
+document.addEventListener('click', e => {
+  if(e.target && e.target.id === 'modal-overlay') closeModal();
+});
+
+// ── Auth state ──
+let _authUser = null;
+
+async function checkAuth() {
+  const me = await api.get('/api/auth/me');
+  _authUser = me.authenticated ? me : null;
+  updateAuthUI();
+  if(_authUser && _authUser.must_change_password) showForcedPasswordChange('');
+}
+
+function updateAuthUI() {
+  const btn = document.getElementById('auth-btn');
+  const info = document.getElementById('auth-user-info');
+  if(_authUser) {
+    info.textContent = `${_authUser.display_name||_authUser.username} (${_authUser.role})`;
+    btn.textContent = 'Logout';
+    btn.onclick = doLogout;
+  } else {
+    info.textContent = '';
+    btn.textContent = 'Login';
+    btn.onclick = showLoginModal;
+  }
+}
+
+function showLoginModal() {
+  document.getElementById('login-overlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('login-username').focus(), 50);
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if(!username || !password) { errEl.textContent='Username and password required'; errEl.style.display='block'; return; }
+  const r = await api.post('/api/auth/login', {username, password});
+  if(r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
+  _authUser = r;
+  updateAuthUI();
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.getElementById('login-password').value = '';
+  if(r.must_change_password) {
+    showForcedPasswordChange(password);
+    return;
+  }
+  toast(`Welcome, ${r.display_name||r.username}!`, 'success');
+}
+
+function showForcedPasswordChange(prefillCurrent) {
+  const cur = document.getElementById('pwchange-current');
+  if(typeof prefillCurrent === 'string') cur.value = prefillCurrent;
+  document.getElementById('pwchange-new').value = '';
+  document.getElementById('pwchange-confirm').value = '';
+  document.getElementById('pwchange-error').style.display = 'none';
+  document.getElementById('pwchange-overlay').classList.remove('hidden');
+  setTimeout(() => (cur.value ? document.getElementById('pwchange-new') : cur).focus(), 50);
+}
+
+async function doForcedPasswordChange() {
+  const current = document.getElementById('pwchange-current').value;
+  const next = document.getElementById('pwchange-new').value;
+  const confirmVal = document.getElementById('pwchange-confirm').value;
+  const errEl = document.getElementById('pwchange-error');
+  errEl.style.display = 'none';
+  if(!current || !next) { errEl.textContent = 'Both fields are required'; errEl.style.display = 'block'; return; }
+  if(next !== confirmVal) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
+  if(next.length < 12) { errEl.textContent = 'New password must be at least 12 characters'; errEl.style.display = 'block'; return; }
+  const r = await api.post('/api/auth/change-password', {current_password: current, new_password: next});
+  if(r && r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
+  document.getElementById('pwchange-overlay').classList.add('hidden');
+  document.getElementById('pwchange-current').value = '';
+  document.getElementById('pwchange-new').value = '';
+  document.getElementById('pwchange-confirm').value = '';
+  if(_authUser) _authUser.must_change_password = false;
+  toast('Password updated', 'success');
+}
+
+async function doLogout() {
+  await api.post('/api/auth/logout', {});
+  _authUser = null;
+  updateAuthUI();
+  toast('Logged out', 'info');
+}
+
+// ── Confirm dialog (replaces browser confirm()) ──
+let _confirmResolve = null;
+
+function showConfirm(title, message, okLabel='Delete', okClass='btn-danger') {
+  return new Promise(resolve => {
+    _confirmResolve = resolve;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = message;
+    const okBtn = document.getElementById('confirm-ok');
+    okBtn.textContent = okLabel;
+    okBtn.className = `btn ${okClass}`;
+    document.getElementById('confirm-overlay').style.display = 'flex';
+  });
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  if(_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+}
+
+function resolveConfirm(result) {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  if(_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+}
+
+// ── HTML escape helper (XSS protection) ──
+function esc(s) {
+  if(s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 // ── Init ──
 async function init() {
+  await checkAuth();
   state.enums = await api.get('/api/enums');
   state.tenants = await api.get('/api/tenants');
   const active = await api.get('/api/active-tenant');
@@ -558,7 +818,7 @@ function toggleTenantDropdown(e) {
   let items = state.tenants.map(t => {
     const isActive = state.activeTenant && state.activeTenant.name === t.name;
     return `<div class="td-item ${isActive?'active':''}" onclick="switchTenant('${t.name}');event.stopPropagation()">
-      <span>${t.display_name||t.name}</span>
+      <span>${esc(t.display_name||t.name)}</span>
       ${isActive?'<span class="td-check">&#10003;</span>':''}
     </div>`;
   }).join('');
@@ -601,7 +861,7 @@ async function renderDashboard(sourceFilter) {
 
   // Topbar: tenant switcher, compare button, PDF download
   let tenantSwitchOpts = state.tenants.map(tn =>
-    `<option value="${tn.name}" ${tn.name===t?'selected':''}>${tn.display_name||tn.name}</option>`
+    `<option value="${tn.name}" ${tn.name===t?'selected':''}>${esc(tn.display_name||tn.name)}</option>`
   ).join('');
   document.getElementById('topbar-actions').innerHTML = `
     <select id="dash-tenant-switch" onchange="switchTenantFromDashboard(this.value)" style="max-width:200px;font-size:13px">${tenantSwitchOpts}</select>
@@ -653,7 +913,7 @@ async function renderDashboard(sourceFilter) {
   // Build source filter options
   const sourceTools = Object.keys(scores.by_tool||{});
   const sourceOpts = [`<option value="">All Sources (Overall)</option>`].concat(
-    sourceTools.map(s => `<option value="${s}" ${sf===s?'selected':''}>${s}</option>`)
+    sourceTools.map(s => `<option value="${esc(s)}" ${sf===s?'selected':''}>${esc(s)}</option>`)
   ).join('');
 
   // Tool gauge cards
@@ -661,7 +921,7 @@ async function renderDashboard(sourceFilter) {
   for(const [tool, d] of Object.entries(scores.by_tool||{})) {
     const isActive = sf === tool;
     toolCards += `<div class="card stat-card" style="${isActive?'border:2px solid var(--primary);':''}cursor:pointer" onclick="renderDashboard('${tool}')">
-      <div class="card-header">${tool}</div>${gauge(d.percentage, 100)}
+      <div class="card-header">${esc(tool)}</div>${gauge(d.percentage, 100)}
       <div class="label">${d.score}/${d.max_score} pts &middot; ${d.completed}/${d.total} actions</div>
     </div>`;
   }
@@ -681,12 +941,12 @@ async function renderDashboard(sourceFilter) {
     for(const [wl, d] of Object.entries(wlMap)) {
       const pct = d.max_score > 0 ? (d.score/d.max_score*100) : 0;
       const color = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
-      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${pct.toFixed(2)}%</span></div>${progressBar(pct, color)}</div>`;
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${esc(wl)}</span><span style="font-size:13px;font-weight:600">${pct.toFixed(2)}%</span></div>${progressBar(pct, color)}</div>`;
     }
   } else {
     for(const [wl, d] of Object.entries(scores.by_workload||{})) {
       const color = d.percentage >= 80 ? 'var(--success)' : d.percentage >= 40 ? 'var(--warning)' : 'var(--danger)';
-      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${wl}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(2)}%</span></div>${progressBar(d.percentage, color)}</div>`;
+      wlBars += `<div class="mb-8"><div class="flex justify-between mb-8"><span style="font-size:13px">${esc(wl)}</span><span style="font-size:13px;font-weight:600">${d.percentage.toFixed(2)}%</span></div>${progressBar(d.percentage, color)}</div>`;
     }
   }
 
@@ -707,7 +967,7 @@ async function renderDashboard(sourceFilter) {
   let topActions = prioritized.filter(a => !sf || a.source_tool === sf).slice(0,10).map(a => {
     const full = _allActionsMap[a.id] || a;
     return `<tr onclick="toggleActionDetail('dash-${a.id}')" style="cursor:pointer">
-    <td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
+    <td>${esc(a.title||'')}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td><td>${a.roi_score}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="unpinDashAction('${a.id}');event.stopPropagation()" title="${a.pinned_priority?'Unpin from dashboard':'Remove from list'}" style="padding:2px 6px;font-size:11px">${a.pinned_priority?'&#9733;':'&times;'}</button>
     </td>
@@ -743,8 +1003,8 @@ async function renderDashboard(sourceFilter) {
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
       <div class="flex justify-between items-center">
         <div>
-          <div style="font-size:24px;font-weight:700">${displayName}</div>
-          <div style="font-size:13px;opacity:.7;margin-top:4px">${state.activeTenant.tenant_id||'No Tenant ID'} &middot; ${today}</div>
+          <div style="font-size:24px;font-weight:700">${esc(displayName)}</div>
+          <div style="font-size:13px;opacity:.7;margin-top:4px">${esc(state.activeTenant.tenant_id||'No Tenant ID')} &middot; ${today}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:42px;font-weight:800">${(dispPct||0).toFixed(2)}%</div>
@@ -792,7 +1052,7 @@ async function switchTenantFromDashboard(name) {
 
 function showDashboardCompare() {
   let checks = state.tenants.map(t => {
-    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${t.display_name||t.name}</span></label>`;
+    return `<label style="display:flex;gap:10px;align-items:center;font-size:14px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border)"><input type="checkbox" value="${t.name}" class="dash-cmp" ${t.is_active?'checked':''} style="width:18px;height:18px;flex-shrink:0"> <span>${esc(t.display_name||t.name)}</span></label>`;
   }).join('');
   openModal('Compare', `
     <div class="action-tabs" style="margin:0 0 16px">
@@ -840,7 +1100,7 @@ async function loadSnapshotsForCompare() {
     snapSel.innerHTML = snaps.map(s => {
       const dt = s.timestamp?.substring(0,16).replace('T',' ') || '';
       const trigger = s.trigger ? ' ('+s.trigger+')' : '';
-      return `<option value="${s.id}">${dt}${trigger} — ${(s.percentage||0).toFixed(1)}%</option>`;
+      return `<option value="${s.id}">${esc(dt)}${esc(trigger)} — ${(s.percentage||0).toFixed(1)}%</option>`;
     }).join('');
   }
 
@@ -877,7 +1137,7 @@ async function doSnapshotCompare() {
       const pct = (data[l]?.percentage||0).toFixed(2);
       return `<td>${pct}%</td>`;
     }).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
+    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
@@ -885,7 +1145,7 @@ async function doSnapshotCompare() {
       const pct = (data[l]?.percentage||0).toFixed(2);
       return `<td>${pct}%</td>`;
     }).join('');
-    return `<tr><td>${wl}</td>${cells}</tr>`;
+    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
 
   const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
@@ -898,13 +1158,13 @@ async function doSnapshotCompare() {
       ? `<td>${statusBadge(a.snapshot.status)}</td>`
       : '<td style="color:var(--text-light);font-style:italic;font-size:12px">Did not exist</td>';
     const curCell = `<td><a href="#" onclick="toggleCompareActionDetail('${tenantName}','${a.current.id}','snap-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details">${statusBadge(a.current.status)}</a></td>`;
-    return `<tr><td style="font-size:12px">${a.title}</td>${snapCell}${curCell}</tr>
+    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>${snapCell}${curCell}</tr>
       <tr id="snap-detail-${idx}" class="hidden"><td colspan="3" style="padding:0"><div id="snap-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
-      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${tenantDisplay}</h2>
+      <h2 style="font-size:18px;font-weight:600">Snapshot Comparison: ${esc(tenantDisplay)}</h2>
       <div class="flex gap-8">
         <button class="btn btn-sm btn-primary" onclick="downloadComparisonPDF()">PDF Report</button>
         <button class="btn btn-sm" onclick="renderDashboard()">Back to Dashboard</button>
@@ -915,16 +1175,16 @@ async function doSnapshotCompare() {
       <table><thead><tr><th>State</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">By Source Tool</div>
-        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
-        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
       <div class="card-header">Action Changes <span class="badge badge-danger">${r.actions_differing||0} changed</span> <span class="badge badge-success">${sameCount} unchanged</span></div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions whose status changed since the snapshot, or new actions added after the snapshot. Click current status to view details.</div>
       ${snapActionRows ? `
         <div class="table-wrap" style="max-height:500px;overflow-y:auto">
-          <table><thead><tr><th>Action</th><th>${labels[1]}</th><th>${labels[0]}</th></tr></thead>
+          <table><thead><tr><th>Action</th><th>${esc(labels[1])}</th><th>${esc(labels[0])}</th></tr></thead>
           <tbody>${snapActionRows}</tbody></table>
         </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No changes found - all actions have the same status as the snapshot.</div>'}
     </div>
@@ -945,17 +1205,17 @@ async function doDashboardCompare() {
 
   let rows = tenants.map(t => {
     const d = r.overall[t]||{};
-    return `<tr><td><strong>${t}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+    return `<tr><td><strong>${esc(t)}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
   }).join('');
 
   let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
     let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${tool}</td>${cells}</tr>`;
+    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
     let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
-    return `<tr><td>${wl}</td>${cells}</tr>`;
+    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
 
   // Action-level comparison
@@ -967,7 +1227,7 @@ async function doDashboardCompare() {
       if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
       return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details for ${t}">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${a.title}</td>${cells}</tr>
+    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>${cells}</tr>
       <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+1}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
@@ -1077,8 +1337,8 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
     // Reuse the full action detail panel with all tabs (General, Implementation, Notes, History)
     contentEl.innerHTML = `
       <div style="padding:8px 0 4px;margin-bottom:4px;border-bottom:1px solid var(--border)">
-        <span class="badge badge-info" style="font-size:12px">${tenantName}</span>
-        <strong style="font-size:14px;margin-left:8px">${a.title}</strong>
+        <span class="badge badge-info" style="font-size:12px">${esc(tenantName)}</span>
+        <strong style="font-size:14px;margin-left:8px">${esc(a.title||'')}</strong>
       </div>
       ${actionDetailHtml(a)}`;
     // Load dependencies for this action
@@ -1157,7 +1417,7 @@ async function showPinActionModal() {
   const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && !a.pinned_priority);
   let rows = pending.slice(0,50).map(a => `<tr>
     <td><input type="checkbox" value="${a.id}" class="pin-cb"></td>
-    <td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
+    <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
   </tr>`).join('');
   openModal('Pin Actions to Dashboard', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Select actions to pin to the Top Priority list.</div>
@@ -1188,8 +1448,8 @@ async function renderTenants() {
 
   let cards = state.tenants.map(t => `
     <div class="card" style="${t.is_active?'border-left:4px solid var(--primary)':''}">
-      <div class="card-header">${t.display_name||t.name} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${t.tenant_id||'No tenant ID'}</div>
+      <div class="card-header">${esc(t.display_name||t.name)} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(t.tenant_id||'No tenant ID')}</div>
       <div style="font-size:14px;margin-bottom:12px">${t.action_count||0} actions</div>
       <div class="btn-group">
         ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenant('${t.name}')">Activate</button>`:''}
@@ -1252,11 +1512,11 @@ async function addTenant() {
 async function showEditTenant(name) {
   const t = await api.get(`/api/tenants/${name}`);
   openModal('Edit Tenant: '+name, `
-    <div class="form-group"><label>Display Name</label><input id="te-display" value="${t.display_name||''}"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${t.tenant_id||''}"></div>
-    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${t.client_id||''}"></div>
-    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${t.client_secret||''}"></div>
-    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${t.notes||''}</textarea></div>`,
+    <div class="form-group"><label>Display Name</label><input id="te-display" value="${esc(t.display_name||'')}"></div>
+    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${esc(t.tenant_id||'')}"></div>
+    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${esc(t.client_id||'')}"></div>
+    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${esc(t.client_secret||'')}"></div>
+    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${esc(t.notes||'')}</textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateTenant('${name}')">Save</button>`);
 }
 
@@ -1275,7 +1535,7 @@ async function activateTenant(name) {
 }
 
 async function deleteTenant(name) {
-  if(!confirm(`Delete tenant "${name}" and all its data?`)) return;
+  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and all its data? This cannot be undone.`)) return;
   await api.del(`/api/tenants/${name}`);
   state.activeTenant = await api.get('/api/active-tenant');
   updateTenantIndicator();
@@ -1433,17 +1693,17 @@ function _renderActionsTableSorted() {
   let rows = actions.map(a => {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
     const plans = _actionPlanMap[a.id] || [];
-    const planBadge = plans.length ? `<span class="badge badge-info" title="${plans.map(p=>p.plan_name).join(', ')}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
+    const planBadge = plans.length ? `<span class="badge badge-info" title="${esc(plans.map(p=>p.plan_name).join(', '))}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
-      <td style="font-size:12px"><code>${a.reference_id||'-'}</code></td>
-      <td style="max-width:300px">${a.title.substring(0,70)}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
+      <td style="font-size:12px"><code>${esc(a.reference_id||'-')}</code></td>
+      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
-      <td style="font-size:12px">${a.workload}</td>
-      <td style="font-size:12px">${a.source_tool}</td>
+      <td style="font-size:12px">${esc(a.workload||'')}</td>
+      <td style="font-size:12px">${esc(a.source_tool||'')}</td>
       <td>${scoreDisplay}</td>
       <td>${planBadge}</td>
     </tr>
@@ -1492,7 +1752,7 @@ function updateBatchBar() {
 async function batchDeleteActions() {
   const ids = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   if(!ids.length) return;
-  if(!confirm('Delete ' + ids.length + ' selected actions?')) return;
+  if(!await showConfirm('Delete Actions', `Delete ${ids.length} selected action(s)? This cannot be undone.`)) return;
   const r = await api.post('/api/actions/batch-delete', {action_ids: ids});
   if(r.error) return toast(r.error, 'error');
   toast(r.deleted + ' actions deleted', 'success');
@@ -1548,7 +1808,7 @@ async function showAddToPlan(actionIds) {
   let planOptions = planData.map(p => {
     const dupes = _addToPlanIds.filter(id => p.existingActionIds.includes(id)).length;
     const dupeNote = dupes ? ` - ${dupes} already in plan` : '';
-    return `<option value="${p.id}">${p.name} (${p.item_count} actions, ${p.status})${dupeNote}</option>`;
+    return `<option value="${p.id}">${esc(p.name||'')} (${p.item_count} actions, ${esc(p.status||'')})${dupeNote}</option>`;
   }).join('');
 
   openModal(`Add ${_addToPlanIds.length} Action${_addToPlanIds.length>1?'s':''} to Plan`, `
@@ -1646,12 +1906,12 @@ function actionDetailHtml(a) {
     riskHtml = `<div class="risk-card ${isExpired?'expired':''} mb-16">
       <div class="field-label">Risk Acceptance</div>
       <div class="grid grid-2 mt-16">
-        <div class="field"><div class="field-label">Owner</div><div class="field-value">${a.risk_owner||'Not specified'}</div></div>
+        <div class="field"><div class="field-label">Owner</div><div class="field-value">${esc(a.risk_owner||'Not specified')}</div></div>
         <div class="field"><div class="field-label">Accepted</div><div class="field-value">${a.risk_accepted_at?.substring(0,10)||'Unknown'}</div></div>
         <div class="field"><div class="field-label">Review Date</div><div class="field-value">${a.risk_review_date||'Not set'}</div></div>
         <div class="field"><div class="field-label">Expiry Date</div><div class="field-value">${isExpired?'<span class="badge badge-danger">EXPIRED</span> ':''}${a.risk_expiry_date||'No expiry'}</div></div>
       </div>
-      <div class="field mt-16"><div class="field-label">Justification</div><div class="field-value">${a.risk_justification||'None provided'}</div></div>
+      <div class="field mt-16"><div class="field-label">Justification</div><div class="field-value">${esc(a.risk_justification||'None provided')}</div></div>
     </div>`;
   }
 
@@ -1663,7 +1923,7 @@ function actionDetailHtml(a) {
   const isZTR = a.source_tool === 'Zero Trust Report';
   const isSCuBA = a.source_tool === 'SCuBA (CISA)';
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
-  const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${a.source_tool}</span>`;
+  const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${esc(a.source_tool||'')}</span>`;
 
   // Remediation steps - split into structured parts if possible
   let prerequisitesHtml = '';
@@ -1708,30 +1968,31 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${a.remediation_impact}</div></div>`:''}
-          ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+t+'</span>').join(' ')}</div></div>`:''}
-          ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${a.current_value}</pre></div>`:''}
-          ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${a.recommended_value}</pre></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${esc(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${esc(a.remediation_impact)}</div></div>`:''}
+          ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
+          ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
+          ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
           `}
           <div id="deps-${a.id}" class="mb-8"></div>
         </div>
         <div>
           <div class="action-sidebar-card">
+            ${a.global_action_id ? `<div class="sidebar-field"><div class="field-label">Linked Global Action</div><div class="field-value"><a href="#" onclick="navigateToCpAction('${a.global_action_id}');event.preventDefault()" style="color:var(--primary);text-decoration:none;font-size:12px">&#8594; View in Control Plane</a></div></div>` : ''}
             ${isZTR ? `
-            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${a.reference_id||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Test ID</div><div class="field-value" style="font-family:monospace;font-weight:600">${esc(a.reference_id||'N/A')}</div></div>
             <div class="sidebar-field"><div class="field-label">ZT Status</div><div class="field-value">${ztStatusBadge(a)}</div></div>
-            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${(a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${a.subcategory||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Pillar</div><div class="field-value">${esc((a.tags||[]).filter(t=>t.startsWith('Pillar:')).map(t=>t.replace('Pillar: ','')).join(', ')||'N/A')}</div></div>
+            <div class="sidebar-field"><div class="field-label">SFI Pillar</div><div class="field-value">${esc(a.subcategory||'N/A')}</div></div>
             ` : isSCuBA ? `
-            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${a.reference_id||a.source_id?.replace('scuba_','')||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Control ID</div><div class="field-value" style="font-family:monospace;font-weight:600;font-size:14px">${esc(a.reference_id||a.source_id?.replace('scuba_','')||'N/A')}</div></div>
             <div class="sidebar-field">
               <div class="field-label">Result</div>
               <div class="field-value">${statusBadge(a.status)}</div>
             </div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.category||'N/A'}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${esc(a.category||'N/A')}</div></div>
             <div class="sidebar-field"><div class="field-label">Criticality</div><div class="field-value">${_scubaCritBadge(a.subcategory)}</div></div>
-            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+g+'</div></div>':'';})()}
+            ${(()=>{const g=(a.tags||[]).filter(t=>t.startsWith('Group:')).map(t=>t.replace('Group:','')).join('');return g?'<div class="sidebar-field"><div class="field-label">Group</div><div class="field-value">'+esc(g)+'</div></div>':'';})()}
             ` : `
             <div class="sidebar-field">
               <div class="field-label">Score</div>
@@ -1739,21 +2000,21 @@ function actionDetailHtml(a) {
               <div class="score-bar-wrap"><div class="score-bar"><div class="bar" style="width:${scorePct}%;background:${pctColor(scorePct)}"></div></div></div>
             </div>
             `}
-            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${a.category||'N/A'}</div></div>
-            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${a.subcategory||'N/A'}</div></div>` : ''}
+            ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${esc(a.category||'N/A')}</div></div>
+            <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${esc(a.subcategory||'N/A')}</div></div>` : ''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
-            <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${a.implementation_effort}</div></div>
-            <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${a.required_licence||'N/A'}</div></div>
-            ${a.tier?`<div class="sidebar-field"><div class="field-label">Tier</div><div class="field-value">${a.tier}</div></div>`:''}
-            ${a.action_type?`<div class="sidebar-field"><div class="field-label">Action Type</div><div class="field-value">${a.action_type}</div></div>`:''}
+            <div class="sidebar-field"><div class="field-label">Impl. Effort</div><div class="field-value">${esc(a.implementation_effort||'')}</div></div>
+            <div class="sidebar-field"><div class="field-label">Licence</div><div class="field-value">${esc(a.required_licence||'N/A')}</div></div>
+            ${a.tier?`<div class="sidebar-field"><div class="field-label">Tier</div><div class="field-value">${esc(a.tier)}</div></div>`:''}
+            ${a.action_type?`<div class="sidebar-field"><div class="field-label">Action Type</div><div class="field-value">${esc(a.action_type)}</div></div>`:''}
             ${a.deprecated?`<div class="sidebar-field"><div class="field-label">Status</div><div class="field-value"><span class="badge badge-danger">Deprecated</span></div></div>`:''}
-            ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${a.responsible}</div></div>`:''}
-            ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${a.planned_date}</div></div>`:''}
-            ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control}</div></div>`:''}
-            ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity}</div></div>`:''}
-            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${a.notes}</div></div>`:''}
+            ${a.responsible?`<div class="sidebar-field"><div class="field-label">Responsible</div><div class="field-value">${esc(a.responsible)}</div></div>`:''}
+            ${a.planned_date?`<div class="sidebar-field"><div class="field-label">Planned Date</div><div class="field-value">${esc(a.planned_date)}</div></div>`:''}
+            ${a.essential_eight_control?`<div class="sidebar-field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control)}</div></div>`:''}
+            ${a.essential_eight_maturity?`<div class="sidebar-field"><div class="field-label">E8 Maturity</div><div class="field-value">${esc(a.essential_eight_maturity)}</div></div>`:''}
+            ${a.notes?`<div class="sidebar-field"><div class="field-label">Notes</div><div class="field-value" style="font-size:12px;white-space:pre-wrap">${esc(a.notes)}</div></div>`:''}
           </div>
         </div>
       </div>
@@ -1763,18 +2024,18 @@ function actionDetailHtml(a) {
       ${prerequisitesHtml}
       ${stepsHtml}
       ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
-      ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${a.reference_url}" target="_blank" onclick="event.stopPropagation()">${a.reference_url}</a></div></div>`:''}
+      ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${esc(a.reference_url)}" target="_blank" onclick="event.stopPropagation()">${esc(a.reference_url)}</a></div></div>`:''}
       <div class="grid grid-4 mb-16">
-        <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${a.essential_eight_control||'N/A'}</div></div>
-        <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${a.essential_eight_maturity||'N/A'}</div></div>
-        <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${a.source_id||'N/A'}</code></div></div>
-        <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${a.reference_id||'N/A'}</code></div></div>
+        <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control||'N/A')}</div></div>
+        <div class="field"><div class="field-label">E8 Maturity</div><div class="field-value">${esc(a.essential_eight_maturity||'N/A')}</div></div>
+        <div class="field"><div class="field-label">Source ID</div><div class="field-value"><code style="font-size:11px">${esc(a.source_id||'N/A')}</code></div></div>
+        <div class="field"><div class="field-label">Reference ID</div><div class="field-value"><code style="font-size:11px">${esc(a.reference_id||'N/A')}</code></div></div>
       </div>
     </div>
     <!-- Notes Tab -->
     <div class="action-tab-content" id="atab-${uid}-notes">
       <div style="margin-bottom:12px">
-        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${a.notes||''}</textarea>
+        <textarea id="notes-${uid}" rows="6" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;resize:vertical" placeholder="Add your notes here..." onclick="event.stopPropagation()">${esc(a.notes||'')}</textarea>
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
@@ -1932,16 +2193,16 @@ async function addAction() {
 
 async function showEditAction(id) {
   const a = await api.get(`/api/actions/${id}`);
-  openModal('Edit Action: '+a.title.substring(0,40), `
-    <div class="form-group"><label>Title</label><input id="ae-title" value="${a.title.replace(/"/g,'&quot;')}"></div>
+  openModal('Edit Action: '+(a.title||'').substring(0,40), `
+    <div class="form-group"><label>Title</label><input id="ae-title" value="${esc(a.title||'')}"></div>
     <div class="form-row"><div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
     <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>Workload</label><select id="ae-workload">${selectOptions(state.enums.workloads,a.workload)}</select></div>
     <div class="form-group"><label>Risk Level</label><select id="ae-risk">${selectOptions(state.enums.risk_levels,a.risk_level)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>User Impact</label><select id="ae-impact">${selectOptions(state.enums.user_impacts,a.user_impact)}</select></div>
     <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${a.responsible||''}"></div>
-    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${a.planned_date||''}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${esc(a.responsible||'')}"></div>
+    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div></div>
     <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
     <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
     <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
@@ -1971,7 +2232,7 @@ async function saveActionNotes(id, uid) {
 }
 
 async function deleteAction(id) {
-  if(!confirm('Delete this action?')) return;
+  if(!await showConfirm('Delete Action', 'Delete this action? This cannot be undone.')) return;
   await api.del(`/api/actions/${id}`);
   toast('Action deleted','success'); filterActions();
 }
@@ -2254,10 +2515,10 @@ async function doImport() {
             <span style="font-size:12px;color:var(--text-light)">Compared: ${drift.previous_timestamp?.substring(0,16)} vs ${drift.current_timestamp?.substring(0,16)}</span>
           </div>
         </div>
-        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${r.scope}</strong>: ${r.old_value.toFixed(2)}% → ${r.new_value.toFixed(2)}% <span class="drift-negative">(${r.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
-        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${i.scope}</strong>: ${i.old_value.toFixed(2)}% → ${i.new_value.toFixed(2)}% <span class="drift-positive">(+${i.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
-        ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.scope}: <strong>${f.count}</strong> new action(s) from ${f.file||'import'}</div>`).join('')}</div>`:''}
-        ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${f.title} (was: ${f.old_status})</div>`).join('')}</div>`:''}
+        ${drift.regressions.length?`<div class="mb-8"><div class="field-label">Regressions</div>${drift.regressions.map(r=>`<div class="drift-card regression card mb-8" style="padding:8px 12px"><strong>${esc(r.scope||'')}</strong>: ${r.old_value.toFixed(2)}% → ${r.new_value.toFixed(2)}% <span class="drift-negative">(${r.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.improvements.length?`<div class="mb-8"><div class="field-label">Improvements</div>${drift.improvements.map(i=>`<div class="drift-card improvement card mb-8" style="padding:8px 12px"><strong>${esc(i.scope||'')}</strong>: ${i.old_value.toFixed(2)}% → ${i.new_value.toFixed(2)}% <span class="drift-positive">(+${i.delta.toFixed(2)}%)</span></div>`).join('')}</div>`:''}
+        ${drift.new_findings.length?`<div class="mb-8"><div class="field-label">New Findings</div>${drift.new_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${esc(f.scope||'')}: <strong>${f.count}</strong> new action(s) from ${esc(f.file||'import')}</div>`).join('')}</div>`:''}
+        ${drift.resolved_findings.length?`<div class="mb-8"><div class="field-label">Resolved</div>${drift.resolved_findings.map(f=>`<div style="font-size:13px;padding:4px 0">${esc(f.title||'')} (was: ${esc(f.old_status||'')})</div>`).join('')}</div>`:''}
       </div>`;
   }
 
@@ -2283,6 +2544,10 @@ async function doImport() {
   selectedFile=null;
   // Reload ZT reports after import
   if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+  // Show unlinked action dialog if any couldn't be matched to global actions
+  if(r.unlinked_actions && r.unlinked_actions.length > 0) {
+    setTimeout(() => handlePostImportUnlinked(state.activeTenant.name, r), 400);
+  }
 }
 
 function onSourceChange() {
@@ -2328,10 +2593,10 @@ async function loadZtReports(tenantName) {
     return `<tr>
       <td>${date}</td>
       <td>${execDate}</td>
-      <td>${r.report_domain || r.report_tenant_name || ''}</td>
+      <td>${esc(r.report_domain || r.report_tenant_name || '')}</td>
       <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
-      <td style="font-size:12px">${summaryText}</td>
-      <td>${r.tool_version || ''}</td>
+      <td style="font-size:12px">${esc(summaryText)}</td>
+      <td>${esc(r.tool_version || '')}</td>
       <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
     </tr>`;
   }).join('');
@@ -2358,7 +2623,7 @@ async function showZtReportDetail(reportId) {
   let overviewHtml = '';
   if(Object.keys(tenantOverview).length) {
     overviewHtml = '<div class="grid grid-4" style="margin:12px 0">' +
-      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k.replace(/([A-Z])/g,' $1').trim()}</div></div>`).join('') +
+      Object.entries(tenantOverview).map(([k,v]) => `<div class="stat-card"><div class="value">${esc(v)}</div><div class="label">${esc(k.replace(/([A-Z])/g,' $1').trim())}</div></div>`).join('') +
       '</div>';
   }
 
@@ -2374,10 +2639,10 @@ async function showZtReportDetail(reportId) {
   openModal('Zero Trust Report Details', `
     <div style="margin-bottom:16px">
       <div class="grid grid-2" style="gap:8px;font-size:13px">
-        <div><strong>Domain:</strong> ${r.report_domain||'—'}</div>
-        <div><strong>Tenant:</strong> ${r.report_tenant_name||'—'}</div>
-        <div><strong>Account:</strong> ${r.report_account||'—'}</div>
-        <div><strong>Tool Version:</strong> ${r.tool_version||'—'}</div>
+        <div><strong>Domain:</strong> ${esc(r.report_domain||'—')}</div>
+        <div><strong>Tenant:</strong> ${esc(r.report_tenant_name||'—')}</div>
+        <div><strong>Account:</strong> ${esc(r.report_account||'—')}</div>
+        <div><strong>Tool Version:</strong> ${esc(r.tool_version||'—')}</div>
         <div><strong>Executed:</strong> ${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</div>
         <div><strong>Imported:</strong> ${new Date(r.imported_at).toLocaleString()}</div>
       </div>
@@ -2405,19 +2670,19 @@ async function renderPlans() {
     html = plans.map(p => `
       <div class="card mb-16" style="cursor:pointer" onclick="viewPlan('${p.id}')">
         <div class="flex justify-between items-center">
-          <div class="card-header" style="margin:0">${p.name} <span class="badge badge-${statusColors[p.status]||'gray'}">${p.status}</span></div>
+          <div class="card-header" style="margin:0">${esc(p.name||'')} <span class="badge badge-${statusColors[p.status]||'gray'}">${esc(p.status||'')}</span></div>
           <div class="flex gap-8">
             <button class="btn btn-sm btn-primary" onclick="viewPlan('${p.id}');event.stopPropagation()">Open</button>
             <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}');event.stopPropagation()">Delete</button>
           </div>
         </div>
-        <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${p.description||'No description'}</p>
+        <p style="font-size:13px;color:var(--text-light);margin:8px 0 4px">${esc(p.description||'No description')}</p>
         <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap">
           <span>${p.item_count} actions</span>
-          ${p.responsible_person?`<span>&#128100; ${p.responsible_person}</span>`:''}
+          ${p.responsible_person?`<span>&#128100; ${esc(p.responsible_person)}</span>`:''}
           ${p.priority?`<span>${priorityBadge(p.priority)}</span>`:''}
-          ${p.implementation_effort?`<span>Effort: ${p.implementation_effort}</span>`:''}
-          ${p.start_date?`<span>${p.start_date}${p.end_date?' → '+p.end_date:''}</span>`:''}
+          ${p.implementation_effort?`<span>Effort: ${esc(p.implementation_effort)}</span>`:''}
+          ${p.start_date?`<span>${esc(p.start_date)}${p.end_date?' → '+esc(p.end_date):''}</span>`:''}
           <span style="color:var(--text-light)">Created ${p.created_at?.substring(0,10)}</span>
         </div>
       </div>`).join('');
@@ -2432,7 +2697,7 @@ async function showCreatePlan() {
   const inProgress = await api.get(`/api/tenants/${t}/actions?status=In Progress`);
   const allPending = [...actions, ...inProgress];
 
-  let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${a.title.substring(0,50)}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+  let rows = allPending.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-action-cb"></td><td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('');
 
   const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e==='Medium'?' selected':''}>${e}</option>`).join('');
   const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p==='Medium'?' selected':''}>${p}</option>`).join('');
@@ -2510,6 +2775,42 @@ async function viewPlan(planId) {
 
   let riskReduction = Object.entries(sim.risk_reduction||{}).map(([level,n]) => `<span class="badge badge-${level==='Critical'||level==='High'?'danger':'warning'}">${n}x ${level}</span>`).join(' ');
 
+  // Plan actions table with remove button
+  let planActionsRows = plan.items.map(item => {
+    const a = item;
+    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
+    const phaseOpts = [1,2,3].map(p => `<option value="${p}"${p===(a.phase||1)?' selected':''}>${p}</option>`).join('');
+    return `<tr>
+      <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
+      <td>${statusBadge(a.status||'ToDo')}</td>
+      <td>${priorityBadge(a.priority||'Medium')}</td>
+      <td style="font-size:12px">${esc(a.workload||'')}</td>
+      <td style="font-size:12px">${esc(a.implementation_effort||'')}</td>
+      <td>${scoreDisplay}</td>
+      <td><select style="padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:12px" title="Phase" onchange="updatePlanItemPhase('${planId}','${a.action_id}',this.value)">${phaseOpts}</select></td>
+      <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
+    </tr>`;
+  }).join('');
+
+  let phaseHtml = phases.map((ph,i) => `
+    <div class="card phase-card phase-${i+1} mb-16" data-phase="${i+1}"
+         ondragover="onPhaseDragOver(event,this)" ondragleave="onPhaseDragLeave(this)" ondrop="onPhaseDrop(event,'${planId}',${i+1})">
+      <div class="card-header">${esc(ph.name||'')} <span class="badge badge-info">${ph.action_count} actions</span>
+        <span style="font-size:11px;color:var(--text-light);margin-left:8px">&#8693; drag actions between phases</span>
+      </div>
+      <div class="grid grid-3 mb-8">
+        <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
+        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${esc(Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', '))}</div></div>
+        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${esc(ph.licences_needed.join(', ')||'None required')}</div></div>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th></th><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
+        ${ph.actions.map(a=>`<tr draggable="true" data-action-id="${a.action_id||a.id}" data-plan-id="${planId}"
+          ondragstart="onPhaseDragStart(event,'${a.action_id||a.id}','${planId}')"
+          style="cursor:grab">
+          <td style="width:24px;color:var(--text-light);font-size:16px">&#8597;</td>
+          <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`).join('');
   // Phase names
   const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
   const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
@@ -2574,7 +2875,7 @@ async function viewPlan(planId) {
 
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-8">
-        <h2 style="margin:0">${plan.name}</h2>
+        <h2 style="margin:0">${esc(plan.name||'')}</h2>
         <div class="flex gap-8 items-center">
           <select id="plan-status" onchange="updatePlanStatus('${planId}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${statusOpts}</select>
           <button class="btn btn-sm" onclick="showEditPlan('${planId}')">Edit</button>
@@ -2582,13 +2883,13 @@ async function viewPlan(planId) {
           <button class="btn btn-sm btn-danger" onclick="deletePlan('${planId}')">Delete</button>
         </div>
       </div>
-      <p style="color:var(--text-light);margin:0 0 8px">${plan.description||'No description'}</p>
+      <p style="color:var(--text-light);margin:0 0 8px">${esc(plan.description||'No description')}</p>
       <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap">
-        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${plan.responsible_person}</strong></div>`:''}
+        ${plan.responsible_person?`<div><span style="color:var(--text-light)">Responsible:</span> <strong>${esc(plan.responsible_person)}</strong></div>`:''}
         ${plan.priority?`<div><span style="color:var(--text-light)">Priority:</span> ${priorityBadge(plan.priority)}</div>`:''}
-        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${plan.implementation_effort}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
-        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${plan.start_date}</div>`:''}
-        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${plan.end_date}</div>`:''}
+        ${plan.implementation_effort?`<div><span style="color:var(--text-light)">Effort:</span> <strong>${esc(plan.implementation_effort)}</strong>${plan.implementation_effort==='Small'?' (within a day)':plan.implementation_effort==='Medium'?' (within a week)':plan.implementation_effort==='Large'?' (within a month)':''}</div>`:''}
+        ${plan.start_date?`<div><span style="color:var(--text-light)">Start:</span> ${esc(plan.start_date)}</div>`:''}
+        ${plan.end_date?`<div><span style="color:var(--text-light)">End:</span> ${esc(plan.end_date)}</div>`:''}
       </div>
     </div>
 
@@ -2605,6 +2906,7 @@ async function viewPlan(planId) {
         <button class="btn btn-sm" onclick="autoAssignPhases('${planId}')" title="Auto-assign actions to phases based on ROI, effort, and licence requirements">Auto-assign Phases</button>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
+      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th>Phase</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
     ${renderPhaseCard(1)}
     ${renderPhaseCard(2)}
@@ -2665,21 +2967,26 @@ async function updatePlanStatus(planId, status) {
   toast('Plan status updated to ' + status, 'success');
 }
 
+async function updatePlanItemPhase(planId, actionId, phase) {
+  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(phase)});
+  toast(`Moved to Phase ${phase}`, 'success');
+}
+
 async function showEditPlan(planId) {
   const plan = await api.get(`/api/plans/${planId}`);
   const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e===(plan.implementation_effort||'Medium')?' selected':''}>${e}</option>`).join('');
   const prioOpts = ['Critical','High','Medium','Low'].map(p => `<option value="${p}"${p===(plan.priority||'Medium')?' selected':''}>${p}</option>`).join('');
 
   openModal('Edit Plan', `
-    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${(plan.name||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${plan.description||''}</textarea></div>
+    <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${esc(plan.name||'')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${esc(plan.description||'')}</textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${plan.responsible_person||''}"></div>
+      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${esc(plan.responsible_person||'')}"></div>
       <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${plan.start_date||''}"></div>
-      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${plan.end_date||''}"></div>
+      <div class="form-group"><label>Start Date</label><input id="ep-start" type="date" value="${esc(plan.start_date||'')}"></div>
+      <div class="form-group"><label>End Date</label><input id="ep-end" type="date" value="${esc(plan.end_date||'')}"></div>
     </div>
     <div class="form-group"><label>Implementation Effort</label><select id="ep-effort">${effortOpts}</select>
       <div style="font-size:11px;color:var(--text-light);margin-top:2px">Small: Within a day &middot; Medium: Within a week &middot; Large: Within a month</div>
@@ -2705,7 +3012,7 @@ async function submitEditPlan(planId) {
 }
 
 async function removePlanItem(planId, actionId) {
-  if(!confirm('Remove this action from the plan?')) return;
+  if(!await showConfirm('Remove Action', 'Remove this action from the plan?', 'Remove', 'btn-danger')) return;
   await api.del(`/api/plans/${planId}/items/${actionId}`);
   toast('Action removed from plan', 'success');
   viewPlan(planId);
@@ -2725,7 +3032,7 @@ async function showAddActionsToPlan(planId) {
       '<button class="btn" onclick="closeModal()">Close</button>');
   }
 
-  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${a.title}</td><td>${priorityBadge(a.priority)}</td><td>${a.workload}</td><td>${a.implementation_effort}</td></tr>`).join('');
+  let rows = available.map(a => `<tr><td><input type="checkbox" value="${a.id}" class="plan-add-cb"></td><td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('');
 
   openModal('Add Actions to Plan', `
     <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${available.length} actions available (already in plan excluded)</div>
@@ -2775,14 +3082,14 @@ async function exportPlanPDF(planId) {
   (plan.items||[]).forEach(a => { statusCounts[a.status||'ToDo'] = (statusCounts[a.status||'ToDo']||0)+1; });
 
   let actionRows = (plan.items||[]).map((a,i) => `<tr>
-    <td>${i+1}</td><td>${a.title||''}</td><td>${a.status||''}</td><td>${a.priority||''}</td>
-    <td>${a.workload||''}</td><td>${a.implementation_effort||''}</td>
-    <td>${a.responsible||''}</td>
+    <td>${i+1}</td><td>${esc(a.title||'')}</td><td>${esc(a.status||'')}</td><td>${esc(a.priority||'')}</td>
+    <td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td>
+    <td>${esc(a.responsible||'')}</td>
     <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
   </tr>`).join('');
 
   const w = window.open('', '_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>${plan.name} - Plan Report</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(plan.name||'')} - Plan Report</title>
   <style>
     body{font-family:Arial,sans-serif;margin:40px;color:#1e293b;font-size:13px}
     h1{font-size:22px;margin-bottom:4px} h2{font-size:16px;margin-top:24px;border-bottom:2px solid #3b82f6;padding-bottom:4px}
@@ -2796,14 +3103,14 @@ async function exportPlanPDF(planId) {
     .green{color:#10b981} .red{color:#ef4444} .yellow{color:#f59e0b}
     @media print{body{margin:20px}}
   </style></head><body>
-  <h1>${plan.name}</h1>
-  <div class="meta">${tenant.display_name||tenant.name} &middot; ${today} &middot; Status: ${plan.status}</div>
-  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${plan.description}</p>`:''}
+  <h1>${esc(plan.name||'')}</h1>
+  <div class="meta">${esc(tenant.display_name||tenant.name||'')} &middot; ${today} &middot; Status: ${esc(plan.status||'')}</div>
+  ${plan.description?`<p style="margin:12px 0 0;color:#475569">${esc(plan.description)}</p>`:''}
 
   <h2>Plan Details</h2>
   <table>
     <tbody>
-      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${plan.responsible_person}</td></tr>`:''}
+      ${plan.responsible_person?`<tr><td style="width:180px;font-weight:600">Responsible</td><td>${esc(plan.responsible_person)}</td></tr>`:''}
       ${plan.start_date?`<tr><td style="font-weight:600">Start Date</td><td>${plan.start_date}</td></tr>`:''}
       ${plan.end_date?`<tr><td style="font-weight:600">End Date</td><td>${plan.end_date}</td></tr>`:''}
       ${plan.start_date&&plan.end_date?`<tr><td style="font-weight:600">Duration</td><td>${Math.ceil((new Date(plan.end_date)-new Date(plan.start_date))/(1000*60*60*24))} days</td></tr>`:''}
@@ -2824,7 +3131,7 @@ async function exportPlanPDF(planId) {
 
   <h2>By Priority</h2>
   <table><thead><tr><th>Priority</th><th>Count</th><th>Actions</th></tr></thead><tbody>
-  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${p}</td><td>${acts.length}</td><td style="font-size:11px">${acts.map(a=>a.title?.substring(0,40)).join(', ')}</td></tr>`).join('')}
+  ${Object.entries(byPriority).map(([p,acts])=>`<tr><td>${esc(p)}</td><td>${acts.length}</td><td style="font-size:11px">${esc(acts.map(a=>(a.title||'').substring(0,40)).join(', '))}</td></tr>`).join('')}
   </tbody></table>
 
   <h2>By Workload</h2>
@@ -2845,7 +3152,7 @@ async function exportPlanPDF(planId) {
 }
 
 async function deletePlan(id) {
-  if(!confirm('Delete this plan?')) return;
+  if(!await showConfirm('Delete Plan', 'Delete this plan and all its items? This cannot be undone.')) return;
   await api.del(`/api/plans/${id}`);
   toast('Plan deleted','success'); renderPlans();
 }
@@ -3050,13 +3357,13 @@ async function renderCorrelations() {
   let html = corr.map(g => `
     <div class="card mb-16">
       <div class="flex justify-between items-center">
-        <div class="card-header" style="margin:0">${g.canonical_name} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${g.overall_status}</span></div>
+        <div class="card-header" style="margin:0">${esc(g.canonical_name||'')} <span class="badge badge-${g.overall_status==='Completed'?'success':g.overall_status==='In Progress'?'info':'danger'}">${esc(g.overall_status||'')}</span></div>
         <button class="btn btn-sm" onclick="showAddActionToGroup('${g.group_id}','${g.canonical_name.replace(/'/g,"\\'")}')">+ Add Action</button>
       </div>
-      <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${g.description}</p>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(g.description||'')}</p>
       <div style="font-size:13px;margin-bottom:8px">Found in ${g.source_count} tools: ${g.sources.join(', ')}</div>
       <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>
-        ${g.actions.map(a=>`<tr><td style="font-size:12px">${a.source_tool}</td><td>${a.title.substring(0,60)}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
+        ${g.actions.map(a=>`<tr><td style="font-size:12px">${esc(a.source_tool||'')}</td><td>${esc((a.title||'').substring(0,60))}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -3074,8 +3381,8 @@ async function renderControlFamilies(tabBar) {
   let rows = groups.map(g => {
     const kw = (g.keywords||[]).join(', ');
     return `<tr>
-      <td style="font-weight:600">${g.canonical_name}</td>
-      <td style="font-size:12px;max-width:200px">${g.description||''}</td>
+      <td style="font-weight:600">${esc(g.canonical_name||'')}</td>
+      <td style="font-size:12px;max-width:200px">${esc(g.description||'')}</td>
       <td style="font-size:11px;max-width:400px;word-break:break-word">${kw}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick="editControlFamily('${g.id}')">Edit</button>
@@ -3130,9 +3437,9 @@ async function editControlFamily(id) {
   const g = groups.find(x=>x.id===id);
   if(!g) return toast('Family not found','error');
   openModal('Edit Control Family', `
-    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${g.canonical_name}"></div>
-    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${g.description||''}"></div>
-    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${(g.keywords||[]).join(', ')}</textarea></div>`,
+    <div class="field mb-16"><label class="field-label">Name</label><input id="cf-name" class="form-control" value="${esc(g.canonical_name||'')}"></div>
+    <div class="field mb-16"><label class="field-label">Description</label><input id="cf-desc" class="form-control" value="${esc(g.description||'')}"></div>
+    <div class="field mb-16"><label class="field-label">Keywords (comma-separated regex patterns)</label><textarea id="cf-kw" class="form-control" rows="4">${esc((g.keywords||[]).join(', '))}</textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditFamily('${id}')">Save</button>`);
 }
 
@@ -3148,7 +3455,7 @@ async function submitEditFamily(id) {
 }
 
 async function deleteControlFamily(id, name) {
-  if(!confirm(`Delete "${name}"? This will unlink all associated actions.`)) return;
+  if(!await showConfirm('Delete Correlation Family', `Delete "${name}"? This will unlink all associated actions.`)) return;
   await api.del(`/api/correlation-groups/${id}`);
   toast('Family deleted','success');
   renderCorrelations();
@@ -3161,7 +3468,7 @@ async function runCorrelation() {
 }
 
 async function unlinkActionFromGroup(actionId) {
-  if(!confirm('Remove this action from the correlation group?')) return;
+  if(!await showConfirm('Remove from Group', 'Remove this action from the correlation group?', 'Remove', 'btn-danger')) return;
   await api.post(`/api/actions/${actionId}/unlink`);
   toast('Action removed from group','success');
   renderCorrelations();
@@ -3176,8 +3483,8 @@ async function showAddActionToGroup(groupId, groupName) {
 
   let rows = uncorrelated.map(a => `<tr>
     <td><input type="checkbox" value="${a.id}" class="corr-add-cb"></td>
-    <td style="font-size:12px">${a.source_tool}</td>
-    <td>${a.title.substring(0,55)}</td>
+    <td style="font-size:12px">${esc(a.source_tool||'')}</td>
+    <td>${esc((a.title||'').substring(0,55))}</td>
     <td>${statusBadge(a.status)}</td>
   </tr>`).join('');
 
@@ -3325,16 +3632,16 @@ async function renderE8() {
     // M365 products & features
     const products = (d.m365_products||[]).map(p=>`<span class="badge badge-info" style="font-size:10px;margin:1px">${p}</span>`).join(' ');
     const allFeatures = [...new Set([...(d.m365_features||[]), ...(d.asd_technologies||[])])];
-    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${f}</div>`).join('');
+    const features = allFeatures.slice(0,8).map(f=>`<div style="font-size:11px;color:var(--text-light);padding:1px 0">• ${esc(f)}</div>`).join('');
 
     // Gap analysis
     let gapSection = '';
     if(d.gap_action_count > 0) {
       const gapRows = (d.gap_actions||[]).slice(0,10).map(a => `<tr>
-        <td style="font-size:11px">${a.maturity?.replace('Maturity ','')}</td>
-        <td style="font-size:12px">${(a.title||'').substring(0,50)}</td>
+        <td style="font-size:11px">${esc(a.maturity?.replace('Maturity ','')||'')}</td>
+        <td style="font-size:12px">${esc((a.title||'').substring(0,50))}</td>
         <td>${statusBadge(a.status)}</td>
-        <td style="font-size:11px">${a.source_tool||''}</td>
+        <td style="font-size:11px">${esc(a.source_tool||'')}</td>
       </tr>`).join('');
       gapSection = `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
         <div class="card-header" style="margin:0;font-size:13px;color:var(--danger)">Gap to Target: ${d.gap_action_count} actions needed</div>
@@ -3352,13 +3659,13 @@ async function renderE8() {
         if(!r || !r.requirements?.length) return '';
         const items = r.requirements.map(req =>
           `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--bg-hover)">
-            <code style="font-size:10px;color:var(--primary)">${req.id}</code> ${req.text.substring(0,120)}${req.text.length>120?'...':''}
-            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${req.ism.join(', ')}]</span>`:''}
+            <code style="font-size:10px;color:var(--primary)">${esc(req.id||'')}</code> ${esc((req.text||'').substring(0,120))}${req.text && req.text.length>120?'...':''}
+            ${req.ism?.length?`<span style="color:var(--text-light);font-size:10px"> [${esc(req.ism.join(', '))}]</span>`:''}
           </div>`
         ).join('');
-        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${r.m365_implementation}</div>` : '';
+        const implNote = r.m365_implementation ? `<div style="font-size:11px;color:var(--text-light);margin-top:6px;padding:6px;background:var(--bg-hover);border-radius:4px"><strong>M365:</strong> ${esc(r.m365_implementation)}</div>` : '';
         return `<div style="margin-bottom:8px">
-          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${ml.replace('Maturity ','')} (${r.requirement_count} requirements)</div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">${esc(ml.replace('Maturity ',''))} (${r.requirement_count} requirements)</div>
           ${items}${implNote}
         </div>`;
       }).join('');
@@ -3377,17 +3684,17 @@ async function renderE8() {
       if(a.status === 'Completed') sourceBreakdown[s].completed++;
     });
     const sourceBadges = Object.entries(sourceBreakdown).map(([s,c]) =>
-      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${s} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
+      `<span class="badge" style="background:var(--bg-hover);color:var(--text);font-size:10px;margin:1px">${esc(s)} <span style="color:var(--success)">${c.completed}</span>/${c.total}</span>`
     ).join(' ');
 
     // Action table
     let actionRows = (d.actions||[]).map(a => `<tr>
-      <td style="font-size:11px;font-family:monospace">${a.reference_id||''}</td>
-      <td style="font-size:12px">${a.source_tool||''}</td>
-      <td>${(a.title||'').substring(0,55)}</td>
+      <td style="font-size:11px;font-family:monospace">${esc(a.reference_id||'')}</td>
+      <td style="font-size:12px">${esc(a.source_tool||'')}</td>
+      <td>${esc((a.title||'').substring(0,55))}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
-      <td style="font-size:12px">${a.maturity?.replace('Maturity ','')||'—'}</td>
+      <td style="font-size:12px">${esc(a.maturity?.replace('Maturity ','')||'—')}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
       <td><button class="btn btn-sm" onclick="event.stopPropagation();removeE8Action('${a.id}')" title="Remove from E8 control" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
     </tr>`).join('');
@@ -3396,8 +3703,8 @@ async function renderE8() {
       <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('e8-detail-${idx}').classList.toggle('hidden')">
         <div>
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="card-header" style="margin:0;font-size:14px">${ctrl}</span>
-            <span style="font-size:11px;color:var(--text-light)">${d.control_id||''}</span>
+            <span class="card-header" style="margin:0;font-size:14px">${esc(ctrl)}</span>
+            <span style="font-size:11px;color:var(--text-light)">${esc(d.control_id||'')}</span>
           </div>
           <div style="font-size:12px;color:var(--text-light);margin-top:4px">
             ${d.completed_actions}/${d.total_actions} actions &middot;
@@ -3470,7 +3777,7 @@ async function renderE8() {
       const clr = md.total>0?'#fff':'var(--text-light)';
       return `<td style="text-align:center"><span class="badge" style="background:${bg};color:${clr};min-width:40px">${txt}</span></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${ctrl}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
+    return `<tr><td style="font-size:12px">${esc(ctrl)}</td><td>${mlBadge(d.achieved_maturity)}</td>${cells}</tr>`;
   }).join('');
 
   const radarChart = renderRadarChart(controls);
@@ -3534,7 +3841,7 @@ async function renderE8() {
             return c > 0 ? '<td style="text-align:center"><span class="badge badge-success" style="min-width:28px">'+c+'</span></td>'
                          : '<td style="text-align:center;color:var(--text-light)">—</td>';
           };
-          return '<tr><td style="font-size:12px">'+ctrl+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
+          return '<tr><td style="font-size:12px">'+esc(ctrl)+'</td>'+_tb('Secure Score')+_tb('SCuBA')+_tb('Zero Trust')+_tb('Manual')
             +'<td style="text-align:center;font-weight:600">'+(total||'<span style="color:var(--danger)">0</span>')+'</td></tr>';
         }).join('')}</tbody>
       </table></div>
@@ -3641,11 +3948,11 @@ async function renderScuba() {
       let rows = (grp.actions || []).map(a => {
         const cid = a.reference_id || a.source_id?.replace('scuba_','') || '';
         return `<tr>
-          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${cid}</td>
-          <td style="font-size:12px">${(a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90)}</td>
+          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${esc(cid)}</td>
+          <td style="font-size:12px">${esc((a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90))}</td>
           <td>${statusBadge(a.status)}</td>
           <td>${_scubaCritBadge(a.subcategory)}</td>
-          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.current_value||'').replace(/"/g,'&quot;')}">${a.current_value||''}</td>
+          <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.current_value||'')}">${esc(a.current_value||'')}</td>
         </tr>`;
       }).join('');
 
@@ -3654,7 +3961,7 @@ async function renderScuba() {
       return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px">
         <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-grp-${gi}').classList.toggle('hidden')">
           <div>
-            <div style="font-size:13px;font-weight:600">${grpName}</div>
+            <div style="font-size:13px;font-weight:600">${esc(grpName)}</div>
             <div style="font-size:11px;color:var(--text-light);margin-top:2px">
               <span class="badge badge-success" style="font-size:10px">Pass ${grp.pass}</span>
               <span class="badge badge-danger" style="font-size:10px">Fail ${grp.fail}</span>
@@ -3675,7 +3982,7 @@ async function renderScuba() {
     return `<div class="card mb-16">
       <div class="flex justify-between items-center" style="cursor:pointer" onclick="document.getElementById('scuba-prod-${pi}').classList.toggle('hidden')">
         <div>
-          <div class="card-header" style="margin:0;font-size:16px">${prod}</div>
+          <div class="card-header" style="margin:0;font-size:16px">${esc(prod)}</div>
           <div style="font-size:12px;color:var(--text-light);margin-top:4px">
             ${pd.pass}/${pd.total} passed &middot; ${pd.fail} failed &middot; ${pd.warning} warnings &middot; ${pd.na} N/A
             &middot; ${Object.keys(pd.groups||{}).length} groups
@@ -3697,12 +4004,12 @@ async function renderScuba() {
       const pr = r.total_controls > 0 ? Math.round(r.passed_controls / r.total_controls * 100) : 0;
       const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/scuba-reports/${r.id}/html','_blank')">Open Report</button>` : '';
       return `<tr>
-        <td>${r.imported_at?.substring(0,19) || ''}</td>
-        <td>${r.executed_at?.substring(0,19) || ''}</td>
-        <td>${r.report_tenant_name || ''}</td>
-        <td>${r.report_domain || ''}</td>
-        <td>${products}</td>
-        <td>${r.tool_version || ''}</td>
+        <td>${esc(r.imported_at?.substring(0,19) || '')}</td>
+        <td>${esc(r.executed_at?.substring(0,19) || '')}</td>
+        <td>${esc(r.report_tenant_name || '')}</td>
+        <td>${esc(r.report_domain || '')}</td>
+        <td>${esc(products)}</td>
+        <td>${esc(r.tool_version || '')}</td>
         <td>${gauge(pr, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
         <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
@@ -3810,10 +4117,10 @@ async function renderGitlabTemplates(tabBar) {
   const templates = await api.get(`/api/tenants/${t}/gitlab-templates`);
 
   let rows = templates.map(tpl => `<tr>
-    <td style="font-weight:600">${tpl.name}</td>
-    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${tpl.template_type}</span></td>
-    <td style="font-size:12px;max-width:300px">${tpl.title_template.substring(0,60)||'—'}</td>
-    <td style="font-size:11px">${(tpl.labels||[]).join(', ')||'—'}</td>
+    <td style="font-weight:600">${esc(tpl.name||'')}</td>
+    <td><span class="badge badge-${tpl.template_type==='assessment'?'info':'purple'}">${esc(tpl.template_type||'')}</span></td>
+    <td style="font-size:12px;max-width:300px">${esc((tpl.title_template||'').substring(0,60)||'—')}</td>
+    <td style="font-size:11px">${esc((tpl.labels||[]).join(', ')||'—')}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editGitlabTemplate('${tpl.id}')">Edit</button>
       <button class="btn btn-sm btn-danger" onclick="deleteGitlabTemplate('${tpl.id}','${tpl.name.replace(/'/g,"\\'")}')">Delete</button>
@@ -3864,11 +4171,11 @@ async function editGitlabTemplate(id) {
   const tpl = await api.get(`/api/gitlab-templates/${id}`);
   if(!tpl||tpl.error) return toast('Template not found','error');
   openModal('Edit GitLab Template', `
-    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${tpl.name||''}"></div>
+    <div class="form-group"><label>Template Name</label><input id="gt-name" value="${esc(tpl.name||'')}"></div>
     <div class="form-group"><label>Type</label><select id="gt-type"><option value="assessment" ${tpl.template_type==='assessment'?'selected':''}>Assessment Issue</option><option value="implementation" ${tpl.template_type==='implementation'?'selected':''}>Implementation Issue</option></select></div>
-    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${(tpl.title_template||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${tpl.body_template||''}</textarea></div>
-    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${(tpl.labels||[]).join(', ')}"></div>`,
+    <div class="form-group"><label>Issue Title Template</label><input id="gt-title" value="${esc(tpl.title_template||'')}"></div>
+    <div class="form-group"><label>Issue Body Template</label><textarea id="gt-body" rows="10" style="font-family:monospace;font-size:12px">${esc(tpl.body_template||'')}</textarea></div>
+    <div class="form-group"><label>Labels (comma-separated)</label><input id="gt-labels" value="${esc((tpl.labels||[]).join(', '))}"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditGitlabTemplate('${id}')">Save</button>`);
 }
 
@@ -3890,7 +4197,7 @@ async function submitEditGitlabTemplate(id) {
 }
 
 async function deleteGitlabTemplate(id, name) {
-  if(!confirm(`Delete template "${name}"?`)) return;
+  if(!await showConfirm('Delete Template', `Delete template "${name}"?`)) return;
   await api.del(`/api/gitlab-templates/${id}`);
   toast('Template deleted','success');
   renderExport();
@@ -3912,8 +4219,8 @@ async function renderPlanExport(tabBar) {
     return;
   }
 
-  const planOpts = plans.map(p=>`<option value="${p.id}">${p.name} (${p.item_count} actions)</option>`).join('');
-  const tplOpts = templates.map(t=>`<option value="${t.id}">${t.name} (${t.template_type})</option>`).join('');
+  const planOpts = plans.map(p=>`<option value="${p.id}">${esc(p.name||'')} (${p.item_count} actions)</option>`).join('');
+  const tplOpts = templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${esc(t.template_type||'')})</option>`).join('');
 
   document.getElementById('content').innerHTML = `${tabBar}
     <div class="card mb-16">
@@ -3940,9 +4247,9 @@ async function previewPlanExport() {
 
   let preview = r.issues.slice(0,5).map((iss,i) => `
     <div class="card mb-8" style="border-left:3px solid var(--primary)">
-      <div style="font-weight:600;margin-bottom:4px">${iss.title}</div>
-      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${iss.body.substring(0,500)}${iss.body.length>500?'...':''}</div>
-      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+l+'</span>').join(' ')}</div>` : ''}
+      <div style="font-weight:600;margin-bottom:4px">${esc(iss.title||'')}</div>
+      <div style="font-size:12px;color:var(--text-light);white-space:pre-wrap;max-height:150px;overflow-y:auto">${esc((iss.body||'').substring(0,500))}${iss.body && iss.body.length>500?'...':''}</div>
+      ${iss.labels.length ? `<div style="margin-top:4px">${iss.labels.map(l=>'<span class="badge badge-info">'+esc(l)+'</span>').join(' ')}</div>` : ''}
     </div>`).join('');
 
   document.getElementById('plan-export-result').innerHTML = `
@@ -3984,13 +4291,13 @@ async function renderHistory() {
   const t = state.activeTenant.name;
   const [imports, changelog] = await Promise.all([api.get(`/api/tenants/${t}/history`), api.get(`/api/tenants/${t}/changelog?limit=50`)]);
 
-  let impRows = imports.map(h => `<tr><td>${h.timestamp?.substring(0,19)}</td><td>${h.source_tool}</td><td>${h.file_path?.split('/').pop()?.split('\\\\').pop()}</td><td>${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
+  let impRows = imports.map(h => `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(h.file_path?.split('/').pop()?.split('\\\\').pop()||'')}</td><td>${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
 
   let clRows = changelog.map(h => {
     let desc = [];
     if(h.old_status) desc.push(`${h.old_status} → ${h.new_status}`);
     if(h.old_score!=null) desc.push(`Score: ${h.old_score} → ${h.new_score}`);
-    return `<tr><td>${h.timestamp?.substring(0,19)}</td><td>${h.action_title||''}</td><td>${h.source_tool||''}</td><td>${desc.join('; ')}</td><td>${h.changed_by||''}</td></tr>`;
+    return `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.action_title||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(desc.join('; '))}</td><td>${esc(h.changed_by||'')}</td></tr>`;
   }).join('');
 
   document.getElementById('content').innerHTML = `
@@ -4099,13 +4406,13 @@ async function renderTrending() {
   let driftRows = driftReports.map(d => {
     const cls = d.score_delta > 0 ? 'drift-positive' : d.score_delta < 0 ? 'drift-negative' : 'drift-neutral';
     return `<tr>
-      <td><code>${d.timestamp?.substring(0,16)}</code></td>
-      <td>${d.source_tool}</td>
+      <td><code>${esc(d.timestamp?.substring(0,16)||'')}</code></td>
+      <td>${esc(d.source_tool||'')}</td>
       <td class="${cls}">${d.score_delta>=0?'+':''}${d.score_delta?.toFixed(2)}%</td>
       <td>${d.score_before?.toFixed(2)}% → ${d.score_after?.toFixed(2)}%</td>
       <td>${d.regressions?.length||0}</td>
       <td>${d.improvements?.length||0}</td>
-      <td style="font-size:12px;max-width:200px">${d.summary}</td>
+      <td style="font-size:12px;max-width:200px">${esc(d.summary||'')}</td>
     </tr>`;
   }).join('');
 
@@ -4183,7 +4490,7 @@ async function renderCompliance() {
     for(const [fam, famData] of Object.entries(data.families||{})) {
       let controlRows = Object.entries(famData.controls||{}).map(([ctrlId, ctrl]) => {
         const statusCls = ctrl.status==='Completed'?'success':ctrl.status==='In Progress'?'info':'danger';
-        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${a.title.substring(0,50)} <span style="color:var(--text-light)">(${a.source_tool||''})</span></div>`).join('');
+        const actions = ctrl.actions.map(a=>`<div style="font-size:12px;padding:2px 0">${statusBadge(a.status)} ${esc((a.title||'').substring(0,50))} <span style="color:var(--text-light)">(${esc(a.source_tool||'')})</span></div>`).join('');
         return `<tr>
           <td><code style="font-size:12px">${ctrlId}</code></td>
           <td style="font-size:13px">${ctrl.control_name}</td>
@@ -4255,7 +4562,7 @@ async function renderRisks() {
   let expiredCards = summary.expired.map(a => `
     <div class="risk-card expired card mb-8">
       <div class="flex justify-between items-center">
-        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Expired: ${a.risk_expiry_date}</div></div>
+        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Expired: ${a.risk_expiry_date}</div></div>
         <button class="btn btn-sm btn-danger" onclick="showEditAction('${a.id}')">Review</button>
       </div>
     </div>`).join('');
@@ -4263,15 +4570,15 @@ async function renderRisks() {
   let upcomingCards = summary.upcoming_reviews.map(a => `
     <div class="risk-card upcoming card mb-8">
       <div class="flex justify-between items-center">
-        <div><strong>${a.title?.substring(0,50)}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${a.risk_owner||'N/A'} | Review by: ${a.risk_review_date}</div></div>
+        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Review by: ${a.risk_review_date}</div></div>
         <button class="btn btn-sm" onclick="showEditAction('${a.id}')">Review</button>
       </div>
     </div>`).join('');
 
   let acceptedRows = summary.accepted.map(a => `<tr>
-    <td>${a.title?.substring(0,45)}</td>
-    <td>${a.risk_owner||'N/A'}</td>
-    <td style="font-size:12px">${a.risk_justification?.substring(0,60)||'N/A'}</td>
+    <td>${esc((a.title||'').substring(0,45))}</td>
+    <td>${esc(a.risk_owner||'N/A')}</td>
+    <td style="font-size:12px">${esc(a.risk_justification?.substring(0,60)||'N/A')}</td>
     <td>${a.risk_accepted_at?.substring(0,10)||'N/A'}</td>
     <td>${a.risk_expiry_date||'No expiry'}</td>
     <td>${a.risk_review_date||'Not set'}</td>
@@ -4347,14 +4654,14 @@ async function loadActionDeps(actionId) {
     html += deps.depends_on.map(d => {
       const blocked = d.status !== 'Completed' && d.status !== 'Risk Accepted';
       return `<span class="dep-tag ${blocked?'blocked':''}">
-        ${blocked?'&#128274; ':'&#9989; '}${d.title?.substring(0,35)} (${d.status})
+        ${blocked?'&#128274; ':'&#9989; '}${esc((d.title||'').substring(0,35))} (${esc(d.status||'')})
         <button style="background:none;border:none;cursor:pointer;font-size:14px;color:#999" onclick="removeDep('${actionId}','${d.depends_on_id}');event.stopPropagation()">&times;</button>
       </span>`;
     }).join('');
   }
   if(deps.blocks.length) {
     html += `<div class="field-label mb-8 ${deps.depends_on.length?'mt-16':''}">Blocks</div>`;
-    html += deps.blocks.map(d => `<span class="dep-tag">${d.title?.substring(0,35)} (${d.status})</span>`).join('');
+    html += deps.blocks.map(d => `<span class="dep-tag">${esc((d.title||'').substring(0,35))} (${esc(d.status||'')})</span>`).join('');
   }
   el.innerHTML = `<div class="mb-16">${html}</div>`;
 }
@@ -4364,7 +4671,7 @@ function showAddDependency(actionId) {
   (async () => {
     const actions = await api.get(`/api/tenants/${state.activeTenant.name}/actions`);
     const otherActions = actions.filter(a => a.id !== actionId);
-    let options = otherActions.map(a => `<option value="${a.id}">${a.title.substring(0,60)} [${a.status}]</option>`).join('');
+    let options = otherActions.map(a => `<option value="${a.id}">${esc((a.title||'').substring(0,60))} [${esc(a.status||'')}]</option>`).join('');
     openModal('Add Dependency', `
       <p style="margin-bottom:12px;color:var(--text-light)">Select an action that must be completed before this one can proceed.</p>
       <div class="form-group"><label>Depends On</label><select id="dep-target">${options}</select></div>
@@ -4388,6 +4695,1032 @@ async function removeDep(actionId, dependsOnId) {
   toast('Dependency removed', 'success');
   loadActionDeps(actionId);
 }
+
+
+// ── Plan Phase Drag-and-Drop ──
+let _dragActionId = null;
+let _dragPlanId = null;
+
+function onPhaseDragStart(event, actionId, planId) {
+  _dragActionId = actionId;
+  _dragPlanId = planId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', actionId);
+}
+
+function onPhaseDragOver(event, el) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  el.classList.add('drag-over');
+}
+
+function onPhaseDragLeave(el) {
+  el.classList.remove('drag-over');
+}
+
+async function onPhaseDrop(event, planId, targetPhase) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+  const actionId = _dragActionId;
+  if(!actionId) return;
+  _dragActionId = null;
+  const r = await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: targetPhase});
+  if(r && r.error) return toast(r.error, 'error');
+  toast(`Moved to Phase ${targetPhase}`, 'success');
+  viewPlan(planId);
+}
+
+// ── Control Plane: Global Actions ──
+let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:''};
+
+async function renderCpGlobalActions() {
+  const t = state.activeTenant;
+  const params = new URLSearchParams(Object.fromEntries(Object.entries(_cpGaFilter).filter(([,v])=>v)));
+  const actions = await api.get('/api/control-plane/global-actions?' + params.toString());
+  const summary = await api.get('/api/control-plane/compliance-summary');
+  const tools = [...new Set(actions.map(a=>a.source_tool))].sort();
+  const workloads = [...new Set(actions.map(a=>a.workload))].sort();
+  const toolOpts = ['', ...tools].map(v=>`<option value="${esc(v)}" ${v===_cpGaFilter.source_tool?'selected':''}>${esc(v||'All Tools')}</option>`).join('');
+  const wlOpts = ['', ...workloads].map(v=>`<option value="${esc(v)}" ${v===_cpGaFilter.workload?'selected':''}>${esc(v||'All Workloads')}</option>`).join('');
+  const rvOpts = ['','To Review','Reviewed'].map(v=>`<option value="${v}" ${v===_cpGaFilter.review_status?'selected':''}>${v||'All Status'}</option>`).join('');
+  const totalActions = summary._total_actions || 0;
+
+  const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
+    <td><strong>${esc((a.title||'').substring(0,60))}</strong></td>
+    <td><span class="badge badge-info">${esc(a.source_tool||'')}</span></td>
+    <td>${esc(a.workload||'')}</td>
+    <td>${priorityBadge(a.priority)}</td>
+    <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${esc(a.review_status||'To Review')}</span></td>
+    <td style="text-align:center">${a.compliance_mapping_count||0}</td>
+    <td style="text-align:center">${a.tenant_action_count||0}</td>
+    <td onclick="event.stopPropagation()" style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="showCpGlobalActionDetail('${a.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteCpGlobalAction('${a.id}')">&#x2715;</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-4 mb-16">
+      <div class="card stat-card"><div class="value">${totalActions}</div><div class="label">Global Actions</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--warning)">${actions.filter(a=>a.review_status!=='Reviewed').length}</div><div class="label">To Review</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--success)">${actions.filter(a=>a.review_status==='Reviewed').length}</div><div class="label">Reviewed</div></div>
+      <div class="card stat-card"><div class="value" style="color:var(--purple)">${actions.filter(a=>a.compliance_mapping_count>0).length}</div><div class="label">Framework Mapped</div></div>
+    </div>
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Global Action Library</div>
+        <div class="flex gap-8 flex-wrap">
+          <button class="btn btn-primary btn-sm" onclick="showCreateCpGlobalAction()">+ New Action</button>
+          <button class="btn btn-sm" onclick="runCpMigration()">&#8635; Migrate from Tenants</button>
+        </div>
+      </div>
+      <div class="flex gap-8 mb-12 flex-wrap">
+        <select style="width:160px" onchange="_cpGaFilter.source_tool=this.value;renderCpGlobalActions()">${toolOpts}</select>
+        <select style="width:160px" onchange="_cpGaFilter.workload=this.value;renderCpGlobalActions()">${wlOpts}</select>
+        <select style="width:140px" onchange="_cpGaFilter.review_status=this.value;renderCpGlobalActions()">${rvOpts}</select>
+        <input placeholder="Search..." style="width:200px" value="${_cpGaFilter.search}" oninput="_cpGaFilter.search=this.value" onkeydown="if(event.key==='Enter')renderCpGlobalActions()">
+        <button class="btn btn-sm" onclick="renderCpGlobalActions()">Search</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Title</th><th>Source Tool</th><th>Workload</th><th>Priority</th><th>Review Status</th><th>Frameworks</th><th>Tenants</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:32px">No global actions found. Use "Migrate from Tenants" to import existing actions.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function runCpMigration() {
+  const r = await api.post('/api/control-plane/migrate', {});
+  if(r.error) return toast(r.error, 'error');
+  toast(`Migration complete: ${r.global_actions_created} new global actions, ${r.tenant_actions_linked} tenant actions linked`, 'success');
+  renderCpGlobalActions();
+}
+
+function showCreateCpGlobalAction() {
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const toolOpts = (state.enums.source_tools||[]).map(t=>`<option value="${t}">${t}</option>`).join('');
+  const prioOpts = (state.enums.priorities||[]).map(p=>`<option value="${p}">${p}</option>`).join('');
+  openModal('New Global Action', `
+    <div class="form-row"><div class="form-group"><label>Title</label><input id="cga-title" placeholder="Action title"></div>
+    <div class="form-group"><label>Source Tool</label><select id="cga-tool">${toolOpts}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Source ID</label><input id="cga-srcid" placeholder="e.g. MS.EXO.1.1v2"></div>
+    <div class="form-group"><label>Workload</label><select id="cga-workload">${wlOpts}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Priority</label><select id="cga-priority">${prioOpts}</select></div>
+    <div class="form-group"><label>Review Status</label><select id="cga-review"><option>To Review</option><option>Reviewed</option></select></div></div>
+    <div class="form-group"><label>Description</label><textarea id="cga-desc" rows="2"></textarea></div>
+    <div class="form-group"><label>Implementation Steps</label><textarea id="cga-steps" rows="3" placeholder="Step-by-step instructions..."></textarea></div>
+    <div class="form-group"><label>Risk Explanation</label><textarea id="cga-risk" rows="2" placeholder="Why this is a risk..."></textarea></div>
+    <div class="form-group"><label>Reference URL</label><input id="cga-url" placeholder="https://..."></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateCpGlobalAction()">Create</button>`);
+}
+
+async function submitCreateCpGlobalAction() {
+  const title = document.getElementById('cga-title').value.trim();
+  if(!title) return toast('Title required','error');
+  const r = await api.post('/api/control-plane/global-actions', {
+    title, source_tool: document.getElementById('cga-tool').value,
+    source_id: document.getElementById('cga-srcid').value,
+    workload: document.getElementById('cga-workload').value,
+    priority: document.getElementById('cga-priority').value,
+    review_status: document.getElementById('cga-review').value,
+    description: document.getElementById('cga-desc').value,
+    implementation_steps: document.getElementById('cga-steps').value,
+    risk_explanation: document.getElementById('cga-risk').value,
+    reference_url: document.getElementById('cga-url').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Global action created','success'); renderCpGlobalActions();
+}
+
+async function deleteCpGlobalAction(id) {
+  if(!await showConfirm('Delete Global Action','Delete this global action? Linked tenant actions will be unlinked but not deleted.')) return;
+  await api.del(`/api/control-plane/global-actions/${id}`);
+  toast('Deleted','success'); renderCpGlobalActions();
+}
+
+async function showCpGlobalActionDetail(id) {
+  const ga = await api.get(`/api/control-plane/global-actions/${id}`);
+  if(ga.error) return toast(ga.error,'error');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}" ${w===ga.workload?'selected':''}>${w}</option>`).join('');
+  const prioOpts = (state.enums.priorities||[]).map(p=>`<option value="${p}" ${p===ga.priority?'selected':''}>${p}</option>`).join('');
+  const rvOpts = ['To Review','Reviewed'].map(v=>`<option value="${v}" ${v===ga.review_status?'selected':''}>${v}</option>`).join('');
+  const fwOpts = (state.enums.compliance_frameworks||[]).map(f=>`<option value="${f}">${f}</option>`).join('');
+  const mappingRows = (ga.compliance_mappings||[]).map(m=>`<tr>
+    <td>${esc(m.framework||'')}</td><td>${esc(m.control_id||'')}</td><td>${esc(m.control_name||'')}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="deleteCpComplianceMapping('${id}',${m.id})">&#x2715;</button></td>
+  </tr>`).join('');
+  const tenantRows = (ga.linked_tenant_actions||[]).map(a=>`<tr>
+    <td>${esc(a.tenant_name||'')}</td><td>${esc((a.title||'').substring(0,50))}</td><td>${statusBadge(a.status)}</td>
+  </tr>`).join('');
+  openModal(`Global Action: ${(ga.title||'').substring(0,50)}`, `
+    <div class="action-tabs"><div class="atab active" onclick="switchTab(event,'ga-tab-details')">Details</div>
+    <div class="atab" onclick="switchTab(event,'ga-tab-compliance')">Compliance Mappings</div>
+    <div class="atab" onclick="switchTab(event,'ga-tab-tenants')">Tenant Instances (${ga.linked_tenant_actions?.length||0})</div></div>
+    <div class="action-tab-content active" id="ga-tab-details">
+      <div class="form-row"><div class="form-group"><label>Title</label><input id="gae-title" value="${esc(ga.title||'')}"></div>
+      <div class="form-group"><label>Workload</label><select id="gae-workload">${wlOpts}</select></div></div>
+      <div class="form-row"><div class="form-group"><label>Priority</label><select id="gae-priority">${prioOpts}</select></div>
+      <div class="form-group"><label>Review Status</label><select id="gae-review">${rvOpts}</select></div></div>
+      <div class="form-group"><label>Description</label><textarea id="gae-desc" rows="2">${esc(ga.description||'')}</textarea></div>
+      <div class="form-group"><label>Implementation Steps</label><textarea id="gae-steps" rows="4">${esc(ga.implementation_steps||'')}</textarea></div>
+      <div class="form-group"><label>Risk Explanation</label><textarea id="gae-risk" rows="3">${esc(ga.risk_explanation||'')}</textarea></div>
+      <div class="form-group"><label>Additional Info</label><textarea id="gae-info" rows="2">${esc(ga.additional_info||'')}</textarea></div>
+      <div class="form-group"><label>Reference URL</label><input id="gae-url" value="${esc(ga.reference_url||'')}"></div>
+    </div>
+    <div class="action-tab-content" id="ga-tab-compliance">
+      <div class="mb-12">
+        <div class="flex gap-8 mb-8">
+          <select id="cmap-fw" style="width:180px">${fwOpts}</select>
+          <input id="cmap-ctrl" placeholder="Control ID (e.g. IA-2)" style="width:130px">
+          <input id="cmap-name" placeholder="Control name" style="flex:1">
+          <button class="btn btn-sm btn-primary" onclick="addCpComplianceMapping('${id}')">+ Add</button>
+        </div>
+        <table><thead><tr><th>Framework</th><th>Control ID</th><th>Control Name</th><th></th></tr></thead>
+        <tbody>${mappingRows||'<tr><td colspan="4" style="color:var(--text-light)">No mappings yet</td></tr>'}</tbody></table>
+      </div>
+    </div>
+    <div class="action-tab-content" id="ga-tab-tenants">
+      ${tenantRows ? `<table><thead><tr><th>Tenant</th><th>Action Title</th><th>Status</th></tr></thead><tbody>${tenantRows}</tbody></table>` : '<p style="color:var(--text-light)">Not linked to any tenant actions yet. Run migration to link automatically.</p>'}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Close</button><button class="btn" onclick="showGaLinks('${id}')">&#128279; Link Equivalents</button><button class="btn btn-primary" onclick="saveCpGlobalAction('${id}')">Save Changes</button>`);
+}
+
+async function saveCpGlobalAction(id) {
+  const r = await api.put(`/api/control-plane/global-actions/${id}`, {
+    title: document.getElementById('gae-title').value,
+    workload: document.getElementById('gae-workload').value,
+    priority: document.getElementById('gae-priority').value,
+    review_status: document.getElementById('gae-review').value,
+    description: document.getElementById('gae-desc').value,
+    implementation_steps: document.getElementById('gae-steps').value,
+    risk_explanation: document.getElementById('gae-risk').value,
+    additional_info: document.getElementById('gae-info').value,
+    reference_url: document.getElementById('gae-url').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Saved','success'); renderCpGlobalActions();
+}
+
+async function addCpComplianceMapping(gaId) {
+  const framework = document.getElementById('cmap-fw').value;
+  const control_id = document.getElementById('cmap-ctrl').value.trim();
+  const control_name = document.getElementById('cmap-name').value.trim();
+  if(!control_id) return toast('Control ID required','error');
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/compliance`, {framework, control_id, control_name});
+  if(r.error) return toast(r.error,'error');
+  toast('Mapping added','success');
+  showCpGlobalActionDetail(gaId);
+}
+
+async function deleteCpComplianceMapping(gaId, mappingId) {
+  await api.del(`/api/control-plane/global-actions/${gaId}/compliance/${mappingId}`);
+  toast('Mapping removed','success');
+  showCpGlobalActionDetail(gaId);
+}
+
+function switchTab(event, tabId) {
+  const tabs = event.target.closest('.action-tabs');
+  if(!tabs) return;
+  tabs.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+  const panel = tabs.nextElementSibling;
+  if(!panel) return;
+  let el = panel;
+  while(el) {
+    if(el.classList && el.classList.contains('action-tab-content')) {
+      el.classList.toggle('active', el.id===tabId);
+    }
+    el = el.nextElementSibling;
+  }
+}
+
+
+// ── Control Plane: Cross-Tenant View ──
+async function renderCpCrossTenant() {
+  const data = await api.get('/api/control-plane/cross-tenant');
+  const tenants = data.tenants || [];
+  const globalActions = data.global_actions || [];
+  const statusColors = {
+    'Completed':'success','In Progress':'info','ToDo':'warning',
+    'Risk Accepted':'purple','Not Applicable':'gray','Warning':'danger'
+  };
+  const filterOpts = ['','Microsoft Secure Score','SCuBA (CISA)','Zero Trust Assessment','Manual']
+    .map(v=>`<option value="${v}">${v||'All Tools'}</option>`).join('');
+
+  const headerCols = tenants.map(t=>`<th style="min-width:90px;text-align:center">${t}</th>`).join('');
+  const rows = globalActions.map(ga => {
+    const tenantCols = tenants.map(t => {
+      const ts = ga.tenant_status[t];
+      if(!ts) return `<td style="text-align:center"><span style="color:var(--border)">—</span></td>`;
+      const color = statusColors[ts.status]||'gray';
+      return `<td style="text-align:center"><span class="badge badge-${color}" style="font-size:10px">${esc(ts.status||'')}</span></td>`;
+    }).join('');
+    return `<tr>
+      <td style="max-width:220px"><strong>${esc((ga.title||'').substring(0,55))}</strong></td>
+      <td><span class="badge badge-info" style="font-size:10px">${esc(ga.source_tool||'')}</span></td>
+      <td>${esc(ga.workload||'')}</td>
+      <td><span class="cp-status-badge ${ga.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${esc(ga.review_status||'')}</span></td>
+      ${tenantCols}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Implementation Status Across All Tenants</div>
+        <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
+      </div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+        Showing ${globalActions.length} global actions across ${tenants.length} tenants.
+        Actions without a tenant column entry are not yet imported for that tenant.
+      </div>
+      <div class="table-wrap" id="cross-tenant-table-wrap"><table id="cross-tenant-table">
+        <thead><tr><th>Action</th><th>Tool</th><th>Workload</th><th>Review</th>${headerCols}</tr></thead>
+        <tbody>${rows||'<tr><td colspan="20" style="text-align:center;padding:32px;color:var(--text-light)">No global actions. Run migration first.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function filterCrossTenantTable(tool) {
+  document.querySelectorAll('#cross-tenant-table tbody tr').forEach(row => {
+    if(!tool) { row.style.display=''; return; }
+    const toolCell = row.cells[1];
+    row.style.display = (toolCell && toolCell.textContent.includes(tool)) ? '' : 'none';
+  });
+}
+
+// ── Control Plane: Frameworks ──
+async function renderCpFrameworks() {
+  const tenants = await api.get('/api/tenants');
+  const allFrameworks = await api.get('/api/control-plane/tenant-frameworks');
+  const frameworks = (state.enums.compliance_frameworks || ['Essential Eight','NIST 800-53','CIS Microsoft 365','ISO 27001']);
+
+  const rows = tenants.map(t => {
+    const assigned = allFrameworks[t.name] || [];
+    const fwBadges = assigned.map(f=>`<span class="badge badge-info" style="margin:2px">${esc(f)}</span>`).join('');
+    const fwCheckboxes = frameworks.map(f=>`
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:4px 8px 4px 0;font-size:13px;cursor:pointer">
+        <input type="checkbox" value="${esc(f)}" ${assigned.includes(f)?'checked':''} onchange="toggleTenantFramework('${t.name}','${f}',this.checked)" style="width:16px;height:16px">
+        ${esc(f)}
+      </label>`).join('');
+    return `<tr>
+      <td><strong>${esc(t.display_name||t.name)}</strong></td>
+      <td>${fwBadges||'<span style="color:var(--text-light)">None assigned</span>'}</td>
+      <td>${fwCheckboxes}</td>
+    </tr>`;
+  }).join('');
+
+  const compSummary = await api.get('/api/control-plane/compliance-summary');
+  const summaryCards = frameworks.map(f => {
+    const count = compSummary[f] || 0;
+    const total = compSummary._total_actions || 1;
+    const pct = total ? Math.round(count/total*100) : 0;
+    return `<div class="card stat-card"><div class="value" style="font-size:20px">${count}</div>
+      <div class="label">${esc(f)}</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">${pct}% of actions mapped</div>
+      ${progressBar(pct)}</div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="card-header">Framework Coverage (Global Actions)</div>
+      <div class="grid grid-4">${summaryCards}</div>
+    </div>
+    <div class="card">
+      <div class="card-header mb-12">Tenant Framework Assignment</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">Select which compliance frameworks each tenant must follow. This controls which framework views and reports are shown per tenant.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tenant</th><th>Assigned Frameworks</th><th>Configure</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="3" style="text-align:center;color:var(--text-light)">No tenants found.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function toggleTenantFramework(tenantName, framework, checked) {
+  if(checked) {
+    await api.put(`/api/control-plane/tenants/${tenantName}/frameworks`, {
+      frameworks: [...(await api.get(`/api/control-plane/tenants/${tenantName}/frameworks`)), framework]
+    });
+  } else {
+    await api.del(`/api/control-plane/tenants/${tenantName}/frameworks/${encodeURIComponent(framework)}`);
+  }
+  toast(`${checked?'Added':'Removed'} ${framework} for ${tenantName}`, 'success');
+}
+
+// ── Control Plane: Users ──
+async function renderCpUsers() {
+  const users = await api.get('/api/control-plane/users');
+  const tenants = await api.get('/api/tenants');
+  const roleColors = {admin:'danger', analyst:'info', viewer:'gray', tenant_admin:'purple'};
+
+  const rows = users.map(u => {
+    const accessList = (u.tenant_access||[]).map(ta => {
+      const wls = ta.workloads?.length ? ` (${ta.workloads.join(', ')})` : ' (all workloads)';
+      return `<span class="badge badge-gray" style="margin:1px">${esc(ta.tenant_name)}${esc(wls)}</span>`;
+    }).join('');
+    return `<tr>
+      <td><strong>${esc(u.display_name||u.username)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(u.username)}</span></td>
+      <td>${esc(u.email||'—')}</td>
+      <td><span class="badge badge-${roleColors[u.role]||'gray'}">${esc(u.role||'')}</span></td>
+      <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
+      <td>${accessList||'<span style="color:var(--text-light);font-size:12px">${u.role==="admin"?"Full access":"No tenant access"}</span>'}</td>
+      <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')">&#x2715;</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>`;
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <div class="flex justify-between items-center mb-8">
+        <div class="card-header" style="margin:0">Application Users (${users.length})</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Tenant Access</th><th>Last Login</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light)">No users found.</td></tr>'}</tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header">Role Descriptions</div>
+      <div class="grid grid-4" style="margin-top:8px">
+        <div><span class="badge badge-danger">admin</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Full access to all tenants, users, and control plane settings.</p></div>
+        <div><span class="badge badge-purple">tenant_admin</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Can manage assigned tenants including imports and plans.</p></div>
+        <div><span class="badge badge-info">analyst</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Read and write access to assigned tenants and workloads.</p></div>
+        <div><span class="badge badge-gray">viewer</span><p style="font-size:12px;margin-top:4px;color:var(--text-light)">Read-only access to assigned tenants and workloads.</p></div>
+      </div>
+    </div>`;
+}
+
+function showCreateUser() {
+  const roleOpts = ['admin','tenant_admin','analyst','viewer'].map(r=>`<option value="${r}">${r}</option>`).join('');
+  openModal('Create User', `
+    <div class="form-row">
+      <div class="form-group"><label>Username</label><input id="cu-username" placeholder="jsmith"></div>
+      <div class="form-group"><label>Display Name</label><input id="cu-display" placeholder="John Smith"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email</label><input id="cu-email" type="email" placeholder="jsmith@company.com"></div>
+      <div class="form-group"><label>Role</label><select id="cu-role">${roleOpts}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Password</label><input id="cu-pw" type="password" placeholder="Min 6 characters"></div>
+      <div class="form-group"><label>Confirm Password</label><input id="cu-pw2" type="password"></div>
+    </div>
+    <div class="form-group" id="cu-tenant-wrap">
+      <label>Tenant Access (leave empty for role-based access)</label>
+      <div id="cu-tenant-list"></div>
+      <button class="btn btn-sm mt-8" type="button" onclick="addTenantAccessRow('cu-tenant-list')">+ Add Tenant Access</button>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>`);
+}
+
+function addTenantAccessRow(containerId) {
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${esc(t.display_name||t.name)}</option>`).join('');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'flex gap-8 mb-8 tenant-access-row';
+  div.innerHTML = `<select class="ta-tenant" style="flex:1">${tenantOpts}</select>
+    <select class="ta-workload" multiple style="flex:1;height:60px">${wlOpts}</select>
+    <button class="btn btn-sm btn-danger" type="button" onclick="this.closest('.tenant-access-row').remove()">&#x2715;</button>`;
+  document.getElementById(containerId).appendChild(div);
+}
+
+function collectTenantAccess(containerId) {
+  const rows = document.querySelectorAll(`#${containerId} .tenant-access-row`);
+  return Array.from(rows).map(row => {
+    const tenant = row.querySelector('.ta-tenant').value;
+    const workloads = Array.from(row.querySelectorAll('.ta-workload option:checked')).map(o=>o.value);
+    return {tenant_name: tenant, workloads};
+  });
+}
+
+async function submitCreateUser() {
+  const username = document.getElementById('cu-username').value.trim();
+  const pw = document.getElementById('cu-pw').value;
+  const pw2 = document.getElementById('cu-pw2').value;
+  if(!username) return toast('Username required','error');
+  if(pw !== pw2) return toast('Passwords do not match','error');
+  if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+  const r = await api.post('/api/control-plane/users', {
+    username, password: pw,
+    display_name: document.getElementById('cu-display').value,
+    email: document.getElementById('cu-email').value,
+    role: document.getElementById('cu-role').value,
+    tenant_access: collectTenantAccess('cu-tenant-list'),
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('User created','success'); renderCpUsers();
+}
+
+async function showEditUser(userId) {
+  const user = await api.get(`/api/control-plane/users/${userId}`);
+  if(user.error) return toast(user.error,'error');
+  const roleOpts = ['admin','tenant_admin','analyst','viewer'].map(r=>`<option value="${r}" ${r===user.role?'selected':''}>${r}</option>`).join('');
+  const activeOpts = [1,0].map(v=>`<option value="${v}" ${(user.is_active?1:0)===v?'selected':''}>${v?'Active':'Inactive'}</option>`).join('');
+  const tenantOpts = state.tenants.map(t=>`<option value="${t.name}">${esc(t.display_name||t.name)}</option>`).join('');
+  const wlOpts = (state.enums.workloads||[]).map(w=>`<option value="${w}">${w}</option>`).join('');
+  const existingAccess = (user.tenant_access||[]).map(ta => {
+    const wlSel = (state.enums.workloads||[]).map(w=>`<option value="${w}" ${(ta.workloads||[]).includes(w)?'selected':''}>${w}</option>`).join('');
+    const tSel = state.tenants.map(t=>`<option value="${t.name}" ${t.name===ta.tenant_name?'selected':''}>${esc(t.display_name||t.name)}</option>`).join('');
+    return `<div class="flex gap-8 mb-8 tenant-access-row">
+      <select class="ta-tenant" style="flex:1">${tSel}</select>
+      <select class="ta-workload" multiple style="flex:1;height:60px">${wlSel}</select>
+      <button class="btn btn-sm btn-danger" type="button" onclick="this.closest('.tenant-access-row').remove()">&#x2715;</button>
+    </div>`;
+  }).join('');
+
+  openModal(`Edit User: ${user.display_name||user.username}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Display Name</label><input id="eu-display" value="${esc(user.display_name||'')}"></div>
+      <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${esc(user.email||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label><select id="eu-role">${roleOpts}</select></div>
+      <div class="form-group"><label>Status</label><select id="eu-active">${activeOpts}</select></div>
+    </div>
+    <div class="form-group"><label>New Password (leave blank to keep current)</label><input id="eu-pw" type="password" placeholder="Leave blank to keep current"></div>
+    <div class="form-group">
+      <label>Tenant Access</label>
+      <div id="eu-tenant-list">${existingAccess}</div>
+      <button class="btn btn-sm mt-8" type="button" onclick="addTenantAccessRow('eu-tenant-list')">+ Add Tenant Access</button>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser('${userId}')">Save</button>`);
+}
+
+async function submitEditUser(userId) {
+  const pw = document.getElementById('eu-pw').value;
+  const updates = {
+    display_name: document.getElementById('eu-display').value,
+    email: document.getElementById('eu-email').value,
+    role: document.getElementById('eu-role').value,
+    is_active: parseInt(document.getElementById('eu-active').value),
+    tenant_access: collectTenantAccess('eu-tenant-list'),
+  };
+  if(pw) {
+    if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+    updates.password = pw;
+  }
+  const r = await api.put(`/api/control-plane/users/${userId}`, updates);
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('User updated','success'); renderCpUsers();
+}
+
+async function deleteUser(userId, username) {
+  if(!await showConfirm('Delete User', `Delete user "${username}"? This cannot be undone.`)) return;
+  const r = await api.del(`/api/control-plane/users/${userId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('User deleted','success'); renderCpUsers();
+}
+
+
+
+// ── Control Plane: Tenant Management ──
+async function renderCpTenants() {
+  const tenants = await api.get('/api/tenants');
+  const allFw = await api.get('/api/control-plane/tenant-frameworks');
+  const allUsers = await api.get('/api/control-plane/users');
+
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-primary" onclick="showCreateTenantCp()">+ New Tenant</button>`;
+
+  const rows = tenants.map(t => {
+    const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${esc(f)}</span>`).join('');
+    const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
+    const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${esc(u.display_name||u.username)}</span>`).join('');
+    return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
+      <td><strong>${esc(t.display_name||t.name)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
+      <td>${t.action_count||0}</td>
+      <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
+      <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
+      <td style="font-size:12px;color:var(--text-light)">${esc(t.created_at?t.created_at.substring(0,10):'')}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="btn btn-sm" onclick="showCpTenantDetail('${t.name}')">Configure</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTenantCp('${t.name}')">&#x2715;</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-4 mb-16">
+      <div class="card stat-card"><div class="value">${tenants.length}</div><div class="label">Total Tenants</div></div>
+      <div class="card stat-card"><div class="value">${tenants.reduce((s,t)=>s+(t.action_count||0),0)}</div><div class="label">Total Actions</div></div>
+      <div class="card stat-card"><div class="value">${tenants.filter(t=>(allFw[t.name]||[]).length>0).length}</div><div class="label">Framework Assigned</div></div>
+      <div class="card stat-card"><div class="value">${allUsers.length}</div><div class="label">Users</div></div>
+    </div>
+    <div class="card">
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Tenant Overview</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateTenantCp()">+ New Tenant</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tenant</th><th>Actions</th><th>Frameworks</th><th>Users</th><th>Created</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light)">No tenants yet.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function showCpTenantDetail(tenantName) {
+  const tenant = await api.get(`/api/tenants/${tenantName}`);
+  const frameworks = await api.get(`/api/control-plane/tenants/${tenantName}/frameworks`);
+  const allFwList = state.enums.compliance_frameworks||['Essential Eight','NIST 800-53','CIS Microsoft 365','ISO 27001'];
+  const allUsers = await api.get('/api/control-plane/users');
+  const unlinked = await api.get(`/api/control-plane/unlinked-actions?tenant=${tenantName}`);
+
+  const fwChecks = allFwList.map(f=>`
+    <label style="display:inline-flex;align-items:center;gap:8px;margin:6px 16px 6px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" value="${f}" ${frameworks.includes(f)?'checked':''} onchange="toggleTenantFramework('${tenantName}','${f}',this.checked)" style="width:16px;height:16px"> ${f}
+    </label>`).join('');
+
+  const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===tenantName));
+  const allOtherUsers = allUsers.filter(u=>u.role!=='admin'&&!(u.tenant_access||[]).some(ta=>ta.tenant_name===tenantName));
+
+  const userRows = usersWithAccess.map(u=>{
+    const ta = (u.tenant_access||[]).find(x=>x.tenant_name===tenantName);
+    const wls = ta?.workloads?.length ? ta.workloads.join(', ') : (u.role==='admin'?'Full access':'All workloads');
+    return `<tr><td>${esc(u.display_name||u.username)}</td><td><span class="badge badge-gray">${esc(u.role||'')}</span></td>
+      <td style="font-size:12px">${wls}</td>
+      <td>${u.role!=='admin'?`<button class="btn btn-sm btn-danger" onclick="removeTenantUser('${u.id}','${tenantName}')">Revoke</button>`:'<span style="color:var(--text-light);font-size:11px">Always</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const addUserOpts = allOtherUsers.map(u=>`<option value="${u.id}">${esc(u.display_name||u.username)} (${esc(u.role||'')})</option>`).join('');
+
+  openModal(`Tenant: ${tenant.display_name||tenantName}`, `
+    <div class="action-tabs">
+      <div class="atab active" onclick="switchTab(event,'cpt-general')">General</div>
+      <div class="atab" onclick="switchTab(event,'cpt-frameworks')">Frameworks</div>
+      <div class="atab" onclick="switchTab(event,'cpt-users')">Users (${usersWithAccess.length})</div>
+      <div class="atab" onclick="switchTab(event,'cpt-unlinked')">Unlinked Actions (${unlinked.length})</div>
+    </div>
+    <div class="action-tab-content active" id="cpt-general">
+      <div class="form-row">
+        <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${esc(tenant.display_name||'')}"></div>
+        <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${esc(tenant.tenant_id||'')}"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
+      <div style="margin-top:12px"><button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button></div>
+    </div>
+    <div class="action-tab-content" id="cpt-frameworks">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select which compliance frameworks this tenant must follow.</p>
+      <div>${fwChecks}</div>
+    </div>
+    <div class="action-tab-content" id="cpt-users">
+      <div class="table-wrap mb-12"><table><thead><tr><th>User</th><th>Role</th><th>Workload Access</th><th></th></tr></thead>
+        <tbody>${userRows||'<tr><td colspan="4" style="color:var(--text-light)">No users assigned</td></tr>'}</tbody>
+      </table></div>
+      ${addUserOpts?`<div class="flex gap-8">
+        <select id="cpt-add-user" style="flex:1">${addUserOpts}</select>
+        <button class="btn btn-sm btn-primary" onclick="grantTenantUser('${tenantName}')">+ Grant Access</button>
+      </div>`:'<p style="font-size:12px;color:var(--text-light)">All users already have access.</p>'}
+    </div>
+    <div class="action-tab-content" id="cpt-unlinked">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">These actions have no global action link. Link them manually or auto-create them in the Control Plane.</p>
+      ${unlinked.length ? `
+        <div class="flex gap-8 mb-8">
+          <button class="btn btn-sm btn-primary" onclick="autoCreateUnlinked('${tenantName}')">&#x2795; Auto-create all in Control Plane</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th></th></tr></thead>
+        <tbody>${unlinked.map(a=>`<tr>
+          <td>${esc((a.title||'').substring(0,50))}</td>
+          <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+          <td style="font-size:11px;color:var(--text-light)">${esc(a.source_id||'—')}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td><button class="btn btn-sm" onclick="showLinkUnlinkedAction('${a.id}','${tenantName}')">Link</button>
+          <button class="btn btn-sm btn-primary" onclick="createGlobalFromAction('${a.id}','${tenantName}')">Create in CP</button></td>
+        </tr>`).join('')}</tbody></table></div>` :
+        '<div style="padding:20px;text-align:center;color:var(--success)">&#10003; All actions are linked to global actions.</div>'}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
+}
+
+async function saveTenantConfigCp(tenantName) {
+  const r = await api.put(`/api/tenants/${tenantName}`, {
+    display_name: document.getElementById('cpt-display').value,
+    tenant_id: document.getElementById('cpt-tid').value,
+    notes: document.getElementById('cpt-notes').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  toast('Tenant updated','success');
+}
+
+async function grantTenantUser(tenantName) {
+  const userId = document.getElementById('cpt-add-user').value;
+  if(!userId) return;
+  await api.post(`/api/control-plane/users/${userId}/tenant-access`, {tenant_name: tenantName, workloads: []});
+  toast('Access granted','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function removeTenantUser(userId, tenantName) {
+  await api.del(`/api/control-plane/users/${userId}/tenant-access/${tenantName}`);
+  toast('Access revoked','success');
+  showCpTenantDetail(tenantName);
+}
+
+function showCreateTenantCp() {
+  openModal('Create New Tenant', `
+    <div class="form-row">
+      <div class="form-group"><label>Internal Name (slug)</label><input id="nt-name" placeholder="contoso-prod"></div>
+      <div class="form-group"><label>Display Name</label><input id="nt-display" placeholder="Contoso Production"></div>
+    </div>
+    <div class="form-group"><label>Azure Tenant ID</label><input id="nt-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2"></textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateTenantCp()">Create</button>`);
+}
+
+async function submitCreateTenantCp() {
+  const name = document.getElementById('nt-name').value.trim();
+  if(!name) return toast('Internal name required','error');
+  const r = await api.post('/api/tenants', {
+    name, display_name: document.getElementById('nt-display').value,
+    tenant_id: document.getElementById('nt-tid').value,
+    notes: document.getElementById('nt-notes').value,
+  });
+  if(r.error) return toast(r.error,'error');
+  state.tenants = await api.get('/api/tenants');
+  closeModal(); toast('Tenant created','success'); renderCpTenants();
+}
+
+async function deleteTenantCp(name) {
+  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and ALL its data including actions, plans and reports? This cannot be undone.`)) return;
+  const r = await api.del(`/api/tenants/${name}`);
+  if(r && r.error) return toast(r.error,'error');
+  state.tenants = await api.get('/api/tenants');
+  toast('Tenant deleted','success'); renderCpTenants();
+}
+
+async function autoCreateUnlinked(tenantName) {
+  const r = await api.post('/api/control-plane/migrate', {tenant_name: tenantName});
+  if(r.error) return toast(r.error,'error');
+  toast(`Created ${r.global_actions_created} global actions, linked ${r.tenant_actions_linked} actions`,'success');
+  showCpTenantDetail(tenantName);
+}
+
+async function showLinkUnlinkedAction(actionId, tenantName) {
+  const globalActions = await api.get('/api/control-plane/global-actions');
+  const opts = globalActions.map(ga=>`<option value="${ga.id}">${esc(ga.source_tool||'')} · ${esc((ga.title||'').substring(0,60))}</option>`).join('');
+  openModal('Link to Global Action', `
+    <p style="margin-bottom:12px;color:var(--text-light)">Select the global action this tenant action corresponds to.</p>
+    <div class="form-group"><label>Global Action</label>
+      <select id="link-ga-select" style="width:100%">${opts}</select>
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="submitLinkAction('${actionId}','${tenantName}')">Link</button>`);
+}
+
+async function submitLinkAction(actionId, tenantName) {
+  const gaId = document.getElementById('link-ga-select').value;
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/link-action`, {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Action linked','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function createGlobalFromAction(actionId, tenantName) {
+  const r = await api.post('/api/control-plane/create-from-action', {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  toast('Global action created and linked','success');
+  showCpTenantDetail(tenantName);
+}
+
+// ── Control Plane: Correlations ──
+async function renderCpCorrelations() {
+  const groups = await api.get('/api/control-plane/correlation-groups');
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-primary" onclick="showCreateCorrelationGroup()">+ New Group</button>`;
+
+  const rows = (groups||[]).map(g => `<tr>
+    <td><strong>${esc(g.canonical_name||'')}</strong></td>
+    <td style="font-size:12px;color:var(--text-light);max-width:200px">${esc((g.description||'').substring(0,80))}</td>
+    <td style="font-size:12px">${(g.keywords||[]).slice(0,5).join(', ')}</td>
+    <td style="text-align:center">${g.action_count||0}</td>
+    <td>
+      <button class="btn btn-sm" onclick="showEditCorrelationGroup('${g.id}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteCorrelationGroup('${g.id}')">&#x2715;</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16">
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+        Correlation groups link actions from different source tools (SCuBA, ZeroTrust, Secure Score) that address the same security topic.
+        Actions in the same group are shown together in the Correlations view.
+      </p>
+      <div class="flex justify-between items-center mb-12">
+        <div class="card-header" style="margin:0">Correlation Groups (${(groups||[]).length})</div>
+        <button class="btn btn-primary btn-sm" onclick="showCreateCorrelationGroup()">+ New Group</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Group Name</th><th>Description</th><th>Keywords</th><th>Actions</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-light)">No correlation groups. They are created automatically during import.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function showCreateCorrelationGroup() {
+  openModal('New Correlation Group', `
+    <div class="form-group"><label>Group Name</label><input id="cg-name" placeholder="e.g. Multi-Factor Authentication"></div>
+    <div class="form-group"><label>Description</label><textarea id="cg-desc" rows="2" placeholder="What security topic does this group address?"></textarea></div>
+    <div class="form-group"><label>Keywords (comma-separated)</label><input id="cg-kw" placeholder="mfa, multi-factor, authenticator, phishing-resistant"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateCorrelationGroup()">Create</button>`);
+}
+
+async function submitCreateCorrelationGroup() {
+  const name = document.getElementById('cg-name').value.trim();
+  if(!name) return toast('Name required','error');
+  const keywords = document.getElementById('cg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  const r = await api.post('/api/control-plane/correlation-groups', {
+    canonical_name: name,
+    description: document.getElementById('cg-desc').value,
+    keywords,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Group created','success'); renderCpCorrelations();
+}
+
+async function showEditCorrelationGroup(groupId) {
+  const groups = await api.get('/api/control-plane/correlation-groups');
+  const g = groups.find(x=>x.id===groupId);
+  if(!g) return;
+  openModal('Edit Correlation Group', `
+    <div class="form-group"><label>Group Name</label><input id="eg-name" value="${esc(g.canonical_name||'')}"></div>
+    <div class="form-group"><label>Description</label><textarea id="eg-desc" rows="2">${esc(g.description||'')}</textarea></div>
+    <div class="form-group"><label>Keywords (comma-separated)</label><input id="eg-kw" value="${(g.keywords||[]).join(', ')}"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditCorrelationGroup('${groupId}')">Save</button>`);
+}
+
+async function submitEditCorrelationGroup(groupId) {
+  const keywords = document.getElementById('eg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
+  const r = await api.put(`/api/control-plane/correlation-groups/${groupId}`, {
+    canonical_name: document.getElementById('eg-name').value,
+    description: document.getElementById('eg-desc').value,
+    keywords,
+  });
+  if(r.error) return toast(r.error,'error');
+  closeModal(); toast('Saved','success'); renderCpCorrelations();
+}
+
+async function deleteCorrelationGroup(groupId) {
+  if(!await showConfirm('Delete Group','Delete this correlation group? Actions will be unlinked but not deleted.')) return;
+  await api.del(`/api/control-plane/correlation-groups/${groupId}`);
+  toast('Deleted','success'); renderCpCorrelations();
+}
+
+
+// ── Control Plane: Action Linking (cross-tool equivalences) ──
+async function showGaLinks(gaId) {
+  const ga = await api.get(`/api/control-plane/global-actions/${gaId}`);
+  const links = await api.get(`/api/control-plane/global-actions/${gaId}/links`);
+  const allActions = await api.get('/api/control-plane/global-actions');
+  const linkedIds = new Set([gaId, ...(links||[]).map(l=>l.id)]);
+  const available = allActions.filter(a=>!linkedIds.has(a.id));
+  const availOpts = available.map(a=>`<option value="${a.id}">[${esc(a.source_tool||'')}] ${esc((a.title||'').substring(0,60))}</option>`).join('');
+
+  const linkRows = (links||[]).map(l=>`<tr>
+    <td>${esc((l.title||'').substring(0,55))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(l.source_tool||'')}</span></td>
+    <td>${l.workload||''}</td>
+    <td style="font-size:11px;color:var(--text-light)">${esc(l.notes||'')}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="unlinkGlobalAction('${gaId}','${l.link_id}')">Unlink</button></td>
+  </tr>`).join('');
+
+  openModal(`Linked Equivalents: ${(ga.title||'').substring(0,40)}`, `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+      Link global actions from different source tools that represent the same security control.
+      Linked actions share status awareness — completing one highlights the others.
+    </p>
+    <div class="table-wrap mb-16"><table>
+      <thead><tr><th>Linked Action</th><th>Tool</th><th>Workload</th><th>Notes</th><th></th></tr></thead>
+      <tbody>${linkRows||'<tr><td colspan="5" style="color:var(--text-light);padding:12px">No linked actions yet.</td></tr>'}</tbody>
+    </table></div>
+    ${availOpts ? `<div class="flex gap-8">
+      <select id="link-target-select" style="flex:1">${availOpts}</select>
+      <input id="link-notes" placeholder="Why equivalent?" style="width:200px">
+      <button class="btn btn-sm btn-primary" onclick="addGaLink('${gaId}')">+ Link</button>
+    </div>` : '<p style="font-size:12px;color:var(--text-light)">All actions are already linked.</p>'}`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
+}
+
+async function addGaLink(gaId) {
+  const targetId = document.getElementById('link-target-select').value;
+  const notes = document.getElementById('link-notes').value;
+  if(!targetId) return toast('Select an action to link','error');
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/links`, {target_id: targetId, notes});
+  if(r.error) return toast(r.error,'error');
+  toast('Actions linked as equivalent','success');
+  showGaLinks(gaId);
+}
+
+async function unlinkGlobalAction(gaId, linkId) {
+  await api.del(`/api/control-plane/global-actions/${gaId}/links/${linkId}`);
+  toast('Link removed','success');
+  showGaLinks(gaId);
+}
+
+// ── Control Plane: Merge Global Actions ──
+let _mergeSelection = new Set();
+
+async function renderMergeTool() {
+  _mergeSelection.clear();
+  const actions = await api.get('/api/control-plane/global-actions');
+
+  // Group by source_id to highlight likely duplicates
+  const byTitle = {};
+  actions.forEach(a => {
+    const key = (a.title||'').toLowerCase().replace(/\s+/g,' ').trim().substring(0,60);
+    if(!byTitle[key]) byTitle[key] = [];
+    byTitle[key].push(a);
+  });
+  const duplicates = Object.values(byTitle).filter(g=>g.length>1);
+
+  const dupHtml = duplicates.map(group => `
+    <div class="ga-detail-section" style="margin-bottom:8px">
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:8px">Possible duplicates (${group.length})</div>
+      ${group.map(a=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:6px;cursor:pointer;background:var(--bg)">
+        <input type="checkbox" class="merge-cb" value="${a.id}" style="margin-top:2px;width:16px;height:16px" onchange="updateMergeSelection(this)">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${esc((a.title||'').substring(0,70))}</div>
+          <div style="font-size:11px;color:var(--text-light)">${esc(a.source_tool||'')} · ${esc(a.workload||'')} · ${esc(a.source_id||'no ID')} · ${a.tenant_action_count||0} tenant actions</div>
+        </div>
+      </label>`).join('')}
+    </div>`).join('');
+
+  const allRows = actions.map(a=>`<tr>
+    <td><input type="checkbox" class="merge-cb" value="${a.id}" style="width:15px;height:15px" onchange="updateMergeSelection(this)"></td>
+    <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+    <td>${esc(a.workload||'')}</td>
+    <td style="font-size:11px">${esc(a.source_id||'')}</td>
+    <td style="text-align:center">${a.tenant_action_count||0}</td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="card mb-16" style="border-left:4px solid var(--warning)">
+      <div class="card-header">&#9888; Merge Global Actions</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+        Select 2 or more global actions to merge. The first selected becomes the <strong>primary</strong> — it inherits all tenant action links,
+        compliance mappings, and source aliases from the others. Merged actions are deleted.
+        Future imports of any merged source ID will match the primary.
+      </p>
+      <div id="merge-bar" style="display:none;padding:12px;background:var(--warning-light);border-radius:6px;margin-bottom:12px">
+        <span id="merge-count">0</span> actions selected &mdash;
+        <button class="btn btn-sm" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="showMergeConfirm()">Merge Selected</button>
+        <button class="btn btn-sm" onclick="_mergeSelection.clear();document.querySelectorAll('.merge-cb').forEach(c=>c.checked=false);updateMergeBar()">Clear</button>
+      </div>
+      ${duplicates.length ? `<div class="card-header mb-8">&#128269; Likely Duplicates</div>${dupHtml}` : ''}
+      <div class="card-header mb-8 mt-16">All Global Actions</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:30px"></th><th>Title</th><th>Tool</th><th>Workload</th><th>Source ID</th><th>Tenants</th></tr></thead>
+        <tbody>${allRows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function updateMergeSelection(cb) {
+  if(cb.checked) _mergeSelection.add(cb.value);
+  else _mergeSelection.delete(cb.value);
+  updateMergeBar();
+}
+
+function updateMergeBar() {
+  const bar = document.getElementById('merge-bar');
+  const cnt = document.getElementById('merge-count');
+  if(!bar || !cnt) return;
+  bar.style.display = _mergeSelection.size >= 2 ? 'block' : 'none';
+  cnt.textContent = _mergeSelection.size;
+}
+
+async function showMergeConfirm() {
+  if(_mergeSelection.size < 2) return toast('Select at least 2 actions to merge','error');
+  const ids = Array.from(_mergeSelection);
+  const actions = await Promise.all(ids.map(id => api.get(`/api/control-plane/global-actions/${id}`)));
+  const primaryOpts = actions.map(a=>`<option value="${a.id}">[${esc(a.source_tool||'')}] ${esc((a.title||'').substring(0,60))} (${a.tenant_action_count||0} tenants)</option>`).join('');
+  openModal('Confirm Merge', `
+    <p style="margin-bottom:12px;color:var(--text-light)">
+      Merging <strong>${ids.length} actions</strong> into one. Select which action to keep as the primary record.
+      All tenant links, compliance mappings, and source IDs from the others will be merged into it.
+    </p>
+    <div class="form-group"><label>Primary (Keep)</label><select id="merge-primary" style="width:100%">${primaryOpts}</select></div>
+    <div class="ga-detail-section" style="font-size:12px">
+      <strong>Actions to be merged:</strong><br>
+      ${actions.map(a=>`<div style="padding:4px 0">${esc(a.source_tool||'')} · ${esc((a.title||'').substring(0,60))}</div>`).join('')}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="submitMerge()">Merge</button>`);
+}
+
+async function submitMerge() {
+  const keepId = document.getElementById('merge-primary').value;
+  const mergeIds = Array.from(_mergeSelection).filter(id=>id!==keepId);
+  const r = await api.post('/api/control-plane/global-actions/merge', {keep_id: keepId, merge_ids: mergeIds});
+  if(r.error) return toast(r.error,'error');
+  closeModal();
+  _mergeSelection.clear();
+  toast(`Merged ${mergeIds.length + 1} actions into one. ${r.tenant_actions_relinked} tenant actions relinked, ${r.mappings_merged} compliance mappings merged.`, 'success');
+  renderMergeTool();
+}
+
+// ── Import: unlinked action handling (shown after import) ──
+async function handlePostImportUnlinked(tenantName, importResult) {
+  if(!importResult.unlinked_actions || importResult.unlinked_actions.length === 0) return;
+  const unlinked = importResult.unlinked_actions;
+  const globalActions = await api.get('/api/control-plane/global-actions');
+  const gaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${esc(ga.source_tool||'')}] ${esc((ga.title||'').substring(0,60))}</option>`).join('');
+
+  const rows = unlinked.map((a,i) => `<tr id="unlinked-row-${i}">
+    <td>${esc((a.title||'').substring(0,50))}</td>
+    <td><span class="badge badge-info" style="font-size:10px">${esc(a.source_tool||'')}</span></td>
+    <td style="font-size:11px">${esc(a.source_id||'—')}</td>
+    <td id="unlinked-action-${i}">
+      <span class="badge badge-warning">Pending</span>
+    </td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-primary" onclick="autoCreateOneUnlinked('${a.id}','${tenantName}',${i})">Create in CP</button>
+      <button class="btn btn-sm" onclick="showInlineLink('${a.id}','${tenantName}',${i},'${encodeURIComponent(JSON.stringify(gaOpts))}')">Link</button>
+      <button class="btn btn-sm" style="color:var(--text-light)" onclick="skipUnlinked(${i})">Skip</button>
+    </td>
+  </tr>`).join('');
+
+  openModal(`${unlinked.length} New Unrecognised Action${unlinked.length>1?'s':''} Found`, `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
+      These actions from the import could not be matched to any global action.
+      Create them in the Control Plane so they appear on future imports, or link them to an existing global action.
+    </p>
+    <div class="flex gap-8 mb-12">
+      <button class="btn btn-sm btn-primary" onclick="autoCreateAllUnlinked('${tenantName}')">&#x2795; Create All in Control Plane</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Title</th><th>Tool</th><th>Source ID</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`,
+    `<button class="btn btn-primary" onclick="closeModal()">Done</button>`);
+}
+
+async function autoCreateOneUnlinked(actionId, tenantName, rowIdx) {
+  const r = await api.post('/api/control-plane/create-from-action', {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-success">Created in CP</span>';
+  toast('Global action created and linked','success');
+}
+
+async function autoCreateAllUnlinked(tenantName) {
+  const r = await api.post('/api/control-plane/migrate', {tenant_name: tenantName});
+  if(r.error) return toast(r.error,'error');
+  document.querySelectorAll('[id^="unlinked-action-"]').forEach(el => {
+    el.innerHTML = '<span class="badge badge-success">Created in CP</span>';
+  });
+  toast(`Created ${r.global_actions_created} global actions, linked ${r.tenant_actions_linked} actions`,'success');
+}
+
+async function skipUnlinked(rowIdx) {
+  document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-gray">Skipped</span>';
+  const actionBtns = document.querySelector(`#unlinked-row-${rowIdx} td:last-child`);
+  if(actionBtns) actionBtns.innerHTML = '';
+}
+
 
 // Boot
 init();
