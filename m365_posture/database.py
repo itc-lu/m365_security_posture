@@ -1002,30 +1002,51 @@ class Database:
                     # Update existing action with all current data
                     changes = {}
 
-                    # Always sync score and max_score from latest import
-                    if action.score is not None and action.score != existing.get("score"):
-                        conn.execute(
-                            """INSERT INTO action_history (action_id, timestamp, old_score,
-                               new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
-                            (existing["id"], datetime.utcnow().isoformat(),
-                             existing.get("score"), action.score, source_file),
-                        )
-                    changes["score"] = action.score
-                    changes["max_score"] = action.max_score
-                    if action.max_score and action.max_score > 0:
-                        changes["score_percentage"] = round(
-                            (action.score / action.max_score) * 100, 2)
-                    else:
-                        changes["score_percentage"] = 0
+                    # Determine whether status (and therefore score) is protected
+                    _protected_statuses = {
+                        "Risk Accepted", "Completed", "In Progress", "Exception",
+                    }
+                    _existing_status = existing["status"]
+                    _import_status = action.status
+                    _status_protected = _existing_status in _protected_statuses
 
-                    if action.status != existing["status"]:
+                    # When user manually completed an action, protect its score from
+                    # being reset by a subsequent import that still reports failure.
+                    _score_protected = (
+                        _status_protected
+                        and _existing_status == ActionStatus.COMPLETED.value
+                        and _import_status != ActionStatus.COMPLETED.value
+                    )
+
+                    # Always sync max_score (factual metadata from source tool)
+                    changes["max_score"] = action.max_score
+
+                    if _score_protected:
+                        # Keep score at max_score to reflect the completed state
+                        max_s = action.max_score or existing.get("max_score") or 0
+                        changes["score"] = max_s
+                        changes["score_percentage"] = 100.0 if max_s > 0 else 0
+                    else:
+                        # Sync score from import
+                        if action.score is not None and action.score != existing.get("score"):
+                            conn.execute(
+                                """INSERT INTO action_history (action_id, timestamp, old_score,
+                                   new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
+                                (existing["id"], datetime.utcnow().isoformat(),
+                                 existing.get("score"), action.score, source_file),
+                            )
+                        changes["score"] = action.score
+                        if action.max_score and action.max_score > 0:
+                            changes["score_percentage"] = round(
+                                (action.score / action.max_score) * 100, 2)
+                        else:
+                            changes["score_percentage"] = 0
+
+                    if _import_status != _existing_status:
                         # Protect manually-set statuses from being overwritten by imports.
                         # Risk Accepted, Completed, In Progress, and Exception are user decisions
                         # that should not be reset by a new report import.
-                        protected_statuses = {
-                            "Risk Accepted", "Completed", "In Progress", "Exception",
-                        }
-                        if existing["status"] not in protected_statuses:
+                        if not _status_protected:
                             conn.execute(
                                 """INSERT INTO action_history (action_id, timestamp,
                                    old_status, new_status, source_report)
