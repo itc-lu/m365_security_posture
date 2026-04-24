@@ -867,8 +867,6 @@ class Database:
             return None
 
         with self._conn() as conn:
-            score_history_logged = False
-
             # Track status changes
             if "status" in data and data["status"] != existing["status"]:
                 conn.execute(
@@ -879,28 +877,9 @@ class Database:
                      existing["status"], data["status"],
                      changed_by, data.get("change_notes", "")),
                 )
-                # When status is set to Completed, auto-fill score to max_score.
-                # Fall back to 1.0 if max_score is not set (pass/fail default).
-                if (data["status"] == ActionStatus.COMPLETED.value
-                        and "score" not in data):
-                    old_score = existing.get("score")
-                    max_score = existing.get("max_score") or 1.0
-                    if not existing.get("max_score"):
-                        data["max_score"] = max_score
-                    data["score"] = max_score
-                    data["score_percentage"] = 100.0
-                    if old_score != max_score:
-                        conn.execute(
-                            """INSERT INTO action_history (action_id, timestamp,
-                               old_score, new_score, source_report, changed_by)
-                               VALUES (?, ?, ?, ?, ?, ?)""",
-                            (action_id, datetime.utcnow().isoformat(),
-                             old_score, max_score, "status_completed", changed_by),
-                        )
-                    score_history_logged = True
 
-            # Track score changes (skip if already logged by auto-fill above)
-            if not score_history_logged and "score" in data and data["score"] != existing["score"]:
+            # Track explicit score changes from caller
+            if "score" in data and data["score"] != existing["score"]:
                 conn.execute(
                     """INSERT INTO action_history (action_id, timestamp, old_score,
                        new_score, source_report, changed_by)
@@ -930,6 +909,26 @@ class Database:
                 updates["tags"] = json.dumps(data["tags"])
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
+
+            # When status is explicitly set to Completed and no score provided,
+            # auto-fill score to max_score (default 1.0 for pass/fail sources like SCuBA).
+            new_status = updates.get("status")
+            if (new_status == ActionStatus.COMPLETED.value
+                    and "score" not in updates):
+                old_score = existing.get("score")
+                max_s = existing.get("max_score") or 1.0
+                updates["score"] = max_s
+                updates["score_percentage"] = 100.0
+                if not existing.get("max_score"):
+                    updates["max_score"] = max_s
+                if old_score != max_s:
+                    conn.execute(
+                        """INSERT INTO action_history (action_id, timestamp,
+                           old_score, new_score, source_report, changed_by)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (action_id, datetime.utcnow().isoformat(),
+                         old_score, max_s, "status_completed", changed_by),
+                    )
 
             if updates:
                 updates["updated_at"] = datetime.utcnow().isoformat()
