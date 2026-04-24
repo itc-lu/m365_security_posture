@@ -183,9 +183,9 @@ class TenantDatabase(Database):
             )
         return self.get_action(action_id)
 
-    def update_action(self, action_id: str, data: dict) -> Optional[dict]:
+    def update_action(self, action_id: str, data: dict, changed_by: str = "") -> Optional[dict]:
         if not self._migrated:
-            return super().update_action(action_id, data)
+            return super().update_action(action_id, data, changed_by)
 
         # Find which tenant DB has this action
         tenant_name = self._find_action_tenant(action_id)
@@ -202,9 +202,20 @@ class TenantDatabase(Database):
             if data.get("status") and data["status"] != existing["status"]:
                 conn.execute(
                     """INSERT INTO action_history (action_id, timestamp,
-                       old_status, new_status) VALUES (?, ?, ?, ?)""",
+                       old_status, new_status, changed_by) VALUES (?, ?, ?, ?, ?)""",
                     (action_id, datetime.utcnow().isoformat(),
-                     existing["status"], data["status"]),
+                     existing["status"], data["status"], changed_by),
+                )
+
+            # Explicit score change history
+            if "score" in data and data["score"] != existing["score"]:
+                conn.execute(
+                    """INSERT INTO action_history (action_id, timestamp,
+                       old_score, new_score, source_report, changed_by)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (action_id, datetime.utcnow().isoformat(),
+                     existing["score"], data["score"],
+                     data.get("source_report", ""), changed_by),
                 )
 
             allowed = {
@@ -225,6 +236,24 @@ class TenantDatabase(Database):
                 updates["tags"] = json.dumps(data["tags"])
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
+
+            # When status is set to Completed and no score provided, auto-fill to max_score.
+            new_status = updates.get("status")
+            if (new_status == "Completed" and "score" not in updates):
+                old_score = existing["score"]
+                max_s = existing["max_score"] or 1.0
+                updates["score"] = max_s
+                updates["score_percentage"] = 100.0
+                if not existing["max_score"]:
+                    updates["max_score"] = max_s
+                if old_score != max_s:
+                    conn.execute(
+                        """INSERT INTO action_history (action_id, timestamp,
+                           old_score, new_score, source_report, changed_by)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (action_id, datetime.utcnow().isoformat(),
+                         old_score, max_s, "status_completed", changed_by),
+                    )
 
             if updates:
                 updates["updated_at"] = datetime.utcnow().isoformat()

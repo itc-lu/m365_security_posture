@@ -878,7 +878,7 @@ class Database:
                      changed_by, data.get("change_notes", "")),
                 )
 
-            # Track score changes
+            # Track explicit score changes from caller
             if "score" in data and data["score"] != existing["score"]:
                 conn.execute(
                     """INSERT INTO action_history (action_id, timestamp, old_score,
@@ -909,6 +909,26 @@ class Database:
                 updates["tags"] = json.dumps(data["tags"])
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
+
+            # When status is explicitly set to Completed and no score provided,
+            # auto-fill score to max_score (default 1.0 for pass/fail sources like SCuBA).
+            new_status = updates.get("status")
+            if (new_status == ActionStatus.COMPLETED.value
+                    and "score" not in updates):
+                old_score = existing.get("score")
+                max_s = existing.get("max_score") or 1.0
+                updates["score"] = max_s
+                updates["score_percentage"] = 100.0
+                if not existing.get("max_score"):
+                    updates["max_score"] = max_s
+                if old_score != max_s:
+                    conn.execute(
+                        """INSERT INTO action_history (action_id, timestamp,
+                           old_score, new_score, source_report, changed_by)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (action_id, datetime.utcnow().isoformat(),
+                         old_score, max_s, "status_completed", changed_by),
+                    )
 
             if updates:
                 updates["updated_at"] = datetime.utcnow().isoformat()
@@ -984,30 +1004,51 @@ class Database:
                     # Update existing action with all current data
                     changes = {}
 
-                    # Always sync score and max_score from latest import
-                    if action.score is not None and action.score != existing.get("score"):
-                        conn.execute(
-                            """INSERT INTO action_history (action_id, timestamp, old_score,
-                               new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
-                            (existing["id"], datetime.utcnow().isoformat(),
-                             existing.get("score"), action.score, source_file),
-                        )
-                    changes["score"] = action.score
-                    changes["max_score"] = action.max_score
-                    if action.max_score and action.max_score > 0:
-                        changes["score_percentage"] = round(
-                            (action.score / action.max_score) * 100, 2)
-                    else:
-                        changes["score_percentage"] = 0
+                    # Determine whether status (and therefore score) is protected
+                    _protected_statuses = {
+                        "Risk Accepted", "Completed", "In Progress", "Exception",
+                    }
+                    _existing_status = existing["status"]
+                    _import_status = action.status
+                    _status_protected = _existing_status in _protected_statuses
 
-                    if action.status != existing["status"]:
+                    # When user manually completed an action, protect its score from
+                    # being reset by a subsequent import that still reports failure.
+                    _score_protected = (
+                        _status_protected
+                        and _existing_status == ActionStatus.COMPLETED.value
+                        and _import_status != ActionStatus.COMPLETED.value
+                    )
+
+                    # Always sync max_score (factual metadata from source tool)
+                    changes["max_score"] = action.max_score
+
+                    if _score_protected:
+                        # Keep score at max_score to reflect the completed state
+                        max_s = action.max_score or existing.get("max_score") or 0
+                        changes["score"] = max_s
+                        changes["score_percentage"] = 100.0 if max_s > 0 else 0
+                    else:
+                        # Sync score from import
+                        if action.score is not None and action.score != existing.get("score"):
+                            conn.execute(
+                                """INSERT INTO action_history (action_id, timestamp, old_score,
+                                   new_score, source_report) VALUES (?, ?, ?, ?, ?)""",
+                                (existing["id"], datetime.utcnow().isoformat(),
+                                 existing.get("score"), action.score, source_file),
+                            )
+                        changes["score"] = action.score
+                        if action.max_score and action.max_score > 0:
+                            changes["score_percentage"] = round(
+                                (action.score / action.max_score) * 100, 2)
+                        else:
+                            changes["score_percentage"] = 0
+
+                    if _import_status != _existing_status:
                         # Protect manually-set statuses from being overwritten by imports.
                         # Risk Accepted, Completed, In Progress, and Exception are user decisions
                         # that should not be reset by a new report import.
-                        protected_statuses = {
-                            "Risk Accepted", "Completed", "In Progress", "Exception",
-                        }
-                        if existing["status"] not in protected_statuses:
+                        if not _status_protected:
                             conn.execute(
                                 """INSERT INTO action_history (action_id, timestamp,
                                    old_status, new_status, source_report)
