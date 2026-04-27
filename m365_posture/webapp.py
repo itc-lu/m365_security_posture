@@ -694,11 +694,6 @@ def create_app(db_path: str = None) -> Flask:
         summary = get_e8_summary(action_objects, target_maturity=target, exclude_na=exclude_na)
         return jsonify(summary)
 
-    @app.route("/api/e8/controls", methods=["GET"])
-    def api_e8_controls():
-        """Return the full E8 control definitions with maturity requirements."""
-        return jsonify(get_e8_controls_data())
-
     # ── SCuBA endpoints ──
 
     @app.route("/api/tenants/<name>/scuba", methods=["GET"])
@@ -1664,48 +1659,6 @@ def create_app(db_path: str = None) -> Flask:
         result = detect_drift(db, name, data.get("source_tool"))
         return jsonify(result)
 
-    # ── Secure Score Controls (reference table) endpoints ──
-
-    @app.route("/api/secure-score-controls", methods=["GET"])
-    def api_list_controls():
-        return jsonify(db.list_controls())
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["GET"])
-    def api_get_control(control_id):
-        ctrl = db.get_control(control_id)
-        if not ctrl:
-            return _json_error("Control not found", 404)
-        return jsonify(ctrl)
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["PUT"])
-    def api_update_control(control_id):
-        data = request.get_json() or {}
-        from .models import SecureScoreControl as SSC
-        existing = db.get_control(control_id)
-        if not existing:
-            return _json_error("Control not found", 404)
-        existing.update(data)
-        existing["id"] = control_id  # Prevent id change
-        ctrl = SSC.from_dict(existing)
-        result = db.upsert_control(ctrl)
-        return jsonify(result)
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["DELETE"])
-    def api_delete_control(control_id):
-        if not db.get_control(control_id):
-            return _json_error("Control not found", 404)
-        db.delete_control(control_id)
-        return jsonify({"deleted": True})
-
-    @app.route("/api/secure-score-controls/seed", methods=["POST"])
-    def api_seed_controls():
-        """Load built-in seed data into the controls reference table."""
-        controls = load_seed_controls()
-        if not controls:
-            return _json_error("Seed data file not found")
-        result = db.seed_controls(controls)
-        return jsonify(result)
-
     # ── Graph API (Device Code Auth) ──
 
     # In-memory store for pending device code flows (per-tenant)
@@ -2023,12 +1976,6 @@ def create_app(db_path: str = None) -> Flask:
             remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
             return jsonify({"authenticated": True, "expires_in": remaining})
         return jsonify({"authenticated": False})
-
-    # ── Enums update ──
-
-    @app.route("/api/enums/frameworks", methods=["GET"])
-    def api_frameworks():
-        return jsonify([f.value for f in ComplianceFramework])
 
     # ── Auth ──
 

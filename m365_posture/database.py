@@ -887,22 +887,6 @@ class Database:
             d["title_variants"] = json.loads(d.get("title_variants", "[]"))
             return d
 
-    def list_controls(self) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM secure_score_controls ORDER BY title"
-            ).fetchall()
-            result = []
-            for r in rows:
-                d = dict(r)
-                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
-                result.append(d)
-            return result
-
-    def delete_control(self, control_id: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM secure_score_controls WHERE id=?", (control_id,))
-
     def find_control_by_title(self, title: str) -> dict | None:
         """Find a control by exact title or any title variant (case-insensitive)."""
         title_lower = title.strip().lower()
@@ -1716,11 +1700,6 @@ class Database:
                 result.append(d)
             return result
 
-    def get_latest_snapshot(self, tenant_name: str) -> Optional[dict]:
-        """Get the most recent score snapshot."""
-        snapshots = self.get_score_snapshots(tenant_name, limit=1)
-        return snapshots[0] if snapshots else None
-
     # ── Action Dependencies ──
 
     def add_dependency(self, action_id: str, depends_on_id: str,
@@ -1880,19 +1859,6 @@ class Database:
         return ordered
 
     # ── Compliance Mappings ──
-
-    def add_compliance_mapping(self, action_id: str, framework: str,
-                                control_id: str, control_name: str = "",
-                                control_family: str = "", notes: str = "") -> dict:
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT INTO compliance_mappings
-                   (action_id, framework, control_id, control_name, control_family, notes)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (action_id, framework, control_id, control_name, control_family, notes),
-            )
-        return {"action_id": action_id, "framework": framework, "control_id": control_id,
-                "control_name": control_name, "control_family": control_family}
 
     def get_action_compliance(self, action_id: str) -> list[dict]:
         """Return compliance mappings for an action, sourced from the global
@@ -2413,14 +2379,6 @@ class Database:
             row = conn.execute("SELECT * FROM global_actions WHERE id=?", (ga_id,)).fetchone()
         return self._row_to_global_action(row) if row else None
 
-    def get_global_action_by_source(self, source_tool: str, source_id: str) -> dict | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
-                (source_tool, source_id),
-            ).fetchone()
-        return self._row_to_global_action(row) if row else None
-
     def create_global_action(self, ga: GlobalAction) -> dict:
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
@@ -2477,15 +2435,6 @@ class Database:
             conn.execute("DELETE FROM global_actions WHERE id=?", (ga_id,))
 
     # ── Per-tenant implementation overrides ──
-
-    def get_implementation_override(self, tenant_name: str, global_action_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            row = conn.execute(
-                """SELECT * FROM action_implementation_overrides
-                    WHERE tenant_name=? AND global_action_id=?""",
-                (tenant_name, global_action_id),
-            ).fetchone()
-            return dict(row) if row else None
 
     def set_implementation_override(self, tenant_name: str, global_action_id: str,
                                     implementation_steps: str, updated_by: str = "") -> dict:
@@ -2757,13 +2706,6 @@ class Database:
             ).fetchall()
         return [r["framework"] for r in rows]
 
-    def set_tenant_framework(self, tenant_name: str, framework: str):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO tenant_frameworks (tenant_name, framework) VALUES (?,?)",
-                (tenant_name, framework),
-            )
-
     def remove_tenant_framework(self, tenant_name: str, framework: str):
         with self._conn() as conn:
             conn.execute(
@@ -2823,22 +2765,6 @@ class Database:
     def remove_global_action_link(self, link_id: int):
         with self._conn() as conn:
             conn.execute("DELETE FROM global_action_links WHERE id=?", (link_id,))
-
-    # ── Global Action Source Aliases ──
-
-    def get_source_aliases(self, ga_id: str) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM global_action_source_aliases WHERE global_action_id=?", (ga_id,)
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def add_source_alias(self, ga_id: str, source_tool: str, source_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO global_action_source_aliases (global_action_id, source_tool, source_id) VALUES (?,?,?)",
-                (ga_id, source_tool, source_id),
-            )
 
     # ── Merge Global Actions ──
 
@@ -3046,27 +2972,6 @@ class Database:
                 "INSERT INTO audit_log(timestamp, actor, action, entity_type, entity_id, detail) VALUES(?,?,?,?,?,?)",
                 (datetime.utcnow().isoformat(), actor, action, entity_type, entity_id, detail),
             )
-
-    def get_audit_log(self, entity_type: str = None, entity_id: str = None,
-                      limit: int = 100, offset: int = 0) -> list[dict]:
-        """Fetch audit records, optionally filtered by entity."""
-        with self._conn() as conn:
-            if entity_type and entity_id:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (entity_type, entity_id, limit, offset),
-                ).fetchall()
-            elif entity_type:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log WHERE entity_type=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (entity_type, limit, offset),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
-                ).fetchall()
-            return [dict(r) for r in rows]
 
     def bulk_auto_link_imported(self, action_ids: list[str]) -> dict:
         """Auto-link a batch of freshly imported tenant actions to global actions
