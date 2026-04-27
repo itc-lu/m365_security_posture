@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import Optional
 
 import hashlib
-import os
 import secrets
 
 from .models import (
-    Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl,
-    SourceTool, Workload, GlobalAction, User, UserRole,
+    Action, TenantConfig, ActionStatus, SecureScoreControl,
+    SourceTool, Workload, GlobalAction, User,
 )
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"

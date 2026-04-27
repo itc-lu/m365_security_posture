@@ -5,14 +5,12 @@ Launch with: m365-posture web [--port 8080] [--no-browser]
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import re
 import shutil
 import tempfile
 import webbrowser
-import zipfile
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -33,14 +31,14 @@ from .parsers import (
 )
 from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
 from .correlation import auto_correlate, get_correlation_summary
-from .planner import simulate_plan, suggest_phases, get_prioritized_actions, calculate_action_roi
+from .planner import simulate_plan, suggest_phases, get_prioritized_actions
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
-from .compliance import auto_map_compliance, map_action_to_frameworks
+from .compliance import auto_map_compliance
 from .drift import detect_drift
 from .graph_api import (
     start_device_code_flow, poll_for_token, fetch_secure_scores,
     fetch_control_profiles, client_credentials_token,
-    start_interactive_auth, exchange_auth_code, _interactive_sessions,
+    start_interactive_auth, exchange_auth_code,
 )
 from .web_frontend import get_spa_html
 

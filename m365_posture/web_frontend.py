@@ -156,15 +156,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
 
 /* Phase card */
-.phase-card { border-left:4px solid var(--primary); padding-left:16px; }
-.phase-card.phase-1 { border-left-color:var(--success); }
-.phase-card.phase-2 { border-left-color:var(--warning); }
-.phase-card.phase-3 { border-left-color:var(--purple); }
-.phase-card table { table-layout:fixed; width:100%; }
-.phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
-.phase-card.drag-over { background:var(--primary-light); border:2px dashed var(--primary); border-left:4px solid var(--primary); }
-.phase-card [draggable] { cursor:grab; }
-.phase-card [draggable]:active { cursor:grabbing; opacity:.7; }
 
 /* Login overlay */
 .login-overlay { position:fixed; inset:0; background:rgba(15,23,42,.85); z-index:1000; display:flex; align-items:center; justify-content:center; }
@@ -4593,39 +4584,6 @@ async function removeDep(actionId, dependsOnId) {
   loadActionDeps(actionId);
 }
 
-
-// ── Plan Phase Drag-and-Drop ──
-let _dragActionId = null;
-let _dragPlanId = null;
-
-function onPhaseDragStart(event, actionId, planId) {
-  _dragActionId = actionId;
-  _dragPlanId = planId;
-  event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('text/plain', actionId);
-}
-
-function onPhaseDragOver(event, el) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  el.classList.add('drag-over');
-}
-
-function onPhaseDragLeave(el) {
-  el.classList.remove('drag-over');
-}
-
-async function onPhaseDrop(event, planId, targetPhase) {
-  event.preventDefault();
-  event.currentTarget.classList.remove('drag-over');
-  const actionId = _dragActionId;
-  if(!actionId) return;
-  _dragActionId = null;
-  const r = await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: targetPhase});
-  if(r && r.error) return toast(r.error, 'error');
-  toast(`Moved to Phase ${targetPhase}`, 'success');
-  viewPlan(planId);
-}
 
 // ── Control Plane: Global Actions ──
 let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:''};

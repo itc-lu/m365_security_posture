@@ -7,7 +7,6 @@ etc., this engine detects and groups them so they can be tracked together.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 from .database import Database
 
 # Canonical control families with keywords that appear across tools.
