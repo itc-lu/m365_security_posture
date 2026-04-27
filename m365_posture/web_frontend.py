@@ -1885,18 +1885,25 @@ function actionDetailHtml(a) {
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${esc(a.source_tool||'')}</span>`;
 
-  // Remediation steps - split into structured parts if possible
+  // Implementation steps come from the merged value (global + per-tenant
+  // override) computed server-side in _row_to_action_dict; fall back to the
+  // legacy per-tenant column for un-globalized actions.
   let prerequisitesHtml = '';
   let stepsHtml = '';
-  const remText = a.remediation_steps || '';
-  if(remText.includes('Prerequisites:') && remText.includes('Next steps:')) {
-    const parts = remText.split('Next steps:');
+  const implText = a.implementation_steps || a.remediation_steps || '';
+  const implSourceLabel = a.global_action_id
+    ? (a.is_implementation_overridden
+        ? '<span class="badge badge-warning" style="font-size:10px">Tenant override</span>'
+        : '<span class="badge badge-info" style="font-size:10px">From global</span>')
+    : '';
+  if(implText.includes('Prerequisites:') && implText.includes('Next steps:')) {
+    const parts = implText.split('Next steps:');
     const prereq = parts[0].replace('Prerequisites:', '').trim();
     const steps = parts[1]?.trim() || '';
     prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${isZTR?mdToHtml(prereq):prereq}</div></div>` : '';
-    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
-  } else if(remText) {
-    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${isZTR?mdToHtml(remText):remText}</div></div>`;
+    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps ${implSourceLabel}</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
+  } else if(implText) {
+    stepsHtml = `<div class="field mb-16"><div class="field-label">Implementation Steps ${implSourceLabel}</div><div class="field-value">${isZTR?mdToHtml(implText):implText}</div></div>`;
   }
 
   const uid = a.id.replace(/[^a-zA-Z0-9]/g,'');
@@ -1984,7 +1991,11 @@ function actionDetailHtml(a) {
     <div class="action-tab-content" id="atab-${uid}-implementation">
       ${prerequisitesHtml}
       ${stepsHtml}
-      ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
+      ${!prerequisitesHtml && !stepsHtml ? `<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation steps yet. Click <a href="javascript:void(0)" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</a> to add them${a.global_action_id?' globally or just for this tenant':''}.</div>` : ''}
+      ${a.is_implementation_overridden && a.global_implementation_steps ? `
+        <details style="margin:0 0 16px"><summary style="font-size:12px;color:var(--text-light);cursor:pointer" onclick="event.stopPropagation()">Show global value</summary>
+          <pre style="font-size:12px;background:var(--bg);padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px">${esc(a.global_implementation_steps)}</pre>
+        </details>` : ''}
       ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${esc(a.reference_url)}" target="_blank" onclick="event.stopPropagation()">${esc(a.reference_url)}</a></div></div>`:''}
       <div class="grid grid-4 mb-16">
         <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control||'N/A')}</div></div>
