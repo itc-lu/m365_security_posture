@@ -153,7 +153,7 @@ def create_app(db_path: str = None) -> Flask:
         if not request.path.startswith("/api/"):
             return
         if "user_id" not in session:
-            return jsonify({"error": "Authentication required"}), 401
+            return jsonify({"error": "Authentication required", "login_required": True}), 401
         # CSRF: state-changing requests must carry X-Requested-With header
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):

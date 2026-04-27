@@ -269,6 +269,8 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .compliance-family-body { padding:0 16px 12px; }
 
 .hidden { display:none !important; }
+.app-shell.locked { display:none; }
+body.unauth { background:#0f172a; }
 .text-center { text-align:center; }
 .mb-16 { margin-bottom:16px; }
 .mb-8 { margin-bottom:8px; }
@@ -280,10 +282,10 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .flex-1 { flex:1; }
 </style>
 </head>
-<body>
+<body class="unauth">
 
 <!-- Sidebar -->
-<div class="sidebar" id="sidebar">
+<div class="sidebar app-shell locked" id="sidebar">
   <div class="logo">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     M365 Posture
@@ -292,10 +294,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
     <a href="#dashboard" data-page="dashboard" class="active">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Dashboard
-    </a>
-    <a href="#tenants" data-page="tenants">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
-      Tenants
     </a>
     <a href="#actions" data-page="actions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,11 12,14 22,4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
@@ -389,7 +387,7 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 </div>
 
 <!-- Main content -->
-<div class="main">
+<div class="main app-shell locked" id="main-shell">
   <div class="topbar">
     <h1 id="page-title">Dashboard</h1>
     <div class="actions" id="topbar-actions"></div>
@@ -456,6 +454,11 @@ const api = {
   async _handle(r) {
     const data = await r.json().catch(()=>({error:'Invalid response'}));
     if(!r.ok && !data.error) data.error = `HTTP ${r.status}`;
+    if(r.status === 401 && data.login_required) {
+      _authUser = null;
+      if(typeof updateAuthUI === 'function') updateAuthUI();
+      if(typeof applyAuthGate === 'function') applyAuthGate();
+    }
     return data;
   },
   async get(url) { const r = await fetch(url); return this._handle(r); },
@@ -627,6 +630,8 @@ function applySort() {
 
 // ── Router ──
 async function navigate(page) {
+  // Tenants management lives under Control Plane → Tenant Config
+  if (page === 'tenants') page = 'cp-tenants';
   state.currentPage = page;
   if (page.startsWith('cp-')) {
     const _cpLinks = document.getElementById('cp-nav-links');
@@ -638,14 +643,14 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',people:'People & Assignments',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
-    dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,
-    plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
+    dashboard:renderDashboard,actions:renderActions,import:renderImport,
+    plans:renderPlans,people:renderPeople,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
     compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
     history:renderHistory,
     'cp-global-actions':renderCpGlobalActions,
@@ -682,7 +687,8 @@ function toggleCpNav() {
 (function initCpNav() {
   const links = document.getElementById('cp-nav-links');
   if (!links) return;
-  if (localStorage.getItem('cpNavCollapsed') === '1') {
+  // Collapsed by default unless the user has explicitly expanded it.
+  if (localStorage.getItem('cpNavCollapsed') !== '0') {
     links.classList.add('cp-collapsed');
     const chevron = document.getElementById('cp-nav-chevron');
     if (chevron) chevron.style.transform = 'rotate(-90deg)';
@@ -722,12 +728,33 @@ async function checkAuth() {
   const me = await api.get('/api/auth/me');
   _authUser = me.authenticated ? me : null;
   updateAuthUI();
+  applyAuthGate();
   if(_authUser && _authUser.must_change_password) showForcedPasswordChange('');
+}
+
+function applyAuthGate() {
+  const shells = document.querySelectorAll('.app-shell');
+  if(_authUser) {
+    document.body.classList.remove('unauth');
+    shells.forEach(s => s.classList.remove('locked'));
+    document.getElementById('login-overlay').classList.add('hidden');
+  } else {
+    document.body.classList.add('unauth');
+    shells.forEach(s => s.classList.add('locked'));
+    document.getElementById('content').innerHTML = '';
+    document.getElementById('topbar-actions').innerHTML = '';
+    document.getElementById('login-overlay').classList.remove('hidden');
+    setTimeout(() => {
+      const u = document.getElementById('login-username');
+      if(u) u.focus();
+    }, 50);
+  }
 }
 
 function updateAuthUI() {
   const btn = document.getElementById('auth-btn');
   const info = document.getElementById('auth-user-info');
+  if(!btn || !info) return;
   if(_authUser) {
     info.textContent = `${_authUser.display_name||_authUser.username} (${_authUser.role})`;
     btn.textContent = 'Logout';
@@ -754,13 +781,23 @@ async function doLogin() {
   if(r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
   _authUser = r;
   updateAuthUI();
-  document.getElementById('login-overlay').classList.add('hidden');
+  applyAuthGate();
   document.getElementById('login-password').value = '';
   if(r.must_change_password) {
     showForcedPasswordChange(password);
     return;
   }
   toast(`Welcome, ${r.display_name||r.username}!`, 'success');
+  await loadAuthenticatedState();
+}
+
+async function loadAuthenticatedState() {
+  state.enums = await api.get('/api/enums');
+  state.tenants = await api.get('/api/tenants');
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
+  updateTenantIndicator();
+  navigate(location.hash.slice(1)||'dashboard');
 }
 
 function showForcedPasswordChange(prefillCurrent) {
@@ -795,7 +832,11 @@ async function doForcedPasswordChange() {
 async function doLogout() {
   await api.post('/api/auth/logout', {});
   _authUser = null;
+  state.activeTenant = null;
+  state.tenants = [];
+  state.enums = {};
   updateAuthUI();
+  applyAuthGate();
   toast('Logged out', 'info');
 }
 
@@ -833,12 +874,8 @@ function esc(s) {
 // ── Init ──
 async function init() {
   await checkAuth();
-  state.enums = await api.get('/api/enums');
-  state.tenants = await api.get('/api/tenants');
-  const active = await api.get('/api/active-tenant');
-  state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
-  updateTenantIndicator();
-  navigate(location.hash.slice(1)||'dashboard');
+  if(!_authUser) return;
+  await loadAuthenticatedState();
 }
 
 function updateTenantIndicator() {
@@ -880,7 +917,7 @@ document.addEventListener('click', () => {
 });
 
 function requireTenant() {
-  if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('tenants'); return false; }
+  if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('cp-tenants'); return false; }
   return true;
 }
 
@@ -1471,112 +1508,6 @@ async function pinSelectedActions() {
   toast(ids.length + ' action(s) pinned','success');
   _dashData = {};
   renderDashboard(document.getElementById('dash-source-filter')?.value||'');
-}
-
-// ── Tenants ──
-async function renderTenants() {
-  state.tenants = await api.get('/api/tenants');
-  const active = await api.get('/api/active-tenant');
-  state.activeTenant = active && active.name ? active : null;
-  updateTenantIndicator();
-
-  document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button>';
-
-  let cards = state.tenants.map(t => `
-    <div class="card" style="${t.is_active?'border-left:4px solid var(--primary)':''}">
-      <div class="card-header">${esc(t.display_name||t.name)} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(t.tenant_id||'No tenant ID')}</div>
-      <div style="font-size:14px;margin-bottom:12px">${t.action_count||0} actions</div>
-      <div class="btn-group">
-        ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenant('${t.name}')">Activate</button>`:''}
-        <button class="btn btn-sm" onclick="showEditTenant('${t.name}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteTenant('${t.name}')">Delete</button>
-      </div>
-    </div>`).join('');
-
-  // Migration status
-  const migStatus = await api.get('/api/admin/migration-status');
-  const migHtml = migStatus.migrated
-    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
-    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
-       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
-       <div id="migration-result" style="margin-top:8px"></div>`;
-
-  document.getElementById('content').innerHTML = (cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>')
-    + `<div class="card mt-16"><div class="card-header">Database Administration</div>${migHtml}</div>`;
-}
-
-async function migrateDatabase() {
-  if(!confirm('This will migrate to per-tenant databases. The original database will be backed up. Continue?')) return;
-  const el = document.getElementById('migration-result');
-  el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
-  const r = await api.post('/api/admin/migrate-database');
-  if(r.error) {
-    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
-    return;
-  }
-  if(r.success) {
-    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
-      `<div style="font-size:12px;padding:2px 0"><strong>${t}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
-    ).join('');
-    el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
-      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${r.backup}</div>
-      ${details}
-      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
-  }
-}
-
-function showAddTenant() {
-  openModal('Add Tenant', `
-    <div class="form-group"><label>Name (short, no spaces)</label><input id="t-name" placeholder="contoso"></div>
-    <div class="form-group"><label>Display Name</label><input id="t-display" placeholder="Contoso Ltd"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="t-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-    <div class="form-group"><label>Client ID (optional)</label><input id="t-cid"></div>
-    <div class="form-group"><label>Client Secret (optional)</label><input id="t-secret" type="password"></div>
-    <div class="form-group"><label>Notes</label><textarea id="t-notes" rows="2"></textarea></div>`,
-    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addTenant()">Add Tenant</button>');
-}
-
-async function addTenant() {
-  const data = {name:document.getElementById('t-name').value.trim(), display_name:document.getElementById('t-display').value.trim(), tenant_id:document.getElementById('t-tid').value.trim(), client_id:document.getElementById('t-cid').value.trim(), client_secret:document.getElementById('t-secret').value.trim(), notes:document.getElementById('t-notes').value.trim()};
-  if(!data.name) return toast('Name is required','error');
-  const r = await api.post('/api/tenants', data);
-  if(r.error) return toast(r.error,'error');
-  closeModal(); toast('Tenant added','success'); renderTenants();
-}
-
-async function showEditTenant(name) {
-  const t = await api.get(`/api/tenants/${name}`);
-  openModal('Edit Tenant: '+name, `
-    <div class="form-group"><label>Display Name</label><input id="te-display" value="${esc(t.display_name||'')}"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${esc(t.tenant_id||'')}"></div>
-    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${esc(t.client_id||'')}"></div>
-    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${esc(t.client_secret||'')}"></div>
-    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${esc(t.notes||'')}</textarea></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateTenant('${name}')">Save</button>`);
-}
-
-async function updateTenant(name) {
-  const data = {display_name:document.getElementById('te-display').value.trim(), tenant_id:document.getElementById('te-tid').value.trim(), client_id:document.getElementById('te-cid').value.trim(), client_secret:document.getElementById('te-secret').value.trim(), notes:document.getElementById('te-notes').value.trim()};
-  await api.put(`/api/tenants/${name}`, data);
-  closeModal(); toast('Tenant updated','success'); renderTenants();
-}
-
-async function activateTenant(name) {
-  await api.post(`/api/tenants/${name}/activate`);
-  state.activeTenant = await api.get('/api/active-tenant');
-  updateTenantIndicator();
-  toast('Switched to '+name,'success');
-  renderTenants();
-}
-
-async function deleteTenant(name) {
-  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and all its data? This cannot be undone.`)) return;
-  await api.del(`/api/tenants/${name}`);
-  state.activeTenant = await api.get('/api/active-tenant');
-  updateTenantIndicator();
-  toast('Tenant deleted','success');
-  renderTenants();
 }
 
 // ── Actions ──
@@ -2297,7 +2228,7 @@ async function renderImport() {
                 or: set <strong>Allow public client flows = Yes</strong> and use <strong>delegated</strong> permissions with device code</li>
             <li>Set the <strong>Tenant ID</strong>, <strong>Client ID</strong>, and optionally <strong>Client Secret</strong> on your tenant configuration</li>
           </ol>
-          <button class="btn btn-sm mt-16" onclick="navigate('tenants')">Go to Tenant Settings</button>
+          <button class="btn btn-sm mt-16" onclick="navigate('cp-tenants')">Go to Tenant Settings</button>
         </div>
       </div>`;
   } else if(graphStatus.authenticated) {
@@ -5256,6 +5187,10 @@ async function deleteUser(userId, username) {
 // ── Control Plane: Tenant Management ──
 async function renderCpTenants() {
   const tenants = await api.get('/api/tenants');
+  state.tenants = tenants;
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  updateTenantIndicator();
   const allFw = await api.get('/api/control-plane/tenant-frameworks');
   const allUsers = await api.get('/api/control-plane/users');
 
@@ -5266,18 +5201,28 @@ async function renderCpTenants() {
     const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${esc(f)}</span>`).join('');
     const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
     const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${esc(u.display_name||u.username)}</span>`).join('');
+    const activeBadge = t.is_active ? '<span class="badge badge-info" style="margin-left:6px">Active</span>' : '';
     return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
-      <td><strong>${esc(t.display_name||t.name)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
+      <td><strong>${esc(t.display_name||t.name)}</strong>${activeBadge}<br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
       <td>${t.action_count||0}</td>
       <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
       <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
       <td style="font-size:12px;color:var(--text-light)">${esc(t.created_at?t.created_at.substring(0,10):'')}</td>
       <td onclick="event.stopPropagation()">
+        ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenantCp('${t.name}')">Activate</button>`:''}
         <button class="btn btn-sm" onclick="showCpTenantDetail('${t.name}')">Configure</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTenantCp('${t.name}')">&#x2715;</button>
       </td>
     </tr>`;
   }).join('');
+
+  // Database migration status
+  const migStatus = await api.get('/api/admin/migration-status');
+  const migHtml = migStatus.migrated
+    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
+    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
+       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
+       <div id="migration-result" style="margin-top:8px"></div>`;
 
   document.getElementById('content').innerHTML = `
     <div class="grid grid-4 mb-16">
@@ -5286,7 +5231,7 @@ async function renderCpTenants() {
       <div class="card stat-card"><div class="value">${tenants.filter(t=>(allFw[t.name]||[]).length>0).length}</div><div class="label">Framework Assigned</div></div>
       <div class="card stat-card"><div class="value">${allUsers.length}</div><div class="label">Users</div></div>
     </div>
-    <div class="card">
+    <div class="card mb-16">
       <div class="flex justify-between items-center mb-12">
         <div class="card-header" style="margin:0">Tenant Overview</div>
         <button class="btn btn-primary btn-sm" onclick="showCreateTenantCp()">+ New Tenant</button>
@@ -5295,7 +5240,37 @@ async function renderCpTenants() {
         <thead><tr><th>Tenant</th><th>Actions</th><th>Frameworks</th><th>Users</th><th>Created</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light)">No tenants yet.</td></tr>'}</tbody>
       </table></div>
-    </div>`;
+    </div>
+    <div class="card"><div class="card-header">Database Administration</div>${migHtml}</div>`;
+}
+
+async function activateTenantCp(name) {
+  await api.post(`/api/tenants/${name}/activate`);
+  state.activeTenant = await api.get('/api/active-tenant');
+  state.tenants = await api.get('/api/tenants');
+  updateTenantIndicator();
+  toast('Switched to '+name,'success');
+  renderCpTenants();
+}
+
+async function migrateDatabase() {
+  if(!await showConfirm('Migrate Database', 'This will migrate to per-tenant databases. The original database will be backed up. Continue?', 'Migrate', 'btn-primary')) return;
+  const el = document.getElementById('migration-result');
+  if(el) el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
+  const r = await api.post('/api/admin/migrate-database');
+  if(r.error) {
+    if(el) el.innerHTML = `<div style="color:var(--danger)">${esc(r.error)}</div>`;
+    return;
+  }
+  if(r.success) {
+    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
+      `<div style="font-size:12px;padding:2px 0"><strong>${esc(t)}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
+    ).join('');
+    if(el) el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
+      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${esc(r.backup||'')}</div>
+      ${details}
+      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
+  }
 }
 
 async function showCpTenantDetail(tenantName) {
@@ -5336,8 +5311,15 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${esc(tenant.display_name||'')}"></div>
         <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${esc(tenant.tenant_id||'')}"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
+        <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
+      </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
-      <div style="margin-top:12px"><button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button>
+        ${!tenant.is_active?`<button class="btn" onclick="activateTenantCp('${tenantName}');closeModal()">Activate Tenant</button>`:'<span class="badge badge-info" style="align-self:center">Currently Active</span>'}
+      </div>
     </div>
     <div class="action-tab-content" id="cpt-frameworks">
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select which compliance frameworks this tenant must follow.</p>
@@ -5373,11 +5355,15 @@ async function showCpTenantDetail(tenantName) {
 }
 
 async function saveTenantConfigCp(tenantName) {
-  const r = await api.put(`/api/tenants/${tenantName}`, {
+  const payload = {
     display_name: document.getElementById('cpt-display').value,
     tenant_id: document.getElementById('cpt-tid').value,
+    client_id: document.getElementById('cpt-cid').value,
     notes: document.getElementById('cpt-notes').value,
-  });
+  };
+  const secret = document.getElementById('cpt-secret').value;
+  if(secret && secret !== '***') payload.client_secret = secret;
+  const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
   toast('Tenant updated','success');
 }
@@ -5403,6 +5389,10 @@ function showCreateTenantCp() {
       <div class="form-group"><label>Display Name</label><input id="nt-display" placeholder="Contoso Production"></div>
     </div>
     <div class="form-group"><label>Azure Tenant ID</label><input id="nt-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Client ID (optional)</label><input id="nt-cid"></div>
+      <div class="form-group"><label>Client Secret (optional)</label><input id="nt-secret" type="password"></div>
+    </div>
     <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2"></textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateTenantCp()">Create</button>`);
 }
@@ -5413,6 +5403,8 @@ async function submitCreateTenantCp() {
   const r = await api.post('/api/tenants', {
     name, display_name: document.getElementById('nt-display').value,
     tenant_id: document.getElementById('nt-tid').value,
+    client_id: document.getElementById('nt-cid').value,
+    client_secret: document.getElementById('nt-secret').value,
     notes: document.getElementById('nt-notes').value,
   });
   if(r.error) return toast(r.error,'error');
