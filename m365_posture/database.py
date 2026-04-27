@@ -582,6 +582,31 @@ class Database:
             except Exception as e:
                 print(f"[WARNING] Auto-migration skipped: {e}", flush=True)
 
+            # Backfill score for actions that were marked Completed before the
+            # auto-bump-on-status-change fix landed. They show up as Completed
+            # but with score < max_score (e.g. SCuBA pass/fail at 0/1).
+            try:
+                row = conn.execute("SELECT name FROM schema_migrations WHERE name='completed_score_backfill_v1'").fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE actions
+                              SET score = COALESCE(max_score, 1.0),
+                                  score_percentage = 100.0,
+                                  max_score = COALESCE(max_score, 1.0),
+                                  updated_at = ?
+                            WHERE status = 'Completed'
+                              AND (score IS NULL OR score < COALESCE(max_score, 1.0))""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('completed_score_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    if cur.rowcount:
+                        print(f"[INFO] Backfilled score for {cur.rowcount} Completed action(s).", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Completed-score backfill skipped: {e}", flush=True)
+
     # ── Zero Trust Reports ──
 
     def store_zt_report(self, tenant_name: str, report_data: dict) -> str:
@@ -1099,16 +1124,27 @@ class Database:
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
 
-            # When status is explicitly set to Completed and no score provided,
-            # auto-fill score to max_score (default 1.0 for pass/fail sources like SCuBA).
+            # When an action transitions to Completed and the caller did not
+            # actually change the score, auto-fill it to max_score (default 1.0
+            # for pass/fail sources like SCuBA). Treats an echoed score that
+            # equals the existing score as "no change" — the edit modal always
+            # sends the current score back on save.
             new_status = updates.get("status")
-            if (new_status == ActionStatus.COMPLETED.value
-                    and "score" not in updates):
-                old_score = existing.get("score")
+            old_score = existing.get("score")
+            transitioning_to_completed = (
+                new_status == ActionStatus.COMPLETED.value
+                and existing.get("status") != ActionStatus.COMPLETED.value
+            )
+            explicit_score_change = (
+                "score" in updates and updates["score"] != old_score
+            )
+            if transitioning_to_completed and not explicit_score_change:
                 max_s = existing.get("max_score") or 1.0
+                if "max_score" in updates and updates["max_score"]:
+                    max_s = updates["max_score"]
                 updates["score"] = max_s
                 updates["score_percentage"] = 100.0
-                if not existing.get("max_score"):
+                if not existing.get("max_score") and "max_score" not in updates:
                     updates["max_score"] = max_s
                 if old_score != max_s:
                     conn.execute(

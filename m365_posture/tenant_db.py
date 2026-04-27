@@ -54,6 +54,43 @@ class TenantDatabase(Database):
         super().__init__(db_path)
         if self._migrated:
             TENANT_DB_DIR.mkdir(parents=True, exist_ok=True)
+            self._backfill_completed_scores_per_tenant()
+
+    def _backfill_completed_scores_per_tenant(self):
+        """One-shot fix for actions stuck at score < max_score after being
+        marked Completed before the auto-bump-on-status-change fix landed."""
+        for db_file in TENANT_DB_DIR.glob("*.db"):
+            try:
+                conn = sqlite3.connect(str(db_file))
+                conn.row_factory = sqlite3.Row
+                conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )""")
+                row = conn.execute(
+                    "SELECT name FROM schema_migrations WHERE name='completed_score_backfill_v1'"
+                ).fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE actions
+                              SET score = COALESCE(max_score, 1.0),
+                                  score_percentage = 100.0,
+                                  max_score = COALESCE(max_score, 1.0),
+                                  updated_at = ?
+                            WHERE status = 'Completed'
+                              AND (score IS NULL OR score < COALESCE(max_score, 1.0))""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('completed_score_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.commit()
+                    if cur.rowcount:
+                        print(f"[INFO] Backfilled score for {cur.rowcount} Completed action(s) in {db_file.name}.", flush=True)
+                conn.close()
+            except Exception as e:
+                print(f"[WARNING] Completed-score backfill skipped for {db_file.name}: {e}", flush=True)
 
     @contextmanager
     def _tenant_conn(self, tenant_name: str):
@@ -237,14 +274,25 @@ class TenantDatabase(Database):
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
 
-            # When status is set to Completed and no score provided, auto-fill to max_score.
+            # When an action transitions to Completed and the caller did not
+            # actually change the score, auto-fill it to max_score. Treats an
+            # echoed score that equals the existing score as "no change" — the
+            # edit modal always sends the current score back on save.
             new_status = updates.get("status")
-            if (new_status == "Completed" and "score" not in updates):
-                old_score = existing["score"]
+            old_score = existing["score"]
+            transitioning_to_completed = (
+                new_status == "Completed" and existing["status"] != "Completed"
+            )
+            explicit_score_change = (
+                "score" in updates and updates["score"] != old_score
+            )
+            if transitioning_to_completed and not explicit_score_change:
                 max_s = existing["max_score"] or 1.0
+                if "max_score" in updates and updates["max_score"]:
+                    max_s = updates["max_score"]
                 updates["score"] = max_s
                 updates["score_percentage"] = 100.0
-                if not existing["max_score"]:
+                if not existing["max_score"] and "max_score" not in updates:
                     updates["max_score"] = max_s
                 if old_score != max_s:
                     conn.execute(
