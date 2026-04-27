@@ -1896,36 +1896,73 @@ class Database:
                 "control_name": control_name, "control_family": control_family}
 
     def get_action_compliance(self, action_id: str) -> list[dict]:
+        """Return compliance mappings for an action, sourced from the global
+        action's mappings (and falling back to legacy per-tenant rows for
+        actions not yet linked to a global action)."""
         with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM compliance_mappings WHERE action_id=? ORDER BY framework, control_id",
-                (action_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_compliance_summary(self, tenant_name: str, framework: str = None) -> dict:
-        """Get compliance posture across frameworks."""
-        with self._conn() as conn:
-            if framework:
+            row = conn.execute(
+                "SELECT global_action_id FROM actions WHERE id=?", (action_id,)
+            ).fetchone()
+            ga_id = row["global_action_id"] if row else None
+            if ga_id:
                 rows = conn.execute(
-                    """SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
-                       a.id as action_id, a.title, a.status, a.priority
-                       FROM compliance_mappings cm
-                       JOIN actions a ON cm.action_id = a.id
-                       WHERE a.tenant_name=? AND cm.framework=?
-                       ORDER BY cm.control_family, cm.control_id""",
-                    (tenant_name, framework),
+                    """SELECT framework, control_id, control_name, control_family, notes
+                         FROM global_compliance_mappings
+                        WHERE global_action_id=?
+                        ORDER BY framework, control_id""",
+                    (ga_id,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
-                       a.id as action_id, a.title, a.status, a.priority
-                       FROM compliance_mappings cm
-                       JOIN actions a ON cm.action_id = a.id
-                       WHERE a.tenant_name=?
-                       ORDER BY cm.framework, cm.control_family, cm.control_id""",
-                    (tenant_name,),
+                    "SELECT * FROM compliance_mappings WHERE action_id=? ORDER BY framework, control_id",
+                    (action_id,),
                 ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_compliance_summary(self, tenant_name: str, framework: str = None) -> dict:
+        """Compliance posture for a tenant. Mappings live on the global action;
+        we join tenant actions back via global_action_id and restrict the
+        framework set to whichever frameworks the tenant has subscribed to (if
+        any are configured). Legacy per-tenant compliance_mappings rows are
+        included for any action not yet linked to a global action."""
+        with self._conn() as conn:
+            subscribed = [r["framework"] for r in conn.execute(
+                "SELECT framework FROM tenant_frameworks WHERE tenant_name=?",
+                (tenant_name,),
+            ).fetchall()]
+            allowed_frameworks = set(subscribed)
+            params_global = [tenant_name]
+            params_legacy = [tenant_name]
+            framework_clause_global = ""
+            framework_clause_legacy = ""
+            if framework:
+                framework_clause_global = " AND gcm.framework=?"
+                framework_clause_legacy = " AND cm.framework=?"
+                params_global.append(framework)
+                params_legacy.append(framework)
+            global_rows = conn.execute(
+                f"""SELECT gcm.framework, gcm.control_id, gcm.control_name, gcm.control_family,
+                           a.id as action_id, a.title, a.status, a.priority
+                      FROM global_compliance_mappings gcm
+                      JOIN actions a ON a.global_action_id = gcm.global_action_id
+                     WHERE a.tenant_name=?{framework_clause_global}
+                     ORDER BY gcm.framework, gcm.control_family, gcm.control_id""",
+                params_global,
+            ).fetchall()
+            legacy_rows = conn.execute(
+                f"""SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
+                           a.id as action_id, a.title, a.status, a.priority
+                      FROM compliance_mappings cm
+                      JOIN actions a ON cm.action_id = a.id
+                     WHERE a.tenant_name=? AND a.global_action_id IS NULL{framework_clause_legacy}
+                     ORDER BY cm.framework, cm.control_family, cm.control_id""",
+                params_legacy,
+            ).fetchall()
+            rows = list(global_rows) + list(legacy_rows)
+            # If the tenant has explicitly subscribed to a set of frameworks,
+            # only show those. If no subscription is configured, show all.
+            if allowed_frameworks and not framework:
+                rows = [r for r in rows if dict(r)["framework"] in allowed_frameworks]
 
         # Group by framework -> control_family -> control
         result = {}

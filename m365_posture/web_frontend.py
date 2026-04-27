@@ -2127,7 +2127,11 @@ async function showEditAction(id) {
       <div class="form-group"><label>Current Value (per tenant)</label><input value="${esc(a.current_value||'')}" readonly></div>
       <div class="form-group"><label>Recommended Value</label><input value="${esc(a.recommended_value||'')}" readonly></div>
     </div>
-    <p style="font-size:12px;color:var(--text-light);margin-top:4px">General fields are imported from the source report and are not editable.</p>`;
+    <div class="form-row">
+      <div class="form-group"><label>Essential Eight Control</label><input value="${esc(a.essential_eight_control||'')}" readonly></div>
+      <div class="form-group"><label>E8 Maturity</label><input value="${esc(a.essential_eight_maturity||'')}" readonly></div>
+    </div>
+    <p style="font-size:12px;color:var(--text-light);margin-top:4px">General fields and framework correlations are imported / auto-mapped on the global action and are not editable per tenant.</p>`;
 
   const overrideBanner = overridden
     ? `<div style="padding:8px 12px;background:var(--warning-light);color:#92400e;border-radius:6px;font-size:13px;margin-bottom:8px">
@@ -2166,10 +2170,6 @@ async function showEditAction(id) {
     <div class="form-row">
       <div class="form-group"><label>Responsible</label>${userSelectHtml('ae-responsible', a.responsible||'')}</div>
       <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
-      <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div>
     </div>
     <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${esc(a.notes||'')}</textarea></div>
     ${a.max_score != null ? `<div class="form-row"><div class="form-group"><label>Score</label><input id="ae-score" type="number" min="0" step="any" value="${a.score??''}"></div><div class="form-group"><label>Max Score</label><input id="ae-maxscore" type="number" min="0" step="any" value="${a.max_score??''}"></div></div>` : ''}
@@ -2221,8 +2221,6 @@ async function updateAction(id) {
     priority: document.getElementById('ae-priority').value,
     responsible: document.getElementById('ae-responsible').value,
     planned_date: document.getElementById('ae-date').value || null,
-    essential_eight_control: document.getElementById('ae-e8ctrl').value || null,
-    essential_eight_maturity: document.getElementById('ae-e8ml').value || null,
     notes: document.getElementById('ae-notes').value,
     changed_by: document.getElementById('ae-by').value,
   };
