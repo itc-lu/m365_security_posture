@@ -2813,23 +2813,6 @@ async function viewPlan(planId) {
 
   let riskReduction = Object.entries(sim.risk_reduction||{}).map(([level,n]) => `<span class="badge badge-${level==='Critical'||level==='High'?'danger':'warning'}">${n}x ${level}</span>`).join(' ');
 
-  // Plan actions table with remove button
-  let planActionsRows = plan.items.map(item => {
-    const a = item;
-    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
-    const phaseOpts = [1,2,3].map(p => `<option value="${p}"${p===(a.phase||1)?' selected':''}>${p}</option>`).join('');
-    return `<tr>
-      <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
-      <td>${statusBadge(a.status||'ToDo')}</td>
-      <td>${priorityBadge(a.priority||'Medium')}</td>
-      <td style="font-size:12px">${esc(a.workload||'')}</td>
-      <td style="font-size:12px">${esc(a.implementation_effort||'')}</td>
-      <td>${scoreDisplay}</td>
-      <td><select style="padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:12px" title="Phase" onchange="updatePlanItemPhase('${planId}','${a.action_id}',this.value)">${phaseOpts}</select></td>
-      <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
-    </tr>`;
-  }).join('');
-
   // Phase names
   const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
   const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
@@ -2925,11 +2908,10 @@ async function viewPlan(planId) {
         <button class="btn btn-sm" onclick="autoAssignPhases('${planId}')" title="Auto-assign actions to phases based on ROI, effort, and licence requirements">Auto-assign Phases</button>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
-      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th>Phase</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
-    ${renderPhaseCard(1)}
-    ${renderPhaseCard(2)}
-    ${renderPhaseCard(3)}
+    ${plan.items.length
+      ? `${renderPhaseCard(1)}${renderPhaseCard(2)}${renderPhaseCard(3)}`
+      : '<div class="card text-center" style="padding:40px;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
 
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Impact by Source Tool</div>${toolImpact||'<div style="color:var(--text-light)">No data</div>'}</div>
@@ -2984,11 +2966,6 @@ async function autoAssignPhases(planId) {
 async function updatePlanStatus(planId, status) {
   await api.put(`/api/plans/${planId}`, {status});
   toast('Plan status updated to ' + status, 'success');
-}
-
-async function updatePlanItemPhase(planId, actionId, phase) {
-  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(phase)});
-  toast(`Moved to Phase ${phase}`, 'success');
 }
 
 async function showEditPlan(planId) {
