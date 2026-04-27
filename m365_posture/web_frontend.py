@@ -2839,25 +2839,6 @@ async function viewPlan(planId) {
     </tr>`;
   }).join('');
 
-  let phaseHtml = phases.map((ph,i) => `
-    <div class="card phase-card phase-${i+1} mb-16" data-phase="${i+1}"
-         ondragover="onPhaseDragOver(event,this)" ondragleave="onPhaseDragLeave(this)" ondrop="onPhaseDrop(event,'${planId}',${i+1})">
-      <div class="card-header">${esc(ph.name||'')} <span class="badge badge-info">${ph.action_count} actions</span>
-        <span style="font-size:11px;color:var(--text-light);margin-left:8px">&#8693; drag actions between phases</span>
-      </div>
-      <div class="grid grid-3 mb-8">
-        <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${esc(Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', '))}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${esc(ph.licences_needed.join(', ')||'None required')}</div></div>
-      </div>
-      <div class="table-wrap"><table><thead><tr><th></th><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
-        ${ph.actions.map(a=>`<tr draggable="true" data-action-id="${a.action_id||a.id}" data-plan-id="${planId}"
-          ondragstart="onPhaseDragStart(event,'${a.action_id||a.id}','${planId}')"
-          style="cursor:grab">
-          <td style="width:24px;color:var(--text-light);font-size:16px">&#8597;</td>
-          <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('')}
-      </tbody></table></div>
-    </div>`).join('');
   // Phase names
   const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
   const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
