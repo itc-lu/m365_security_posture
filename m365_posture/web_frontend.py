@@ -4903,9 +4903,21 @@ function switchTab(event, tabId) {
 
 // ── Control Plane: Cross-Tenant View ──
 async function renderCpCrossTenant() {
-  const data = await api.get('/api/control-plane/cross-tenant');
-  const tenants = data.tenants || [];
-  const globalActions = data.global_actions || [];
+  // Page through the API to fetch every global action, not just the first 100.
+  const pageSize = 1000;
+  let offset = 0;
+  let tenants = [];
+  let globalActions = [];
+  let total = 0;
+  while (true) {
+    const data = await api.get(`/api/control-plane/cross-tenant?limit=${pageSize}&offset=${offset}`);
+    if (!offset) tenants = data.tenants || [];
+    total = data.total || 0;
+    const page = data.global_actions || [];
+    globalActions = globalActions.concat(page);
+    if (page.length < pageSize || globalActions.length >= total) break;
+    offset += pageSize;
+  }
   const statusColors = {
     'Completed':'success','In Progress':'info','ToDo':'warning',
     'Risk Accepted':'purple','Not Applicable':'gray','Warning':'danger'
@@ -4937,7 +4949,7 @@ async function renderCpCrossTenant() {
         <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
       </div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:12px">
-        Showing ${globalActions.length} global actions across ${tenants.length} tenants.
+        Showing ${globalActions.length} of ${total} global actions across ${tenants.length} tenants.
         Actions without a tenant column entry are not yet imported for that tenant.
       </div>
       <div class="table-wrap" id="cross-tenant-table-wrap"><table id="cross-tenant-table">

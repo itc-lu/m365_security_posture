@@ -2197,7 +2197,7 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_cross_tenant():
         """Show implementation status of global actions across all tenants.
         Supports pagination (limit/offset) and filtering by source_tool/workload."""
-        limit = min(int(request.args.get("limit", 100)), 500)
+        limit = min(int(request.args.get("limit", 100)), 5000)
         offset = max(int(request.args.get("offset", 0)), 0)
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")
