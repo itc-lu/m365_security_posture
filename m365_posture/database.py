@@ -2196,6 +2196,87 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_action_peers(self, action_id: str) -> list[dict]:
+        """Return tenant-scoped peer actions: other actions in the same tenant
+        that are correlated with this one via either correlation_group_id or
+        an explicit action_links row. Used to flag cross-tool peers whose
+        status may need review when this action changes."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT tenant_name, status, correlation_group_id FROM actions WHERE id=?",
+                (action_id,),
+            ).fetchone()
+            if not row:
+                return []
+            tenant_name = row["tenant_name"]
+            cg_id = row["correlation_group_id"]
+            self_status = row["status"]
+            peers = {}
+            if cg_id:
+                for r in conn.execute(
+                    """SELECT id, title, source_tool, status, workload
+                         FROM actions
+                        WHERE tenant_name=? AND correlation_group_id=? AND id<>?""",
+                    (tenant_name, cg_id, action_id),
+                ).fetchall():
+                    peers[r["id"]] = dict(r) | {"link_via": "correlation_group"}
+            for r in conn.execute(
+                """SELECT a.id, a.title, a.source_tool, a.status, a.workload
+                     FROM action_links al
+                     JOIN actions a ON a.id = CASE WHEN al.source_action_id=?
+                          THEN al.target_action_id ELSE al.source_action_id END
+                    WHERE (al.source_action_id=? OR al.target_action_id=?)
+                      AND a.tenant_name=? AND a.id<>?""",
+                (action_id, action_id, action_id, tenant_name, action_id),
+            ).fetchall():
+                if r["id"] not in peers:
+                    peers[r["id"]] = dict(r) | {"link_via": "action_link"}
+            for p in peers.values():
+                p["status_differs"] = p.get("status") != self_status
+            return list(peers.values())
+
+    def get_peer_disagreements_for_tenant(self, tenant_name: str) -> dict:
+        """Return {action_id: peer_count_with_different_status} so the actions
+        list can render a "*" badge without one query per row."""
+        with self._conn() as conn:
+            cg_rows = conn.execute(
+                """SELECT a1.id as a_id, a1.status as a_status,
+                          a2.id as p_id, a2.status as p_status
+                     FROM actions a1
+                     JOIN actions a2
+                       ON a2.tenant_name=a1.tenant_name
+                      AND a2.correlation_group_id=a1.correlation_group_id
+                      AND a2.id<>a1.id
+                    WHERE a1.tenant_name=? AND a1.correlation_group_id IS NOT NULL""",
+                (tenant_name,),
+            ).fetchall()
+            link_rows = conn.execute(
+                """SELECT a1.id as a_id, a1.status as a_status,
+                          a2.id as p_id, a2.status as p_status
+                     FROM action_links al
+                     JOIN actions a1 ON a1.id = al.source_action_id
+                     JOIN actions a2 ON a2.id = al.target_action_id
+                    WHERE a1.tenant_name=? AND a2.tenant_name=?
+                    UNION
+                   SELECT a2.id as a_id, a2.status as a_status,
+                          a1.id as p_id, a1.status as p_status
+                     FROM action_links al
+                     JOIN actions a1 ON a1.id = al.source_action_id
+                     JOIN actions a2 ON a2.id = al.target_action_id
+                    WHERE a1.tenant_name=? AND a2.tenant_name=?""",
+                (tenant_name, tenant_name, tenant_name, tenant_name),
+            ).fetchall()
+        seen = set()
+        result: dict = {}
+        for row in list(cg_rows) + list(link_rows):
+            key = (row["a_id"], row["p_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if row["a_status"] != row["p_status"]:
+                result[row["a_id"]] = result.get(row["a_id"], 0) + 1
+        return result
+
     # ── Scoring helpers ──
 
     def get_scores(self, tenant_name: str, exclude_na: bool = False) -> dict:

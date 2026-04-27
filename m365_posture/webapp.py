@@ -358,6 +358,21 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("scope must be 'global' or 'tenant'", 400)
         return jsonify(db.get_action(action_id))
 
+    @app.route("/api/actions/<action_id>/peers", methods=["GET"])
+    def api_action_peers(action_id):
+        """Cross-tool peers for an action: other tenant actions correlated via
+        correlation group or explicit link. Includes a status_differs flag so
+        the UI can mark peers whose status disagrees."""
+        return jsonify(db.get_action_peers(action_id))
+
+    @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
+    def api_tenant_peer_disagreements(name):
+        """Map of action_id -> count of correlated peers whose status differs.
+        Used by the actions list to render a peer-disagreement indicator."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_peer_disagreements_for_tenant(name))
+
     @app.route("/api/actions/<action_id>/implementation-override", methods=["DELETE"])
     def api_clear_action_implementation_override(action_id):
         """Drop the per-tenant override and revert to the global value."""

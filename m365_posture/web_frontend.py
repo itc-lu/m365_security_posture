@@ -1535,6 +1535,7 @@ async function renderActions() {
 }
 
 let _actionPlanMap = {};
+let _peerDisagreements = {};
 
 async function filterActions() {
   const t = state.activeTenant.name;
@@ -1545,11 +1546,13 @@ async function filterActions() {
   const src = document.getElementById('f-source')?.value; if(src) params.set('source_tool', src);
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
-  const [actions, planMap] = await Promise.all([
+  const [actions, planMap, peerDisagreements] = await Promise.all([
     api.get(`/api/tenants/${t}/actions?${params}`),
-    api.get(`/api/tenants/${t}/action-plans`)
+    api.get(`/api/tenants/${t}/action-plans`),
+    api.get(`/api/tenants/${t}/peer-disagreements`),
   ]);
   _actionPlanMap = planMap || {};
+  _peerDisagreements = peerDisagreements || {};
 
   // Show ZT filter row if ZT Report actions exist
   const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
@@ -1657,12 +1660,14 @@ function _renderActionsTableSorted() {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
     const plans = _actionPlanMap[a.id] || [];
     const planBadge = plans.length ? `<span class="badge badge-info" title="${esc(plans.map(p=>p.plan_name).join(', '))}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
+    const peerCount = _peerDisagreements[a.id] || 0;
+    const peerStar = peerCount ? `<span title="${peerCount} cross-tool peer${peerCount>1?'s':''} with a different status — review whether they should also change" style="color:var(--warning);font-weight:700;cursor:help;margin-left:4px">*</span>` : '';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
       <td style="font-size:12px"><code>${esc(a.reference_id||'-')}</code></td>
-      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
+      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${peerStar}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${esc(a.workload||'')}</td>
@@ -1917,6 +1922,7 @@ function actionDetailHtml(a) {
       <div>${srcBadge} ${statusBadge(a.status)}</div>
     </div>
     ${riskHtml}
+    <div id="peers-banner-${a.id}" style="display:none"></div>
     <div class="action-tabs">
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
@@ -2032,7 +2038,35 @@ function toggleActionDetail(id) {
   if(expandedAction && expandedAction!==id) document.getElementById('detail-'+expandedAction)?.classList.add('hidden');
   el.classList.toggle('hidden');
   expandedAction = el.classList.contains('hidden') ? null : id;
-  if(!el.classList.contains('hidden')) loadActionDeps(id);
+  if(!el.classList.contains('hidden')) {
+    loadActionDeps(id);
+    loadActionPeers(id);
+  }
+}
+
+async function loadActionPeers(actionId) {
+  const banner = document.getElementById(`peers-banner-${actionId}`);
+  if(!banner) return;
+  const peers = await api.get(`/api/actions/${actionId}/peers`);
+  const differing = (peers||[]).filter(p => p.status_differs);
+  if(!differing.length) {
+    banner.innerHTML = '';
+    banner.style.display = 'none';
+    return;
+  }
+  const items = differing.map(p =>
+    `<div style="font-size:12px;padding:2px 0">
+       <span style="color:var(--text-light)">${esc(p.source_tool||'')}</span>
+       — ${esc(p.title||'')} ${statusBadge(p.status)}
+     </div>`
+  ).join('');
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding:10px 12px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px">
+      <strong style="color:#92400e">*</strong>
+      <span style="font-size:13px;color:#92400e">${differing.length} cross-tool peer${differing.length>1?'s':''} have a different status — review whether they should also change.</span>
+      <div style="margin-top:6px">${items}</div>
+    </div>`;
 }
 
 async function loadActionLinks(actionId, uid) {
