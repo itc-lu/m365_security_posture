@@ -371,6 +371,16 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_gcm_action ON global_compliance_mappings(global_action_id);
                 CREATE INDEX IF NOT EXISTS idx_gcm_framework ON global_compliance_mappings(framework, control_id);
 
+                -- Per-tenant override of a global action's implementation steps.
+                CREATE TABLE IF NOT EXISTS action_implementation_overrides (
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    global_action_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    implementation_steps TEXT DEFAULT '',
+                    updated_by TEXT DEFAULT '',
+                    updated_at TEXT,
+                    PRIMARY KEY (tenant_name, global_action_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
@@ -566,6 +576,48 @@ class Database:
                         print(f"[INFO] Auto-migrated {count} actions to Control Plane global actions.", flush=True)
             except Exception as e:
                 print(f"[WARNING] Auto-migration skipped: {e}", flush=True)
+
+            # Backfill global_actions.implementation_steps from tenant
+            # actions.remediation_steps. Implementation is now a global field
+            # with optional per-tenant override; before this change every
+            # tenant carried its own copy of the imported steps.
+            try:
+                row = conn.execute(
+                    "SELECT name FROM schema_migrations WHERE name='global_implementation_backfill_v1'"
+                ).fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE global_actions
+                              SET implementation_steps = (
+                                    SELECT a.remediation_steps
+                                      FROM actions a
+                                     WHERE a.global_action_id = global_actions.id
+                                       AND a.remediation_steps IS NOT NULL
+                                       AND a.remediation_steps <> ''
+                                     ORDER BY a.updated_at DESC
+                                     LIMIT 1
+                                  ),
+                                  updated_at = ?
+                            WHERE (implementation_steps IS NULL OR implementation_steps = '')
+                              AND EXISTS (
+                                    SELECT 1 FROM actions a
+                                     WHERE a.global_action_id = global_actions.id
+                                       AND a.remediation_steps IS NOT NULL
+                                       AND a.remediation_steps <> ''
+                              )""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('global_implementation_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    if cur.rowcount:
+                        print(
+                            f"[INFO] Backfilled implementation_steps on {cur.rowcount} global action(s) from tenant data.",
+                            flush=True,
+                        )
+            except Exception as e:
+                print(f"[WARNING] Implementation backfill skipped: {e}", flush=True)
 
             # Backfill score for actions that were marked Completed before the
             # auto-bump-on-status-change fix landed. They show up as Completed
@@ -979,8 +1031,41 @@ class Database:
                 (d["id"],)
             ).fetchall()
             d["history"] = [dict(h) for h in history]
+            # Merge implementation steps from global action and tenant override.
+            ga_id = d.get("global_action_id")
+            global_steps = ""
+            override_steps = None
+            if ga_id:
+                ga = conn.execute(
+                    "SELECT implementation_steps FROM global_actions WHERE id=?",
+                    (ga_id,)
+                ).fetchone()
+                global_steps = (ga["implementation_steps"] if ga else "") or ""
+                ov = conn.execute(
+                    """SELECT implementation_steps, updated_by, updated_at
+                         FROM action_implementation_overrides
+                        WHERE tenant_name=? AND global_action_id=?""",
+                    (d.get("tenant_name", ""), ga_id),
+                ).fetchone()
+                if ov:
+                    override_steps = ov["implementation_steps"] or ""
+                    d["implementation_override_updated_by"] = ov["updated_by"]
+                    d["implementation_override_updated_at"] = ov["updated_at"]
+            d["global_implementation_steps"] = global_steps
+            if ga_id:
+                d["implementation_steps"] = (
+                    override_steps if override_steps is not None else global_steps
+                )
+            else:
+                # Action not yet linked to a global action — fall back to the
+                # per-tenant column (legacy / freshly imported / manual).
+                d["implementation_steps"] = d.get("remediation_steps") or ""
+            d["is_implementation_overridden"] = override_steps is not None
         else:
             d["history"] = []
+            d["global_implementation_steps"] = ""
+            d["implementation_steps"] = d.get("remediation_steps") or ""
+            d["is_implementation_overridden"] = False
         return d
 
     def get_actions(self, tenant_name: str, filters: dict = None,
@@ -2273,6 +2358,49 @@ class Database:
     def delete_global_action(self, ga_id: str):
         with self._conn() as conn:
             conn.execute("DELETE FROM global_actions WHERE id=?", (ga_id,))
+
+    # ── Per-tenant implementation overrides ──
+
+    def get_implementation_override(self, tenant_name: str, global_action_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM action_implementation_overrides
+                    WHERE tenant_name=? AND global_action_id=?""",
+                (tenant_name, global_action_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_implementation_override(self, tenant_name: str, global_action_id: str,
+                                    implementation_steps: str, updated_by: str = "") -> dict:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO action_implementation_overrides
+                    (tenant_name, global_action_id, implementation_steps, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_name, global_action_id) DO UPDATE SET
+                        implementation_steps=excluded.implementation_steps,
+                        updated_by=excluded.updated_by,
+                        updated_at=excluded.updated_at""",
+                (tenant_name, global_action_id, implementation_steps or "",
+                 updated_by or "", now),
+            )
+        return {
+            "tenant_name": tenant_name,
+            "global_action_id": global_action_id,
+            "implementation_steps": implementation_steps or "",
+            "updated_by": updated_by or "",
+            "updated_at": now,
+        }
+
+    def clear_implementation_override(self, tenant_name: str, global_action_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """DELETE FROM action_implementation_overrides
+                    WHERE tenant_name=? AND global_action_id=?""",
+                (tenant_name, global_action_id),
+            )
+            return cur.rowcount > 0
 
     def link_action_to_global(self, action_id: str, global_action_id: str):
         with self._conn() as conn:

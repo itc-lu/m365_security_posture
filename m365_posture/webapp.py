@@ -332,6 +332,46 @@ def create_app(db_path: str = None) -> Flask:
     def api_action_history(action_id):
         return jsonify(db.get_action_history(action_id))
 
+    @app.route("/api/actions/<action_id>/implementation", methods=["PUT"])
+    def api_update_action_implementation(action_id):
+        """Save implementation steps either globally (default) or only for
+        this tenant. Body: {implementation_steps, scope: 'global'|'tenant'}.
+        Requires the action to be linked to a global action."""
+        data = request.get_json() or {}
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        ga_id = action.get("global_action_id")
+        if not ga_id:
+            return _json_error("Action is not linked to a global action; promote it in Control Plane first", 400)
+        scope = (data.get("scope") or "global").lower()
+        steps = data.get("implementation_steps", "")
+        actor = session.get("username") or data.get("changed_by", "")
+        if scope == "tenant":
+            db.set_implementation_override(action["tenant_name"], ga_id, steps, actor)
+        elif scope == "global":
+            db.update_global_action(ga_id, implementation_steps=steps)
+            # If a tenant override was masking the global value, drop it so the
+            # newly-saved global value takes effect immediately.
+            db.clear_implementation_override(action["tenant_name"], ga_id)
+        else:
+            return _json_error("scope must be 'global' or 'tenant'", 400)
+        return jsonify(db.get_action(action_id))
+
+    @app.route("/api/actions/<action_id>/implementation-override", methods=["DELETE"])
+    def api_clear_action_implementation_override(action_id):
+        """Drop the per-tenant override and revert to the global value."""
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        ga_id = action.get("global_action_id")
+        if not ga_id:
+            return _json_error("Action is not linked to a global action", 400)
+        removed = db.clear_implementation_override(action["tenant_name"], ga_id)
+        if not removed:
+            return _json_error("No override to remove", 404)
+        return jsonify(db.get_action(action_id))
+
     # ── Import endpoint ──
 
     def _store_zt_report(db, tenant_name, filename, tmp_path, parser, actions):

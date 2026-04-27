@@ -2100,27 +2100,132 @@ async function addAction() {
 
 async function showEditAction(id) {
   const a = await api.get(`/api/actions/${id}`);
-  openModal('Edit Action: '+(a.title||'').substring(0,40), `
-    <div class="form-group"><label>Title</label><input id="ae-title" value="${esc(a.title||'')}"></div>
-    <div class="form-row"><div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
-    <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Workload</label><select id="ae-workload">${selectOptions(state.enums.workloads,a.workload)}</select></div>
-    <div class="form-group"><label>Risk Level</label><select id="ae-risk">${selectOptions(state.enums.risk_levels,a.risk_level)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>User Impact</label><select id="ae-impact">${selectOptions(state.enums.user_impacts,a.user_impact)}</select></div>
-    <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Responsible</label>${userSelectHtml('ae-responsible', a.responsible||'')}</div>
-    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div></div>
-    <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
-    <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
-    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
+  const linkedToGlobal = !!a.global_action_id;
+  const overridden = !!a.is_implementation_overridden;
+  const globalSteps = a.global_implementation_steps || '';
+  const implSteps = a.implementation_steps || '';
+
+  // General (read-only) — sourced from the report. The Tenant tab below
+  // carries the editable per-tenant fields.
+  const general = `
+    <div class="form-group"><label>Title</label><input value="${esc(a.title||'')}" readonly></div>
+    <div class="form-row">
+      <div class="form-group"><label>Source Tool</label><input value="${esc(a.source_tool||'')}" readonly></div>
+      <div class="form-group"><label>Reference ID</label><input value="${esc(a.reference_id||a.source_id||'')}" readonly></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Workload</label><input value="${esc(a.workload||'')}" readonly></div>
+      <div class="form-group"><label>Required Licence</label><input value="${esc(a.required_licence||'')}" readonly></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Risk Level</label><input value="${esc(a.risk_level||'')}" readonly></div>
+      <div class="form-group"><label>User Impact</label><input value="${esc(a.user_impact||'')}" readonly></div>
+      <div class="form-group"><label>Impl. Effort</label><input value="${esc(a.implementation_effort||'')}" readonly></div>
+    </div>
+    <div class="form-group"><label>Description</label><textarea rows="2" readonly>${esc(a.description||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Current Value (per tenant)</label><input value="${esc(a.current_value||'')}" readonly></div>
+      <div class="form-group"><label>Recommended Value</label><input value="${esc(a.recommended_value||'')}" readonly></div>
+    </div>
+    <p style="font-size:12px;color:var(--text-light);margin-top:4px">General fields are imported from the source report and are not editable.</p>`;
+
+  const overrideBanner = overridden
+    ? `<div style="padding:8px 12px;background:var(--warning-light);color:#92400e;border-radius:6px;font-size:13px;margin-bottom:8px">
+         This tenant has its own implementation override.
+         <a href="javascript:void(0)" onclick="resetImplementationOverride('${id}')">Reset to global</a>
+       </div>`
+    : (linkedToGlobal
+        ? `<div style="padding:8px 12px;background:var(--primary-light);color:#1e40af;border-radius:6px;font-size:13px;margin-bottom:8px">
+             Implementation steps are shared across all tenants. "Save globally" updates everywhere; "Save for this tenant only" creates an override.
+           </div>`
+        : `<div style="padding:8px 12px;background:var(--bg);color:var(--text-light);border-radius:6px;font-size:13px;margin-bottom:8px">
+             This action isn't linked to a global action yet, so saving here only affects the local copy.
+           </div>`);
+
+  const implementation = `
+    ${overrideBanner}
+    <div class="form-group"><label>Implementation Steps</label>
+      <textarea id="ae-impl" rows="8" style="font-family:inherit">${esc(implSteps)}</textarea>
+    </div>
+    ${linkedToGlobal && overridden ? `
+      <details style="margin-bottom:8px"><summary style="font-size:12px;color:var(--text-light);cursor:pointer">Show global value</summary>
+        <pre style="font-size:12px;background:var(--bg);padding:8px;border-radius:6px;white-space:pre-wrap">${esc(globalSteps||'(empty)')}</pre>
+      </details>` : ''}
+    <div class="flex gap-8" style="margin-top:8px">
+      ${linkedToGlobal
+        ? `<button class="btn btn-primary" onclick="saveImplementation('${id}','global')">Save globally</button>
+           <button class="btn" onclick="saveImplementation('${id}','tenant')">Save for this tenant only</button>`
+        : `<button class="btn btn-primary" onclick="saveImplementationLocal('${id}')">Save</button>`}
+    </div>`;
+
+  const tenant = `
+    <div class="form-row">
+      <div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
+      <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible</label>${userSelectHtml('ae-responsible', a.responsible||'')}</div>
+      <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
+      <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${esc(a.notes||'')}</textarea></div>
     ${a.max_score != null ? `<div class="form-row"><div class="form-group"><label>Score</label><input id="ae-score" type="number" min="0" step="any" value="${a.score??''}"></div><div class="form-group"><label>Max Score</label><input id="ae-maxscore" type="number" min="0" step="any" value="${a.max_score??''}"></div></div>` : ''}
-    <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
+    <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`;
+
+  openModal('Edit Action: '+(a.title||'').substring(0,40), `
+    <div class="action-tabs">
+      <div class="atab active" onclick="switchTab(event,'ae-tab-tenant')">Tenant</div>
+      <div class="atab" onclick="switchTab(event,'ae-tab-impl')">Implementation</div>
+      <div class="atab" onclick="switchTab(event,'ae-tab-general')">General (read-only)</div>
+    </div>
+    <div class="action-tab-content active" id="ae-tab-tenant">${tenant}</div>
+    <div class="action-tab-content" id="ae-tab-impl">${implementation}</div>
+    <div class="action-tab-content" id="ae-tab-general">${general}</div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="updateAction('${id}')">Save Tenant Fields</button>`);
   populateUserSelect('ae-responsible', a.responsible||'');
 }
 
+async function saveImplementation(id, scope) {
+  const steps = document.getElementById('ae-impl').value;
+  const r = await api.put(`/api/actions/${id}/implementation`, {implementation_steps: steps, scope});
+  if(r.error) return toast(r.error, 'error');
+  toast(scope === 'global' ? 'Saved globally for all tenants' : 'Saved for this tenant only','success');
+  closeModal(); filterActions();
+}
+
+async function saveImplementationLocal(id) {
+  const steps = document.getElementById('ae-impl').value;
+  const r = await api.put(`/api/actions/${id}`, {remediation_steps: steps});
+  if(r.error) return toast(r.error, 'error');
+  toast('Saved','success');
+  closeModal(); filterActions();
+}
+
+async function resetImplementationOverride(id) {
+  if(!await showConfirm('Reset Override','Drop the per-tenant override and revert to the global implementation steps?','Reset','btn-primary')) return;
+  const r = await api.del(`/api/actions/${id}/implementation-override`);
+  if(r.error) return toast(r.error, 'error');
+  toast('Override removed','success');
+  closeModal(); showEditAction(id);
+}
+
 async function updateAction(id) {
-  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, essential_eight_control:document.getElementById('ae-e8ctrl').value||null, essential_eight_maturity:document.getElementById('ae-e8ml').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
+  // Only the per-tenant fields are saved here; General is read-only and
+  // Implementation has its own save buttons (saveImplementation*).
+  const data = {
+    status: document.getElementById('ae-status').value,
+    priority: document.getElementById('ae-priority').value,
+    responsible: document.getElementById('ae-responsible').value,
+    planned_date: document.getElementById('ae-date').value || null,
+    essential_eight_control: document.getElementById('ae-e8ctrl').value || null,
+    essential_eight_maturity: document.getElementById('ae-e8ml').value || null,
+    notes: document.getElementById('ae-notes').value,
+    changed_by: document.getElementById('ae-by').value,
+  };
   const scoreEl = document.getElementById('ae-score');
   const maxEl = document.getElementById('ae-maxscore');
   if(scoreEl) {
@@ -2129,7 +2234,8 @@ async function updateAction(id) {
     if(!isNaN(s)) data.score = s;
     if(!isNaN(m)) { data.max_score = m; data.score_percentage = m > 0 ? Math.round(s/m*100*100)/100 : 0; }
   }
-  await api.put(`/api/actions/${id}`, data);
+  const r = await api.put(`/api/actions/${id}`, data);
+  if(r && r.error) return toast(r.error,'error');
   closeModal(); toast('Action updated','success'); filterActions();
 }
 
