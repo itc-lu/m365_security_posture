@@ -5,18 +5,17 @@ database into per-tenant databases for better isolation, performance, and
 future encryption support.
 
 Architecture:
-  - Central DB (m365_posture.db): tenants, responsible_persons,
-    correlation_groups, secure_score_controls, gitlab_templates
+  - Central DB (m365_posture.db): tenants, users, correlation_groups,
+    secure_score_controls, gitlab_templates
   - Per-tenant DBs (data/tenants/{name}.db): actions, action_history,
     plans, plan_items, import_history, score_snapshots, drift_reports,
     zt_reports, scuba_reports, compliance_mappings, action_dependencies,
-    action_responsible, action_links
+    action_links
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sqlite3
 from contextlib import contextmanager
@@ -54,6 +53,43 @@ class TenantDatabase(Database):
         super().__init__(db_path)
         if self._migrated:
             TENANT_DB_DIR.mkdir(parents=True, exist_ok=True)
+            self._backfill_completed_scores_per_tenant()
+
+    def _backfill_completed_scores_per_tenant(self):
+        """One-shot fix for actions stuck at score < max_score after being
+        marked Completed before the auto-bump-on-status-change fix landed."""
+        for db_file in TENANT_DB_DIR.glob("*.db"):
+            try:
+                conn = sqlite3.connect(str(db_file))
+                conn.row_factory = sqlite3.Row
+                conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )""")
+                row = conn.execute(
+                    "SELECT name FROM schema_migrations WHERE name='completed_score_backfill_v1'"
+                ).fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE actions
+                              SET score = COALESCE(max_score, 1.0),
+                                  score_percentage = 100.0,
+                                  max_score = COALESCE(max_score, 1.0),
+                                  updated_at = ?
+                            WHERE status = 'Completed'
+                              AND (score IS NULL OR score < COALESCE(max_score, 1.0))""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('completed_score_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.commit()
+                    if cur.rowcount:
+                        print(f"[INFO] Backfilled score for {cur.rowcount} Completed action(s) in {db_file.name}.", flush=True)
+                conn.close()
+            except Exception as e:
+                print(f"[WARNING] Completed-score backfill skipped for {db_file.name}: {e}", flush=True)
 
     @contextmanager
     def _tenant_conn(self, tenant_name: str):
@@ -237,14 +273,25 @@ class TenantDatabase(Database):
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
 
-            # When status is set to Completed and no score provided, auto-fill to max_score.
+            # When an action transitions to Completed and the caller did not
+            # actually change the score, auto-fill it to max_score. Treats an
+            # echoed score that equals the existing score as "no change" — the
+            # edit modal always sends the current score back on save.
             new_status = updates.get("status")
-            if (new_status == "Completed" and "score" not in updates):
-                old_score = existing["score"]
+            old_score = existing["score"]
+            transitioning_to_completed = (
+                new_status == "Completed" and existing["status"] != "Completed"
+            )
+            explicit_score_change = (
+                "score" in updates and updates["score"] != old_score
+            )
+            if transitioning_to_completed and not explicit_score_change:
                 max_s = existing["max_score"] or 1.0
+                if "max_score" in updates and updates["max_score"]:
+                    max_s = updates["max_score"]
                 updates["score"] = max_s
                 updates["score_percentage"] = 100.0
-                if not existing["max_score"]:
+                if not existing["max_score"] and "max_score" not in updates:
                     updates["max_score"] = max_s
                 if old_score != max_s:
                     conn.execute(
@@ -355,55 +402,6 @@ class TenantDatabase(Database):
                 (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
-
-    # ── Responsible persons (tenant-scoped action assignments) ──
-
-    def get_action_persons(self, action_id: str) -> list:
-        if not self._migrated:
-            return super().get_action_persons(action_id)
-        # Persons are in central DB, assignments in tenant DB
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return []
-        with self._tenant_conn(tenant_name) as conn:
-            person_ids = [r["person_id"] for r in conn.execute(
-                "SELECT person_id FROM action_responsible WHERE action_id=?",
-                (action_id,)
-            ).fetchall()]
-        if not person_ids:
-            return []
-        with self._conn() as conn:
-            placeholders = ",".join("?" * len(person_ids))
-            rows = conn.execute(
-                f"SELECT * FROM responsible_persons WHERE id IN ({placeholders}) ORDER BY name",
-                person_ids
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def assign_person_to_action(self, action_id: str, person_id: str):
-        if not self._migrated:
-            return super().assign_person_to_action(action_id, person_id)
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return
-        with self._tenant_conn(tenant_name) as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO action_responsible
-                   (action_id, person_id, assigned_at) VALUES (?, ?, ?)""",
-                (action_id, person_id, datetime.utcnow().isoformat()),
-            )
-
-    def unassign_person_from_action(self, action_id: str, person_id: str):
-        if not self._migrated:
-            return super().unassign_person_from_action(action_id, person_id)
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return
-        with self._tenant_conn(tenant_name) as conn:
-            conn.execute(
-                "DELETE FROM action_responsible WHERE action_id=? AND person_id=?",
-                (action_id, person_id),
-            )
 
 
 # ── Tenant DB Schema (no tenant_name columns needed) ──
@@ -567,14 +565,6 @@ CREATE TABLE IF NOT EXISTS drift_reports (
     resolved_findings TEXT DEFAULT '[]',
     summary TEXT DEFAULT ''
 );
-
-CREATE TABLE IF NOT EXISTS action_responsible (
-    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
-    person_id TEXT NOT NULL,
-    assigned_at TEXT,
-    PRIMARY KEY (action_id, person_id)
-);
-CREATE INDEX IF NOT EXISTS idx_action_responsible_person ON action_responsible(person_id);
 
 CREATE TABLE IF NOT EXISTS action_links (
     source_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
@@ -776,25 +766,6 @@ def migrate_to_per_tenant(db_path: str = None) -> dict:
                     except sqlite3.OperationalError:
                         pass
                 tenant_result["compliance_mappings"] = len(mappings)
-
-            # Migrate action_responsible
-            if action_ids:
-                try:
-                    assignments = conn.execute(
-                        f"SELECT * FROM action_responsible WHERE action_id IN ({phs_a})",
-                        action_ids
-                    ).fetchall()
-                    for ar in assignments:
-                        d = dict(ar)
-                        cols = list(d.keys())
-                        phs = ",".join("?" * len(cols))
-                        tconn.execute(
-                            f"INSERT OR IGNORE INTO action_responsible ({','.join(cols)}) VALUES ({phs})",
-                            list(d.values())
-                        )
-                    tenant_result["person_assignments"] = len(assignments)
-                except sqlite3.OperationalError:
-                    tenant_result["person_assignments"] = 0
 
             # Migrate action_links
             if action_ids:
