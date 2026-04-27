@@ -307,10 +307,6 @@ body.unauth { background:#0f172a; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Plans
     </a>
-    <a href="#people" data-page="people">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      People
-    </a>
     <a href="#correlations" data-page="correlations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       Correlations
@@ -643,14 +639,14 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',people:'People & Assignments',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
     dashboard:renderDashboard,actions:renderActions,import:renderImport,
-    plans:renderPlans,people:renderPeople,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
+    plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
     compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
     history:renderHistory,
     'cp-global-actions':renderCpGlobalActions,
@@ -1799,7 +1795,7 @@ async function showAddToPlan(actionIds) {
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Plan Name</span><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Description</span><textarea id="atp-new-desc" rows="2"></textarea></div>
         <div style="display:flex;gap:8px">
-          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span><input id="atp-new-responsible" placeholder="e.g. John Smith"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span>${userSelectHtml('atp-new-responsible','')}</div>
           <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Priority</span><select id="atp-new-priority">${['Critical','High','Medium','Low'].map(p=>'<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>').join('')}</select></div>
         </div>
         <div style="display:flex;gap:8px">
@@ -1811,6 +1807,7 @@ async function showAddToPlan(actionIds) {
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="addToPlanSubmit()">Add to Plan</button>`);
+  populateUserSelect('atp-new-responsible','');
 }
 
 async function addToPlanSubmit() {
@@ -1924,7 +1921,7 @@ function actionDetailHtml(a) {
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
       <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
-      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Links & People</div>
+      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Linked Actions</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
@@ -2006,20 +2003,11 @@ function actionDetailHtml(a) {
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
-    <!-- Links & People Tab -->
+    <!-- Linked Actions Tab -->
     <div class="action-tab-content" id="atab-${uid}-links">
-      <div class="grid grid-2" style="gap:20px">
-        <div>
-          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Responsible Persons</div>
-          <div id="action-persons-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
-          <button class="btn btn-sm" onclick="showAssignPerson('${a.id}','${uid}');event.stopPropagation()">+ Assign Person</button>
-        </div>
-        <div>
-          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
-          <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
-          <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
-        </div>
-      </div>
+      <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
+      <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+      <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
       ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span>
       ${a.import_suggested_status?` &middot; <span style="font-size:12px;color:var(--warning)">Import wanted status: <strong>${a.import_suggested_status}</strong> (protected)</span>`:''}</div>`:''}
     </div>
@@ -2048,69 +2036,21 @@ function toggleActionDetail(id) {
 }
 
 async function loadActionLinks(actionId, uid) {
-  const [persons, links] = await Promise.all([
-    api.get(`/api/actions/${actionId}/persons`),
-    api.get(`/api/actions/${actionId}/links`),
-  ]);
-
-  // Render persons
-  const personsEl = document.getElementById(`action-persons-${uid}`);
-  if(personsEl) {
-    if(persons.length === 0) {
-      personsEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No persons assigned</div>';
-    } else {
-      personsEl.innerHTML = persons.map(p =>
-        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">
-          <span style="background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${p.name.charAt(0).toUpperCase()}</span>
-          <span><strong>${p.name}</strong>${p.role?' &middot; '+p.role:''}</span>
-          <button class="btn btn-sm" onclick="unassignPerson('${actionId}','${p.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
-        </div>`
-      ).join('');
-    }
-  }
-
-  // Render links
+  const links = await api.get(`/api/actions/${actionId}/links`);
   const linksEl = document.getElementById(`action-links-${uid}`);
-  if(linksEl) {
-    if(links.length === 0) {
-      linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
-    } else {
-      linksEl.innerHTML = links.map(l =>
-        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
-          <span style="font-size:10px;color:var(--text-light)">${l.source_tool}</span>
-          <span>${l.title}</span>
-          ${statusBadge(l.status)}
-          <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
-        </div>`
-      ).join('');
-    }
-  }
-}
-
-async function showAssignPerson(actionId, uid) {
-  const persons = await api.get('/api/responsible-persons');
-  if(!persons.length) {
-    toast('No persons registered. Add people first in the People page.','error');
+  if(!linksEl) return;
+  if(!links || links.length === 0) {
+    linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
     return;
   }
-  const opts = persons.map(p => `<option value="${p.id}">${p.name}${p.role?' ('+p.role+')':''}</option>`).join('');
-  openModal('Assign Person', `
-    <div class="form-group"><label>Person</label><select id="assign-person-select">${opts}</select></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" onclick="doAssignPerson('${actionId}','${uid}')">Assign</button>`);
-}
-
-async function doAssignPerson(actionId, uid) {
-  const personId = document.getElementById('assign-person-select').value;
-  await api.post(`/api/actions/${actionId}/persons`, {person_id: personId});
-  closeModal(); toast('Person assigned','success');
-  loadActionLinks(actionId, uid);
-}
-
-async function unassignPerson(actionId, personId, uid) {
-  await api.del(`/api/actions/${actionId}/persons/${personId}`);
-  toast('Person unassigned','success');
-  loadActionLinks(actionId, uid);
+  linksEl.innerHTML = links.map(l =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
+      <span style="font-size:10px;color:var(--text-light)">${esc(l.source_tool||'')}</span>
+      <span>${esc(l.title||'')}</span>
+      ${statusBadge(l.status)}
+      <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+    </div>`
+  ).join('');
 }
 
 async function showLinkAction(actionId, uid) {
@@ -2168,7 +2108,7 @@ async function showEditAction(id) {
     <div class="form-group"><label>Risk Level</label><select id="ae-risk">${selectOptions(state.enums.risk_levels,a.risk_level)}</select></div></div>
     <div class="form-row"><div class="form-group"><label>User Impact</label><select id="ae-impact">${selectOptions(state.enums.user_impacts,a.user_impact)}</select></div>
     <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${esc(a.responsible||'')}"></div>
+    <div class="form-row"><div class="form-group"><label>Responsible</label>${userSelectHtml('ae-responsible', a.responsible||'')}</div>
     <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div></div>
     <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
     <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
@@ -2176,6 +2116,7 @@ async function showEditAction(id) {
     ${a.max_score != null ? `<div class="form-row"><div class="form-group"><label>Score</label><input id="ae-score" type="number" min="0" step="any" value="${a.score??''}"></div><div class="form-group"><label>Max Score</label><input id="ae-maxscore" type="number" min="0" step="any" value="${a.max_score??''}"></div></div>` : ''}
     <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
+  populateUserSelect('ae-responsible', a.responsible||'');
 }
 
 async function updateAction(id) {
@@ -2673,7 +2614,7 @@ async function showCreatePlan() {
     <div class="form-group"><label>Plan Name</label><input id="p-name" placeholder="Q1 2026 Security Uplift"></div>
     <div class="form-group"><label>Description</label><textarea id="p-desc" rows="2"></textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="p-responsible" placeholder="e.g. John Smith"></div>
+      <div class="form-group"><label>Responsible Person</label>${userSelectHtml('p-responsible','')}</div>
       <div class="form-group"><label>Priority</label><select id="p-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
@@ -2688,6 +2629,7 @@ async function showCreatePlan() {
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-action-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`,
     '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createPlan()">Create & Simulate</button>');
+  populateUserSelect('p-responsible','');
 }
 
 async function createPlan() {
@@ -2948,7 +2890,7 @@ async function showEditPlan(planId) {
     <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${esc(plan.name||'')}"></div>
     <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${esc(plan.description||'')}</textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${esc(plan.responsible_person||'')}"></div>
+      <div class="form-group"><label>Responsible Person</label>${userSelectHtml('ep-responsible', plan.responsible_person||'')}</div>
       <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
@@ -2960,6 +2902,7 @@ async function showEditPlan(planId) {
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="submitEditPlan('${planId}')">Save</button>`);
+  populateUserSelect('ep-responsible', plan.responsible_person||'');
 }
 
 async function submitEditPlan(planId) {
@@ -3124,173 +3067,40 @@ async function deletePlan(id) {
   toast('Plan deleted','success'); renderPlans();
 }
 
-// ── People & Assignments ──
-let _peopleView = 'list'; // 'list' or 'kanban'
-let _peopleFilter = '';
+// ── User selector helper (replaces former "People" list) ──
+function userLabel(u) {
+  if(!u) return '';
+  return u.display_name || u.username || u.email || '';
+}
 
-async function renderPeople() {
-  const c = document.getElementById('content');
-  const [persons, allActions] = await Promise.all([
-    api.get('/api/responsible-persons'),
-    requireTenant() ? api.get(`/api/tenants/${state.activeTenant.name}/actions`) : Promise.resolve([]),
-  ]);
-  const assignments = requireTenant() ? await api.get(`/api/tenants/${state.activeTenant.name}/action-persons`) : {};
-  // Build reverse map: person_id -> [actions]
-  const personActions = {};
-  persons.forEach(p => personActions[p.id] = []);
-  for(const [aid, plist] of Object.entries(assignments)) {
-    const action = allActions.find(a => a.id === aid);
-    if(!action) continue;
-    for(const p of plist) {
-      if(!personActions[p.id]) personActions[p.id] = [];
-      personActions[p.id].push(action);
-    }
+function userSelectHtml(id, selectedValue, opts) {
+  // Renders an empty placeholder; populateUserSelect fills it.
+  const required = opts && opts.required ? ' required' : '';
+  const allowEmpty = !(opts && opts.required);
+  const initial = selectedValue ? `<option value="${esc(selectedValue)}" selected>${esc(selectedValue)}</option>` : '';
+  return `<select id="${id}"${required}>${allowEmpty?'<option value=""></option>':''}${initial}</select>`;
+}
+
+async function populateUserSelect(id, selectedValue, opts) {
+  const sel = document.getElementById(id);
+  if(!sel) return;
+  const users = await api.get('/api/users');
+  const list = Array.isArray(users) ? users : [];
+  const allowEmpty = !(opts && opts.required);
+  const seen = new Set();
+  let options = allowEmpty ? '<option value=""></option>' : '';
+  for(const u of list) {
+    if(!u.is_active) continue;
+    const v = u.username || u.id;
+    seen.add(v);
+    const isSel = (selectedValue && (selectedValue === v || selectedValue === u.id || selectedValue === u.display_name)) ? ' selected' : '';
+    options += `<option value="${esc(v)}"${isSel}>${esc(userLabel(u))}${u.email?` (${esc(u.email)})`:''}</option>`;
   }
-  // Unassigned actions
-  const assignedIds = new Set(Object.keys(assignments));
-  const unassigned = allActions.filter(a => !assignedIds.has(a.id));
-
-  // Plans map
-  let plansMap = {};
-  if(requireTenant()) {
-    try {
-      const plans = await api.get(`/api/tenants/${state.activeTenant.name}/plans`);
-      for(const p of plans) for(const pa of (p.actions||[])) {
-        if(!plansMap[pa.action_id]) plansMap[pa.action_id] = [];
-        plansMap[pa.action_id].push(p.name);
-      }
-    } catch(e) {}
+  // Preserve a legacy free-text value that doesn't match any current user.
+  if(selectedValue && !seen.has(selectedValue)) {
+    options += `<option value="${esc(selectedValue)}" selected>${esc(selectedValue)} (legacy)</option>`;
   }
-
-  const personList = persons.map(p => {
-    const acts = personActions[p.id] || [];
-    const todo = acts.filter(a=>a.status==='ToDo').length;
-    const prog = acts.filter(a=>a.status==='In Progress').length;
-    const done = acts.filter(a=>a.status==='Completed').length;
-    return `<tr>
-      <td><strong>${p.name}</strong></td>
-      <td style="font-size:12px">${p.email||'—'}</td>
-      <td style="font-size:12px">${p.role||'—'}</td>
-      <td style="font-size:12px">${p.department||'—'}</td>
-      <td>${acts.length}</td>
-      <td><span class="badge badge-danger">${todo}</span> <span class="badge badge-warning">${prog}</span> <span class="badge badge-success">${done}</span></td>
-      <td>
-        <button class="btn btn-sm" onclick="editPerson('${p.id}','${p.name.replace(/'/g,"\\'")}','${(p.email||'').replace(/'/g,"\\'")}','${(p.role||'').replace(/'/g,"\\'")}','${(p.department||'').replace(/'/g,"\\'")}')">Edit</button>
-        <button class="btn btn-sm" onclick="deletePerson('${p.id}')" style="color:var(--danger)">Del</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  // Kanban: columns per person + unassigned
-  const filterLower = _peopleFilter.toLowerCase();
-  const kanbanCols = persons.map(p => {
-    let acts = (personActions[p.id]||[]);
-    if(filterLower) acts = acts.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower) || a.source_tool.toLowerCase().includes(filterLower));
-    const cards = acts.map(a => {
-      const planBadge = plansMap[a.id] ? `<div style="font-size:10px;color:var(--primary);margin-top:4px">&#128203; ${plansMap[a.id].join(', ')}</div>` : '';
-      return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer" onclick="navigate('actions');setTimeout(()=>toggleActionDetail('${a.id}'),300)">
-        <div style="font-size:12px;font-weight:500">${a.title}</div>
-        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
-        <div style="font-size:10px;color:var(--text-light);margin-top:4px">${a.source_tool} &middot; ${a.workload}</div>
-        ${planBadge}
-      </div>`;
-    }).join('');
-    return `<div style="min-width:280px;max-width:320px;flex-shrink:0">
-      <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
-        <span>${p.name}</span>
-        <span class="badge" style="background:var(--primary);color:#fff">${acts.length}</span>
-      </div>
-      <div style="max-height:calc(100vh - 260px);overflow-y:auto">${cards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">No actions</div>'}</div>
-    </div>`;
-  }).join('');
-
-  // Unassigned column
-  let unassignedFiltered = unassigned;
-  if(filterLower) unassignedFiltered = unassigned.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower));
-  const unassignedCards = unassignedFiltered.slice(0,50).map(a => {
-    return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px">
-      <div style="font-weight:500">${a.title}</div>
-      <div style="margin-top:4px">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
-    </div>`;
-  }).join('');
-
-  c.innerHTML = `
-    <div class="flex justify-between items-center mb-16">
-      <div class="flex gap-8">
-        <button class="btn btn-sm ${_peopleView==='list'?'btn-primary':''}" onclick="_peopleView='list';renderPeople()">List</button>
-        <button class="btn btn-sm ${_peopleView==='kanban'?'btn-primary':''}" onclick="_peopleView='kanban';renderPeople()">Kanban</button>
-      </div>
-      <div class="flex gap-8">
-        ${_peopleView==='kanban'?`<input class="form-control" style="width:200px" placeholder="Filter actions..." value="${_peopleFilter}" oninput="_peopleFilter=this.value;renderPeople()">`:''}
-        <button class="btn btn-primary btn-sm" onclick="showAddPerson()">+ Add Person</button>
-      </div>
-    </div>
-    ${_peopleView==='list' ? `
-    <div class="card mb-16">
-      <div class="card-header">Responsible Persons (${persons.length})</div>
-      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Actions</th><th>Status</th><th></th></tr></thead>
-      <tbody>${personList||'<tr><td colspan="7" class="text-center">No persons registered. Add your first team member.</td></tr>'}</tbody></table></div>
-    </div>` : `
-    <div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:16px">
-      ${kanbanCols}
-      <div style="min-width:280px;max-width:320px;flex-shrink:0">
-        <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
-          <span style="color:var(--text-light)">Unassigned</span>
-          <span class="badge">${unassigned.length}</span>
-        </div>
-        <div style="max-height:calc(100vh - 260px);overflow-y:auto">${unassignedCards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">All actions assigned</div>'}</div>
-        ${unassigned.length>50?`<div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px">${unassigned.length-50} more...</div>`:''}
-      </div>
-    </div>`}`;
-}
-
-function showAddPerson() {
-  openModal('Add Person', `
-    <div class="form-group"><label>Name</label><input id="rp-name" placeholder="Jane Doe"></div>
-    <div class="form-group"><label>Email</label><input id="rp-email" placeholder="jane@company.com"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Role</label><input id="rp-role" placeholder="Security Engineer"></div>
-      <div class="form-group"><label>Department</label><input id="rp-department" placeholder="IT Security"></div>
-    </div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addPerson()">Add</button>`);
-}
-
-async function addPerson() {
-  const name = document.getElementById('rp-name').value;
-  if(!name) return toast('Name is required','error');
-  await api.post('/api/responsible-persons', {
-    name, email:document.getElementById('rp-email').value,
-    role:document.getElementById('rp-role').value,
-    department:document.getElementById('rp-department').value
-  });
-  closeModal(); toast('Person added','success'); renderPeople();
-}
-
-function editPerson(id, name, email, role, dept) {
-  openModal('Edit Person', `
-    <div class="form-group"><label>Name</label><input id="rp-name" value="${name}"></div>
-    <div class="form-group"><label>Email</label><input id="rp-email" value="${email}"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Role</label><input id="rp-role" value="${role}"></div>
-      <div class="form-group"><label>Department</label><input id="rp-department" value="${dept}"></div>
-    </div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updatePerson('${id}')">Save</button>`);
-}
-
-async function updatePerson(id) {
-  await api.put(`/api/responsible-persons/${id}`, {
-    name:document.getElementById('rp-name').value,
-    email:document.getElementById('rp-email').value,
-    role:document.getElementById('rp-role').value,
-    department:document.getElementById('rp-department').value
-  });
-  closeModal(); toast('Person updated','success'); renderPeople();
-}
-
-async function deletePerson(id) {
-  if(!confirm('Delete this person? They will be unassigned from all actions.')) return;
-  await api.del(`/api/responsible-persons/${id}`);
-  toast('Person deleted','success'); renderPeople();
+  sel.innerHTML = options;
 }
 
 // ── Correlations ──
@@ -4581,13 +4391,14 @@ function showAcceptRisk(actionId) {
   openModal('Accept Risk', `
     <p style="margin-bottom:12px;color:var(--text-light)">Document the risk acceptance decision. The action will be marked as "Risk Accepted".</p>
     <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Why is this risk being accepted?"></textarea></div>
-    <div class="form-group"><label>Risk Owner (required)</label><input id="ra-owner" placeholder="Person responsible for this risk"></div>
+    <div class="form-group"><label>Risk Owner (required)</label>${userSelectHtml('ra-owner','',{required:true})}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="ra-review" type="date"></div>
       <div class="form-group"><label>Expiry Date (auto-revert to ToDo)</label><input id="ra-expiry" type="date"></div>
     </div>
     <div class="form-group"><label>Your Name</label><input id="ra-by" placeholder="Who is recording this"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="acceptRisk('${actionId}')">Accept Risk</button>`);
+  populateUserSelect('ra-owner','',{required:true});
 }
 
 async function acceptRisk(actionId) {

@@ -5,12 +5,12 @@ database into per-tenant databases for better isolation, performance, and
 future encryption support.
 
 Architecture:
-  - Central DB (m365_posture.db): tenants, responsible_persons,
-    correlation_groups, secure_score_controls, gitlab_templates
+  - Central DB (m365_posture.db): tenants, users, correlation_groups,
+    secure_score_controls, gitlab_templates
   - Per-tenant DBs (data/tenants/{name}.db): actions, action_history,
     plans, plan_items, import_history, score_snapshots, drift_reports,
     zt_reports, scuba_reports, compliance_mappings, action_dependencies,
-    action_responsible, action_links
+    action_links
 """
 
 from __future__ import annotations
@@ -404,55 +404,6 @@ class TenantDatabase(Database):
             ).fetchall()
             return [dict(r) for r in rows]
 
-    # ── Responsible persons (tenant-scoped action assignments) ──
-
-    def get_action_persons(self, action_id: str) -> list:
-        if not self._migrated:
-            return super().get_action_persons(action_id)
-        # Persons are in central DB, assignments in tenant DB
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return []
-        with self._tenant_conn(tenant_name) as conn:
-            person_ids = [r["person_id"] for r in conn.execute(
-                "SELECT person_id FROM action_responsible WHERE action_id=?",
-                (action_id,)
-            ).fetchall()]
-        if not person_ids:
-            return []
-        with self._conn() as conn:
-            placeholders = ",".join("?" * len(person_ids))
-            rows = conn.execute(
-                f"SELECT * FROM responsible_persons WHERE id IN ({placeholders}) ORDER BY name",
-                person_ids
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def assign_person_to_action(self, action_id: str, person_id: str):
-        if not self._migrated:
-            return super().assign_person_to_action(action_id, person_id)
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return
-        with self._tenant_conn(tenant_name) as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO action_responsible
-                   (action_id, person_id, assigned_at) VALUES (?, ?, ?)""",
-                (action_id, person_id, datetime.utcnow().isoformat()),
-            )
-
-    def unassign_person_from_action(self, action_id: str, person_id: str):
-        if not self._migrated:
-            return super().unassign_person_from_action(action_id, person_id)
-        tenant_name = self._find_action_tenant(action_id)
-        if not tenant_name:
-            return
-        with self._tenant_conn(tenant_name) as conn:
-            conn.execute(
-                "DELETE FROM action_responsible WHERE action_id=? AND person_id=?",
-                (action_id, person_id),
-            )
-
 
 # ── Tenant DB Schema (no tenant_name columns needed) ──
 
@@ -615,14 +566,6 @@ CREATE TABLE IF NOT EXISTS drift_reports (
     resolved_findings TEXT DEFAULT '[]',
     summary TEXT DEFAULT ''
 );
-
-CREATE TABLE IF NOT EXISTS action_responsible (
-    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
-    person_id TEXT NOT NULL,
-    assigned_at TEXT,
-    PRIMARY KEY (action_id, person_id)
-);
-CREATE INDEX IF NOT EXISTS idx_action_responsible_person ON action_responsible(person_id);
 
 CREATE TABLE IF NOT EXISTS action_links (
     source_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
@@ -824,25 +767,6 @@ def migrate_to_per_tenant(db_path: str = None) -> dict:
                     except sqlite3.OperationalError:
                         pass
                 tenant_result["compliance_mappings"] = len(mappings)
-
-            # Migrate action_responsible
-            if action_ids:
-                try:
-                    assignments = conn.execute(
-                        f"SELECT * FROM action_responsible WHERE action_id IN ({phs_a})",
-                        action_ids
-                    ).fetchall()
-                    for ar in assignments:
-                        d = dict(ar)
-                        cols = list(d.keys())
-                        phs = ",".join("?" * len(cols))
-                        tconn.execute(
-                            f"INSERT OR IGNORE INTO action_responsible ({','.join(cols)}) VALUES ({phs})",
-                            list(d.values())
-                        )
-                    tenant_result["person_assignments"] = len(assignments)
-                except sqlite3.OperationalError:
-                    tenant_result["person_assignments"] = 0
 
             # Migrate action_links
             if action_ids:

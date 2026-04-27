@@ -1196,58 +1196,23 @@ def create_app(db_path: str = None) -> Flask:
 
     # ── Responsible Persons ──
 
-    @app.route("/api/responsible-persons", methods=["GET"])
-    def api_list_persons():
-        return jsonify(db.get_responsible_persons())
-
-    @app.route("/api/responsible-persons", methods=["POST"])
-    def api_create_person():
-        data = request.get_json() or {}
-        if not data.get("name"):
-            return _json_error("name is required")
-        pid = db.create_responsible_person(
-            data["name"], data.get("email", ""),
-            data.get("role", ""), data.get("department", ""))
-        return jsonify({"id": pid, "name": data["name"]})
-
-    @app.route("/api/responsible-persons/<pid>", methods=["PUT"])
-    def api_update_person(pid):
-        data = request.get_json() or {}
-        db.update_responsible_person(pid, data)
-        return jsonify({"ok": True})
-
-    @app.route("/api/responsible-persons/<pid>", methods=["DELETE"])
-    def api_delete_person(pid):
-        db.delete_responsible_person(pid)
-        return jsonify({"ok": True})
-
-    @app.route("/api/actions/<action_id>/persons", methods=["GET"])
-    def api_action_persons(action_id):
-        return jsonify(db.get_action_persons(action_id))
-
-    @app.route("/api/actions/<action_id>/persons", methods=["POST"])
-    def api_assign_person(action_id):
-        data = request.get_json() or {}
-        person_id = data.get("person_id")
-        if not person_id:
-            return _json_error("person_id required")
-        db.assign_person_to_action(action_id, person_id)
-        return jsonify({"ok": True})
-
-    @app.route("/api/actions/<action_id>/persons/<pid>", methods=["DELETE"])
-    def api_unassign_person(action_id, pid):
-        db.unassign_person_from_action(action_id, pid)
-        return jsonify({"ok": True})
-
-    @app.route("/api/responsible-persons/<pid>/actions", methods=["GET"])
-    def api_person_actions(pid):
-        tenant = request.args.get("tenant")
-        return jsonify(db.get_person_actions(pid, tenant))
-
-    @app.route("/api/tenants/<name>/action-persons", methods=["GET"])
-    def api_all_action_persons(name):
-        """Return all action→person assignments for a tenant."""
-        return jsonify(db.get_all_action_person_assignments(name))
+    @app.route("/api/users", methods=["GET"])
+    def api_list_users_for_select():
+        """Lightweight user list for selectors (responsible/owner pickers).
+        Available to any authenticated user; returns only fields needed for
+        rendering a dropdown."""
+        users = db.list_users()
+        return jsonify([
+            {
+                "id": u.get("id"),
+                "username": u.get("username"),
+                "display_name": u.get("display_name") or u.get("username"),
+                "email": u.get("email", ""),
+                "role": u.get("role", ""),
+                "is_active": bool(u.get("is_active", True)),
+            }
+            for u in users
+        ])
 
     # ── Action Links (cross-tool) ──
 

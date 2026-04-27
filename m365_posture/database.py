@@ -524,25 +524,10 @@ class Database:
                 except sqlite3.OperationalError:
                     pass
 
-            # Responsible persons registry
+            # The responsible_persons / action_responsible tables were removed;
+            # responsibility is now expressed as a User Management user reference
+            # on the action itself.
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS responsible_persons (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    email TEXT DEFAULT '',
-                    role TEXT DEFAULT '',
-                    department TEXT DEFAULT '',
-                    created_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS action_responsible (
-                    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
-                    person_id TEXT NOT NULL REFERENCES responsible_persons(id) ON DELETE CASCADE,
-                    assigned_at TEXT,
-                    PRIMARY KEY (action_id, person_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_action_responsible_person
-                    ON action_responsible(person_id);
-
                 CREATE TABLE IF NOT EXISTS action_links (
                     source_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
                     target_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
@@ -2053,99 +2038,6 @@ class Database:
                 d["resolved_findings"] = json.loads(d.get("resolved_findings") or "[]")
                 result.append(d)
             return result
-
-    # ── Responsible Persons ──
-
-    def get_responsible_persons(self) -> list:
-        """Get all registered responsible persons."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM responsible_persons ORDER BY name"
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def create_responsible_person(self, name: str, email: str = "",
-                                  role: str = "", department: str = "") -> str:
-        pid = str(uuid.uuid4())[:8]
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT INTO responsible_persons (id, name, email, role, department, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (pid, name, email, role, department, datetime.utcnow().isoformat()),
-            )
-        return pid
-
-    def update_responsible_person(self, person_id: str, data: dict):
-        allowed = {"name", "email", "role", "department"}
-        fields = {k: v for k, v in data.items() if k in allowed}
-        if not fields:
-            return
-        with self._conn() as conn:
-            sets = ", ".join(f"{k}=?" for k in fields)
-            vals = list(fields.values()) + [person_id]
-            conn.execute(f"UPDATE responsible_persons SET {sets} WHERE id=?", vals)
-
-    def delete_responsible_person(self, person_id: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM action_responsible WHERE person_id=?", (person_id,))
-            conn.execute("DELETE FROM responsible_persons WHERE id=?", (person_id,))
-
-    def assign_person_to_action(self, action_id: str, person_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO action_responsible (action_id, person_id, assigned_at)
-                   VALUES (?, ?, ?)""",
-                (action_id, person_id, datetime.utcnow().isoformat()),
-            )
-
-    def unassign_person_from_action(self, action_id: str, person_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                "DELETE FROM action_responsible WHERE action_id=? AND person_id=?",
-                (action_id, person_id),
-            )
-
-    def get_action_persons(self, action_id: str) -> list:
-        with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT rp.* FROM responsible_persons rp
-                   JOIN action_responsible ar ON ar.person_id = rp.id
-                   WHERE ar.action_id=? ORDER BY rp.name""",
-                (action_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_person_actions(self, person_id: str, tenant_name: str = None) -> list:
-        with self._conn() as conn:
-            sql = """SELECT a.* FROM actions a
-                     JOIN action_responsible ar ON ar.action_id = a.id
-                     WHERE ar.person_id=?"""
-            params: list = [person_id]
-            if tenant_name:
-                sql += " AND a.tenant_name=?"
-                params.append(tenant_name)
-            sql += " ORDER BY a.priority, a.status"
-            rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_all_action_person_assignments(self, tenant_name: str = None) -> dict:
-        """Return {action_id: [person_dicts]} for all assigned actions."""
-        with self._conn() as conn:
-            sql = """SELECT ar.action_id, rp.* FROM action_responsible ar
-                     JOIN responsible_persons rp ON rp.id = ar.person_id
-                     JOIN actions a ON a.id = ar.action_id"""
-            params: list = []
-            if tenant_name:
-                sql += " WHERE a.tenant_name=?"
-                params.append(tenant_name)
-            sql += " ORDER BY rp.name"
-            rows = conn.execute(sql, params).fetchall()
-        result: dict = {}
-        for r in rows:
-            d = dict(r)
-            aid = d.pop("action_id")
-            result.setdefault(aid, []).append(d)
-        return result
 
     # ── Action Links (cross-tool) ──
 
