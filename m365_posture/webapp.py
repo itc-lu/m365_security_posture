@@ -889,7 +889,7 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/correlation-groups", methods=["GET"])
     def api_correlation_groups():
-        return jsonify(db.get_correlation_groups())
+        return jsonify(db.list_correlation_groups())
 
     @app.route("/api/correlation-groups", methods=["POST"])
     def api_create_correlation_group():
@@ -925,7 +925,7 @@ def create_app(db_path: str = None) -> Flask:
     def api_seed_default_families():
         """Seed the default control families from CONTROL_FAMILIES if DB is empty."""
         from .correlation import CONTROL_FAMILIES
-        existing = db.get_correlation_groups()
+        existing = db.list_correlation_groups()
         existing_names = {g["canonical_name"] for g in existing}
         created = 0
         for canonical_name, description, keywords in CONTROL_FAMILIES:

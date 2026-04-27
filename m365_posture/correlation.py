@@ -186,7 +186,7 @@ def auto_correlate(db: Database, tenant_name: str, threshold: float = 0.05):
         return {"groups_created": 0, "actions_linked": 0}
 
     # Load families from DB; seed defaults if empty
-    existing_groups = {g["canonical_name"]: g for g in db.get_correlation_groups()}
+    existing_groups = {g["canonical_name"]: g for g in db.list_correlation_groups()}
 
     # Build the family list from DB-stored groups + any missing defaults
     families = []
@@ -237,7 +237,7 @@ def auto_correlate(db: Database, tenant_name: str, threshold: float = 0.05):
 
 def get_correlation_summary(db: Database, tenant_name: str) -> list[dict]:
     """Get a summary of all correlation groups with their actions for a tenant."""
-    groups = db.get_correlation_groups()
+    groups = db.list_correlation_groups()
     result = []
 
     for group in groups:
