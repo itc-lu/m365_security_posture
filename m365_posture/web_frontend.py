@@ -1182,34 +1182,59 @@ async function doSnapshotCompare() {
   _cmpContext = {type: 'snapshot', tenantName, tenantDisplay, data: r};
   const c = document.getElementById('content');
 
+  const curLabel = labels[0];
+  const snapLabel = labels[1];
+  const snapHasAdj = r.snap_has_adj;
+
+  // Overall table: show full score + adj score for both current and snapshot
   let rows = labels.map(l => {
     const d = r.overall[l]||{};
-    const delta = l === labels[0] ? '' : (() => {
-      const cur = r.overall[labels[0]]?.percentage||0;
+    const delta = l === curLabel ? '' : (() => {
+      const cur = r.overall[curLabel]?.percentage||0;
       const snap = d.percentage||0;
       const diff = cur - snap;
       if(Math.abs(diff) < 0.01) return '';
       return diff > 0 ? ' <span style="color:var(--success);font-size:12px">&#9650; +'+diff.toFixed(1)+'%</span>'
                        : ' <span style="color:var(--danger);font-size:12px">&#9660; '+diff.toFixed(1)+'%</span>';
     })();
-    return `<tr><td><strong>${l}</strong></td><td>${gauge(d.percentage||0,80)}${delta}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+    const adjCell = (l === curLabel || snapHasAdj)
+      ? `<td style="color:var(--primary);font-size:13px">${d.adj_percentage != null ? d.adj_percentage.toFixed(2)+'%' : '—'}</td>`
+      : `<td style="color:var(--text-light);font-size:12px" title="Not recorded — take a new snapshot to capture adjusted scores">N/A</td>`;
+    return `<tr>
+      <td><strong>${l}</strong></td>
+      <td>${gauge(d.percentage||0,80)}${delta}</td>
+      ${adjCell}
+      <td>${d.total_actions||0}</td>
+      <td>${d.completed_actions||0}</td>
+    </tr>`;
   }).join('');
 
-  let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = labels.map(l => {
-      const pct = (data[l]?.percentage||0).toFixed(2);
-      return `<td>${pct}%</td>`;
+  // Tool rows: full score columns + adj columns side by side
+  const allToolKeys = [...new Set([...Object.keys(r.by_tool||{}), ...Object.keys(r.adj_by_tool||{})])].sort();
+  let toolRows = allToolKeys.map(tool => {
+    const fullCells = labels.map(l => `<td>${((r.by_tool[tool]||{})[l]?.percentage||0).toFixed(2)}%</td>`).join('');
+    const adjCells = labels.map(l => {
+      const pct = ((r.adj_by_tool[tool]||{})[l]?.percentage);
+      if (l === snapLabel && !snapHasAdj) return `<td style="color:var(--text-light);font-size:11px">N/A</td>`;
+      return `<td style="color:var(--primary)">${pct != null ? pct.toFixed(2)+'%' : '—'}</td>`;
     }).join('');
-    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
+    return `<tr><td>${esc(tool)}</td>${fullCells}${adjCells}</tr>`;
   }).join('');
 
-  let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
-    let cells = labels.map(l => {
-      const pct = (data[l]?.percentage||0).toFixed(2);
-      return `<td>${pct}%</td>`;
+  // Workload rows: same pattern
+  const allWlKeys = [...new Set([...Object.keys(r.by_workload||{}), ...Object.keys(r.adj_by_workload||{})])].sort();
+  let wlRows = allWlKeys.map(wl => {
+    const fullCells = labels.map(l => `<td>${((r.by_workload[wl]||{})[l]?.percentage||0).toFixed(2)}%</td>`).join('');
+    const adjCells = labels.map(l => {
+      const pct = ((r.adj_by_workload[wl]||{})[l]?.percentage);
+      if (l === snapLabel && !snapHasAdj) return `<td style="color:var(--text-light);font-size:11px">N/A</td>`;
+      return `<td style="color:var(--primary)">${pct != null ? pct.toFixed(2)+'%' : '—'}</td>`;
     }).join('');
-    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
+    return `<tr><td>${esc(wl)}</td>${fullCells}${adjCells}</tr>`;
   }).join('');
+
+  const toolAdjHdrs = labels.map(l => `<th style="color:var(--primary)">${esc(l)} Adj.</th>`).join('');
+  const wlAdjHdrs = labels.map(l => `<th style="color:var(--primary)">${esc(l)} Adj.</th>`).join('');
 
   // Action differences between current and snapshot
   const actionDiffs = r.action_diffs || [];
@@ -1232,20 +1257,21 @@ async function doSnapshotCompare() {
       </div>
     </div>
     <div id="comparison-report">
-    <div class="card mb-16"><div class="card-header">Overall</div>
-      <table><thead><tr><th>State</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${!snapHasAdj ? `<div class="drift-banner neutral mb-16" style="font-size:13px"><span>&#9432;</span> This snapshot was taken before adjusted scores were recorded. Take a new snapshot to capture N/A &amp; Risk Accepted exclusions for future comparisons. Current adjusted scores are still shown.</div>` : ''}
+    <div class="card mb-16"><div class="card-header">Overall <span style="font-size:11px;font-weight:400;color:var(--text-light)">&nbsp;· Adj. = excluding N/A &amp; Risk Accepted</span></div>
+      <table><thead><tr><th>State</th><th>Full Score</th><th style="color:var(--primary)">Adj. Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">By Source Tool</div>
-        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Tool</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}${toolAdjHdrs}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
-        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Workload</th>${labels.map(l=>`<th>${esc(l)}</th>`).join('')}${wlAdjHdrs}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
       <div class="card-header">Action Changes <span class="badge badge-danger">${r.actions_differing||0} changed</span> <span class="badge badge-success">${sameCount} unchanged</span></div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions whose status changed since the snapshot, or new actions added after the snapshot. Click current status to view details.</div>
       ${snapActionRows ? `
         <div class="table-wrap" style="max-height:500px;overflow-y:auto">
-          <table><thead><tr><th>Action</th><th>${esc(labels[1])}</th><th>${esc(labels[0])}</th></tr></thead>
+          <table><thead><tr><th>Action</th><th>${esc(snapLabel)}</th><th>${esc(curLabel)}</th></tr></thead>
           <tbody>${snapActionRows}</tbody></table>
         </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No changes found - all actions have the same status as the snapshot.</div>'}
     </div>
@@ -1515,13 +1541,9 @@ async function _downloadSnapshotComparisonPDF(today) {
   const labels = data.labels || ['Current', 'Snapshot'];
   const curLabel = labels[0];
   const snapLabel = labels[1];
+  const snapHasAdj = data.snap_has_adj;
 
-  // Fetch adjusted scores for current state only
-  const [adjScores, allActions] = await Promise.all([
-    api.get(`/api/tenants/${tenantName}/scores?exclude_na=1`),
-    api.get(`/api/tenants/${tenantName}/actions`),
-  ]);
-
+  const allActions = await api.get(`/api/tenants/${tenantName}/actions`);
   const riskAccepted = allActions.filter(a => a.status === 'Risk Accepted');
   const notApplicable = allActions.filter(a => a.status === 'Not Applicable');
   const hasExcluded = riskAccepted.length + notApplicable.length > 0;
@@ -1534,7 +1556,6 @@ async function _downloadSnapshotComparisonPDF(today) {
 
   const curFull = data.overall[curLabel] || {};
   const snapFull = data.overall[snapLabel] || {};
-  const curAdj = adjScores;
 
   function scoreColor(pct) {
     if (pct >= 80) return '#16a34a'; if (pct >= 60) return '#84cc16';
@@ -1545,41 +1566,46 @@ async function _downloadSnapshotComparisonPDF(today) {
   const deltaStr = delta > 0 ? `+${delta}%` : `${delta}%`;
   const deltaClr = delta > 0 ? '#16a34a' : delta < 0 ? '#dc2626' : '#64748b';
 
-  // Workload comparison table
+  // Workload comparison table — uses adj_by_workload from the API for both current and snapshot
   const allWl = [...new Set([
     ...Object.keys(data.by_workload||{}),
-    ...Object.keys(adjScores.by_workload||{}),
+    ...Object.keys(data.adj_by_workload||{}),
   ])].sort();
   const wlRows = allWl.map(wl => {
     const cf = (data.by_workload[wl]||{})[curLabel] || {};
-    const ca = (adjScores.by_workload||{})[wl] || {};
+    const ca = (data.adj_by_workload[wl]||{})[curLabel] || {};
     const sf = (data.by_workload[wl]||{})[snapLabel] || {};
+    const sa = (data.adj_by_workload[wl]||{})[snapLabel] || {};
     return `<tr>
       <td>${esc(wl)}</td>
       <td style="font-weight:600;color:${scoreColor(cf.percentage||0)}">${(cf.percentage||0).toFixed(1)}%</td>
-      ${hasExcluded ? `<td style="color:#3b82f6">${(ca.percentage||0).toFixed(1)}%</td>` : ''}
+      ${hasExcluded ? `<td style="color:#3b82f6">${ca.percentage != null ? ca.percentage.toFixed(1)+'%' : '—'}</td>` : ''}
       <td style="color:#64748b">${(sf.percentage||0).toFixed(1)}%</td>
+      ${snapHasAdj ? `<td style="color:#64748b;font-style:italic">${sa.percentage != null ? sa.percentage.toFixed(1)+'%' : '—'}</td>` : ''}
     </tr>`;
   }).join('');
 
   // Tool comparison table
   const allTools = [...new Set([
     ...Object.keys(data.by_tool||{}),
-    ...Object.keys(adjScores.by_tool||{}),
+    ...Object.keys(data.adj_by_tool||{}),
   ])].sort();
   const toolRows = allTools.map(tool => {
     const cf = (data.by_tool[tool]||{})[curLabel] || {};
-    const ca = (adjScores.by_tool||{})[tool] || {};
+    const ca = (data.adj_by_tool[tool]||{})[curLabel] || {};
     const sf = (data.by_tool[tool]||{})[snapLabel] || {};
+    const sa = (data.adj_by_tool[tool]||{})[snapLabel] || {};
     return `<tr>
       <td>${esc(tool)}</td>
       <td style="font-weight:600;color:${scoreColor(cf.percentage||0)}">${(cf.percentage||0).toFixed(1)}%</td>
-      ${hasExcluded ? `<td style="color:#3b82f6">${(ca.percentage||0).toFixed(1)}%</td>` : ''}
+      ${hasExcluded ? `<td style="color:#3b82f6">${ca.percentage != null ? ca.percentage.toFixed(1)+'%' : '—'}</td>` : ''}
       <td style="color:#64748b">${(sf.percentage||0).toFixed(1)}%</td>
+      ${snapHasAdj ? `<td style="color:#64748b;font-style:italic">${sa.percentage != null ? sa.percentage.toFixed(1)+'%' : '—'}</td>` : ''}
     </tr>`;
   }).join('');
 
-  const adjHdr = hasExcluded ? `<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#3b82f6">Current Adj.</th>` : '';
+  const adjCurHdr = hasExcluded ? `<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#3b82f6">Curr. Adj.</th>` : '';
+  const adjSnapHdr = snapHasAdj ? `<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-style:italic">Snap. Adj.</th>` : '';
 
   // Build risk register section using shared helper
   const raByWlCopy = raByWorkload;
@@ -1665,8 +1691,8 @@ async function _downloadSnapshotComparisonPDF(today) {
     ${hasExcluded ? `
     <div class="score-card adj">
       <div class="lbl" style="color:#3b82f6">Current — Adjusted Score</div>
-      <div class="val" style="color:${scoreColor(curAdj.percentage||0)}">${(curAdj.percentage||0).toFixed(1)}%</div>
-      <div class="det">${curAdj.total_score||0} / ${curAdj.total_max||0} pts &middot; ${curAdj.total_actions||0} actions</div>
+      <div class="val" style="color:${scoreColor(curFull.adj_percentage||0)}">${(curFull.adj_percentage||0).toFixed(1)}%</div>
+      <div class="det">${curFull.adj_total_score||0} / ${curFull.adj_total_max||0} pts &middot; ${curFull.adj_total_actions||0} actions</div>
       <div style="font-size:10px;color:#94a3b8;margin-top:3px">${notApplicable.length} N/A &amp; ${riskAccepted.length} RA excluded</div>
     </div>` : ''}
     <div class="score-card snap">
@@ -1675,6 +1701,14 @@ async function _downloadSnapshotComparisonPDF(today) {
       <div class="det">${snapFull.completed_actions||0} / ${snapFull.total_actions||0} actions completed</div>
       <div style="font-size:10px;color:#94a3b8;margin-top:3px">${esc(snapLabel)}</div>
     </div>
+    ${snapHasAdj ? `
+    <div class="score-card snap" style="border-color:#94a3b8">
+      <div class="lbl" style="color:#64748b">Snapshot — Adjusted Score</div>
+      <div class="val" style="color:${scoreColor(snapFull.adj_percentage||0)}">${(snapFull.adj_percentage||0).toFixed(1)}%</div>
+      <div class="det">${snapFull.adj_total_score||0} / ${snapFull.adj_total_max||0} pts &middot; ${snapFull.adj_total_actions||0} actions</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px">Excl. N/A &amp; Risk Accepted</div>
+    </div>` : `
+    ${hasExcluded ? '<div class="score-card snap" style="opacity:0.5;border-style:dashed"><div class="lbl">Snapshot Adj. Score</div><div style="font-size:13px;color:#94a3b8;margin-top:12px">Not recorded</div><div style="font-size:10px;color:#94a3b8;margin-top:4px">Old snapshot — take a new one</div></div>' : ''}`}
   </div>
 
   <div class="grid2">
@@ -1683,11 +1717,12 @@ async function _downloadSnapshotComparisonPDF(today) {
       <table>
         <thead><tr>
           <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Workload</th>
-          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Current Full</th>
-          ${adjHdr}
-          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snapshot</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Curr. Full</th>
+          ${adjCurHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snap. Full</th>
+          ${adjSnapHdr}
         </tr></thead>
-        <tbody>${wlRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+        <tbody>${wlRows || '<tr><td colspan="5" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
       </table>
     </div>
     <div class="card">
@@ -1695,11 +1730,12 @@ async function _downloadSnapshotComparisonPDF(today) {
       <table>
         <thead><tr>
           <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Tool</th>
-          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Current Full</th>
-          ${adjHdr}
-          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snapshot</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Curr. Full</th>
+          ${adjCurHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snap. Full</th>
+          ${adjSnapHdr}
         </tr></thead>
-        <tbody>${toolRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+        <tbody>${toolRows || '<tr><td colspan="5" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
       </table>
     </div>
   </div>

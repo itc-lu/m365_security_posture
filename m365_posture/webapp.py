@@ -1148,10 +1148,15 @@ def create_app(db_path: str = None) -> Flask:
         if not snapshot:
             return _json_error("Snapshot not found", 404)
 
-        # Get current scores
+        # Get current scores (full and adjusted)
         current = db.get_scores(name)
+        current_adj = db.get_scores(name, exclude_na=True)
         snap_label = "Snapshot (" + snapshot["timestamp"][:10] + ")"
         cur_label = "Current"
+
+        # Snapshot adjusted scores (stored since the adj_scores migration; may be None for old snapshots)
+        snap_adj_pct = snapshot.get("adj_percentage")
+        snap_has_adj = snap_adj_pct is not None
 
         result = {
             "tenant": name,
@@ -1163,18 +1168,31 @@ def create_app(db_path: str = None) -> Flask:
                     "percentage": current.get("percentage", 0),
                     "total_actions": current.get("total_actions", 0),
                     "completed_actions": current.get("completed_actions", 0),
+                    "adj_percentage": current_adj.get("percentage", 0),
+                    "adj_total_actions": current_adj.get("total_actions", 0),
+                    "adj_completed_actions": current_adj.get("completed_actions", 0),
+                    "adj_total_score": current_adj.get("total_score", 0),
+                    "adj_total_max": current_adj.get("total_max", 0),
                 },
                 snap_label: {
                     "percentage": snapshot.get("percentage", 0),
                     "total_actions": snapshot.get("total_actions", 0),
                     "completed_actions": snapshot.get("completed_actions", 0),
+                    "adj_percentage": snapshot.get("adj_percentage"),
+                    "adj_total_actions": snapshot.get("adj_total_actions"),
+                    "adj_completed_actions": snapshot.get("adj_completed_actions"),
+                    "adj_total_score": snapshot.get("adj_total_score"),
+                    "adj_total_max": snapshot.get("adj_total_max"),
                 },
             },
+            "snap_has_adj": snap_has_adj,
             "by_tool": {},
             "by_workload": {},
+            "adj_by_tool": {},
+            "adj_by_workload": {},
         }
 
-        # Merge tool data
+        # Merge tool data (full)
         all_tools = set(list(current.get("by_tool", {}).keys()) +
                         list(snapshot.get("by_tool", {}).keys()))
         for tool in sorted(all_tools):
@@ -1183,13 +1201,31 @@ def create_app(db_path: str = None) -> Flask:
                 snap_label: snapshot.get("by_tool", {}).get(tool, {}),
             }
 
-        # Merge workload data
+        # Merge tool data (adjusted)
+        all_adj_tools = set(list(current_adj.get("by_tool", {}).keys()) +
+                            list(snapshot.get("adj_by_tool", {}).keys()))
+        for tool in sorted(all_adj_tools):
+            result["adj_by_tool"][tool] = {
+                cur_label: current_adj.get("by_tool", {}).get(tool, {}),
+                snap_label: snapshot.get("adj_by_tool", {}).get(tool, {}),
+            }
+
+        # Merge workload data (full)
         all_wl = set(list(current.get("by_workload", {}).keys()) +
                       list(snapshot.get("by_workload", {}).keys()))
         for wl in sorted(all_wl):
             result["by_workload"][wl] = {
                 cur_label: current.get("by_workload", {}).get(wl, {}),
                 snap_label: snapshot.get("by_workload", {}).get(wl, {}),
+            }
+
+        # Merge workload data (adjusted)
+        all_adj_wl = set(list(current_adj.get("by_workload", {}).keys()) +
+                          list(snapshot.get("adj_by_workload", {}).keys()))
+        for wl in sorted(all_adj_wl):
+            result["adj_by_workload"][wl] = {
+                cur_label: current_adj.get("by_workload", {}).get(wl, {}),
+                snap_label: snapshot.get("adj_by_workload", {}).get(wl, {}),
             }
 
         # Action-level comparison: reconstruct status at snapshot time
