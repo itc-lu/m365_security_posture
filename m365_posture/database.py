@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import Optional
 
 import hashlib
-import os
 import secrets
 
 from .models import (
-    Action, TenantConfig, ActionStatus, ComplianceFramework, SecureScoreControl,
-    SourceTool, Workload, GlobalAction, User, UserRole,
+    Action, TenantConfig, ActionStatus, SecureScoreControl,
+    SourceTool, Workload, GlobalAction, User,
 )
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
@@ -371,6 +370,16 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_gcm_action ON global_compliance_mappings(global_action_id);
                 CREATE INDEX IF NOT EXISTS idx_gcm_framework ON global_compliance_mappings(framework, control_id);
 
+                -- Per-tenant override of a global action's implementation steps.
+                CREATE TABLE IF NOT EXISTS action_implementation_overrides (
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    global_action_id TEXT NOT NULL REFERENCES global_actions(id) ON DELETE CASCADE,
+                    implementation_steps TEXT DEFAULT '',
+                    updated_by TEXT DEFAULT '',
+                    updated_at TEXT,
+                    PRIMARY KEY (tenant_name, global_action_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
@@ -524,25 +533,10 @@ class Database:
                 except sqlite3.OperationalError:
                     pass
 
-            # Responsible persons registry
+            # The responsible_persons / action_responsible tables were removed;
+            # responsibility is now expressed as a User Management user reference
+            # on the action itself.
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS responsible_persons (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    email TEXT DEFAULT '',
-                    role TEXT DEFAULT '',
-                    department TEXT DEFAULT '',
-                    created_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS action_responsible (
-                    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
-                    person_id TEXT NOT NULL REFERENCES responsible_persons(id) ON DELETE CASCADE,
-                    assigned_at TEXT,
-                    PRIMARY KEY (action_id, person_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_action_responsible_person
-                    ON action_responsible(person_id);
-
                 CREATE TABLE IF NOT EXISTS action_links (
                     source_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
                     target_action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
@@ -581,6 +575,73 @@ class Database:
                         print(f"[INFO] Auto-migrated {count} actions to Control Plane global actions.", flush=True)
             except Exception as e:
                 print(f"[WARNING] Auto-migration skipped: {e}", flush=True)
+
+            # Backfill global_actions.implementation_steps from tenant
+            # actions.remediation_steps. Implementation is now a global field
+            # with optional per-tenant override; before this change every
+            # tenant carried its own copy of the imported steps.
+            try:
+                row = conn.execute(
+                    "SELECT name FROM schema_migrations WHERE name='global_implementation_backfill_v1'"
+                ).fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE global_actions
+                              SET implementation_steps = (
+                                    SELECT a.remediation_steps
+                                      FROM actions a
+                                     WHERE a.global_action_id = global_actions.id
+                                       AND a.remediation_steps IS NOT NULL
+                                       AND a.remediation_steps <> ''
+                                     ORDER BY a.updated_at DESC
+                                     LIMIT 1
+                                  ),
+                                  updated_at = ?
+                            WHERE (implementation_steps IS NULL OR implementation_steps = '')
+                              AND EXISTS (
+                                    SELECT 1 FROM actions a
+                                     WHERE a.global_action_id = global_actions.id
+                                       AND a.remediation_steps IS NOT NULL
+                                       AND a.remediation_steps <> ''
+                              )""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('global_implementation_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    if cur.rowcount:
+                        print(
+                            f"[INFO] Backfilled implementation_steps on {cur.rowcount} global action(s) from tenant data.",
+                            flush=True,
+                        )
+            except Exception as e:
+                print(f"[WARNING] Implementation backfill skipped: {e}", flush=True)
+
+            # Backfill score for actions that were marked Completed before the
+            # auto-bump-on-status-change fix landed. They show up as Completed
+            # but with score < max_score (e.g. SCuBA pass/fail at 0/1).
+            try:
+                row = conn.execute("SELECT name FROM schema_migrations WHERE name='completed_score_backfill_v1'").fetchone()
+                if row is None:
+                    cur = conn.execute(
+                        """UPDATE actions
+                              SET score = COALESCE(max_score, 1.0),
+                                  score_percentage = 100.0,
+                                  max_score = COALESCE(max_score, 1.0),
+                                  updated_at = ?
+                            WHERE status = 'Completed'
+                              AND (score IS NULL OR score < COALESCE(max_score, 1.0))""",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    conn.execute(
+                        "INSERT INTO schema_migrations(name, applied_at) VALUES('completed_score_backfill_v1', ?)",
+                        (datetime.utcnow().isoformat(),),
+                    )
+                    if cur.rowcount:
+                        print(f"[INFO] Backfilled score for {cur.rowcount} Completed action(s).", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Completed-score backfill skipped: {e}", flush=True)
 
     # ── Zero Trust Reports ──
 
@@ -826,22 +887,6 @@ class Database:
             d["title_variants"] = json.loads(d.get("title_variants", "[]"))
             return d
 
-    def list_controls(self) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM secure_score_controls ORDER BY title"
-            ).fetchall()
-            result = []
-            for r in rows:
-                d = dict(r)
-                d["title_variants"] = json.loads(d.get("title_variants", "[]"))
-                result.append(d)
-            return result
-
-    def delete_control(self, control_id: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM secure_score_controls WHERE id=?", (control_id,))
-
     def find_control_by_title(self, title: str) -> dict | None:
         """Find a control by exact title or any title variant (case-insensitive)."""
         title_lower = title.strip().lower()
@@ -969,8 +1014,41 @@ class Database:
                 (d["id"],)
             ).fetchall()
             d["history"] = [dict(h) for h in history]
+            # Merge implementation steps from global action and tenant override.
+            ga_id = d.get("global_action_id")
+            global_steps = ""
+            override_steps = None
+            if ga_id:
+                ga = conn.execute(
+                    "SELECT implementation_steps FROM global_actions WHERE id=?",
+                    (ga_id,)
+                ).fetchone()
+                global_steps = (ga["implementation_steps"] if ga else "") or ""
+                ov = conn.execute(
+                    """SELECT implementation_steps, updated_by, updated_at
+                         FROM action_implementation_overrides
+                        WHERE tenant_name=? AND global_action_id=?""",
+                    (d.get("tenant_name", ""), ga_id),
+                ).fetchone()
+                if ov:
+                    override_steps = ov["implementation_steps"] or ""
+                    d["implementation_override_updated_by"] = ov["updated_by"]
+                    d["implementation_override_updated_at"] = ov["updated_at"]
+            d["global_implementation_steps"] = global_steps
+            if ga_id:
+                d["implementation_steps"] = (
+                    override_steps if override_steps is not None else global_steps
+                )
+            else:
+                # Action not yet linked to a global action — fall back to the
+                # per-tenant column (legacy / freshly imported / manual).
+                d["implementation_steps"] = d.get("remediation_steps") or ""
+            d["is_implementation_overridden"] = override_steps is not None
         else:
             d["history"] = []
+            d["global_implementation_steps"] = ""
+            d["implementation_steps"] = d.get("remediation_steps") or ""
+            d["is_implementation_overridden"] = False
         return d
 
     def get_actions(self, tenant_name: str, filters: dict = None,
@@ -1099,16 +1177,27 @@ class Database:
             if "raw_data" in data:
                 updates["raw_data"] = json.dumps(data["raw_data"])
 
-            # When status is explicitly set to Completed and no score provided,
-            # auto-fill score to max_score (default 1.0 for pass/fail sources like SCuBA).
+            # When an action transitions to Completed and the caller did not
+            # actually change the score, auto-fill it to max_score (default 1.0
+            # for pass/fail sources like SCuBA). Treats an echoed score that
+            # equals the existing score as "no change" — the edit modal always
+            # sends the current score back on save.
             new_status = updates.get("status")
-            if (new_status == ActionStatus.COMPLETED.value
-                    and "score" not in updates):
-                old_score = existing.get("score")
+            old_score = existing.get("score")
+            transitioning_to_completed = (
+                new_status == ActionStatus.COMPLETED.value
+                and existing.get("status") != ActionStatus.COMPLETED.value
+            )
+            explicit_score_change = (
+                "score" in updates and updates["score"] != old_score
+            )
+            if transitioning_to_completed and not explicit_score_change:
                 max_s = existing.get("max_score") or 1.0
+                if "max_score" in updates and updates["max_score"]:
+                    max_s = updates["max_score"]
                 updates["score"] = max_s
                 updates["score_percentage"] = 100.0
-                if not existing.get("max_score"):
+                if not existing.get("max_score") and "max_score" not in updates:
                     updates["max_score"] = max_s
                 if old_score != max_s:
                     conn.execute(
@@ -1611,11 +1700,6 @@ class Database:
                 result.append(d)
             return result
 
-    def get_latest_snapshot(self, tenant_name: str) -> Optional[dict]:
-        """Get the most recent score snapshot."""
-        snapshots = self.get_score_snapshots(tenant_name, limit=1)
-        return snapshots[0] if snapshots else None
-
     # ── Action Dependencies ──
 
     def add_dependency(self, action_id: str, depends_on_id: str,
@@ -1776,50 +1860,74 @@ class Database:
 
     # ── Compliance Mappings ──
 
-    def add_compliance_mapping(self, action_id: str, framework: str,
-                                control_id: str, control_name: str = "",
-                                control_family: str = "", notes: str = "") -> dict:
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT INTO compliance_mappings
-                   (action_id, framework, control_id, control_name, control_family, notes)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (action_id, framework, control_id, control_name, control_family, notes),
-            )
-        return {"action_id": action_id, "framework": framework, "control_id": control_id,
-                "control_name": control_name, "control_family": control_family}
-
     def get_action_compliance(self, action_id: str) -> list[dict]:
+        """Return compliance mappings for an action, sourced from the global
+        action's mappings (and falling back to legacy per-tenant rows for
+        actions not yet linked to a global action)."""
         with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM compliance_mappings WHERE action_id=? ORDER BY framework, control_id",
-                (action_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_compliance_summary(self, tenant_name: str, framework: str = None) -> dict:
-        """Get compliance posture across frameworks."""
-        with self._conn() as conn:
-            if framework:
+            row = conn.execute(
+                "SELECT global_action_id FROM actions WHERE id=?", (action_id,)
+            ).fetchone()
+            ga_id = row["global_action_id"] if row else None
+            if ga_id:
                 rows = conn.execute(
-                    """SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
-                       a.id as action_id, a.title, a.status, a.priority
-                       FROM compliance_mappings cm
-                       JOIN actions a ON cm.action_id = a.id
-                       WHERE a.tenant_name=? AND cm.framework=?
-                       ORDER BY cm.control_family, cm.control_id""",
-                    (tenant_name, framework),
+                    """SELECT framework, control_id, control_name, control_family, notes
+                         FROM global_compliance_mappings
+                        WHERE global_action_id=?
+                        ORDER BY framework, control_id""",
+                    (ga_id,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
-                       a.id as action_id, a.title, a.status, a.priority
-                       FROM compliance_mappings cm
-                       JOIN actions a ON cm.action_id = a.id
-                       WHERE a.tenant_name=?
-                       ORDER BY cm.framework, cm.control_family, cm.control_id""",
-                    (tenant_name,),
+                    "SELECT * FROM compliance_mappings WHERE action_id=? ORDER BY framework, control_id",
+                    (action_id,),
                 ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_compliance_summary(self, tenant_name: str, framework: str = None) -> dict:
+        """Compliance posture for a tenant. Mappings live on the global action;
+        we join tenant actions back via global_action_id and restrict the
+        framework set to whichever frameworks the tenant has subscribed to (if
+        any are configured). Legacy per-tenant compliance_mappings rows are
+        included for any action not yet linked to a global action."""
+        with self._conn() as conn:
+            subscribed = [r["framework"] for r in conn.execute(
+                "SELECT framework FROM tenant_frameworks WHERE tenant_name=?",
+                (tenant_name,),
+            ).fetchall()]
+            allowed_frameworks = set(subscribed)
+            params_global = [tenant_name]
+            params_legacy = [tenant_name]
+            framework_clause_global = ""
+            framework_clause_legacy = ""
+            if framework:
+                framework_clause_global = " AND gcm.framework=?"
+                framework_clause_legacy = " AND cm.framework=?"
+                params_global.append(framework)
+                params_legacy.append(framework)
+            global_rows = conn.execute(
+                f"""SELECT gcm.framework, gcm.control_id, gcm.control_name, gcm.control_family,
+                           a.id as action_id, a.title, a.status, a.priority
+                      FROM global_compliance_mappings gcm
+                      JOIN actions a ON a.global_action_id = gcm.global_action_id
+                     WHERE a.tenant_name=?{framework_clause_global}
+                     ORDER BY gcm.framework, gcm.control_family, gcm.control_id""",
+                params_global,
+            ).fetchall()
+            legacy_rows = conn.execute(
+                f"""SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
+                           a.id as action_id, a.title, a.status, a.priority
+                      FROM compliance_mappings cm
+                      JOIN actions a ON cm.action_id = a.id
+                     WHERE a.tenant_name=? AND a.global_action_id IS NULL{framework_clause_legacy}
+                     ORDER BY cm.framework, cm.control_family, cm.control_id""",
+                params_legacy,
+            ).fetchall()
+            rows = list(global_rows) + list(legacy_rows)
+            # If the tenant has explicitly subscribed to a set of frameworks,
+            # only show those. If no subscription is configured, show all.
+            if allowed_frameworks and not framework:
+                rows = [r for r in rows if dict(r)["framework"] in allowed_frameworks]
 
         # Group by framework -> control_family -> control
         result = {}
@@ -2018,99 +2126,6 @@ class Database:
                 result.append(d)
             return result
 
-    # ── Responsible Persons ──
-
-    def get_responsible_persons(self) -> list:
-        """Get all registered responsible persons."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM responsible_persons ORDER BY name"
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def create_responsible_person(self, name: str, email: str = "",
-                                  role: str = "", department: str = "") -> str:
-        pid = str(uuid.uuid4())[:8]
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT INTO responsible_persons (id, name, email, role, department, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (pid, name, email, role, department, datetime.utcnow().isoformat()),
-            )
-        return pid
-
-    def update_responsible_person(self, person_id: str, data: dict):
-        allowed = {"name", "email", "role", "department"}
-        fields = {k: v for k, v in data.items() if k in allowed}
-        if not fields:
-            return
-        with self._conn() as conn:
-            sets = ", ".join(f"{k}=?" for k in fields)
-            vals = list(fields.values()) + [person_id]
-            conn.execute(f"UPDATE responsible_persons SET {sets} WHERE id=?", vals)
-
-    def delete_responsible_person(self, person_id: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM action_responsible WHERE person_id=?", (person_id,))
-            conn.execute("DELETE FROM responsible_persons WHERE id=?", (person_id,))
-
-    def assign_person_to_action(self, action_id: str, person_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO action_responsible (action_id, person_id, assigned_at)
-                   VALUES (?, ?, ?)""",
-                (action_id, person_id, datetime.utcnow().isoformat()),
-            )
-
-    def unassign_person_from_action(self, action_id: str, person_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                "DELETE FROM action_responsible WHERE action_id=? AND person_id=?",
-                (action_id, person_id),
-            )
-
-    def get_action_persons(self, action_id: str) -> list:
-        with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT rp.* FROM responsible_persons rp
-                   JOIN action_responsible ar ON ar.person_id = rp.id
-                   WHERE ar.action_id=? ORDER BY rp.name""",
-                (action_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_person_actions(self, person_id: str, tenant_name: str = None) -> list:
-        with self._conn() as conn:
-            sql = """SELECT a.* FROM actions a
-                     JOIN action_responsible ar ON ar.action_id = a.id
-                     WHERE ar.person_id=?"""
-            params: list = [person_id]
-            if tenant_name:
-                sql += " AND a.tenant_name=?"
-                params.append(tenant_name)
-            sql += " ORDER BY a.priority, a.status"
-            rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_all_action_person_assignments(self, tenant_name: str = None) -> dict:
-        """Return {action_id: [person_dicts]} for all assigned actions."""
-        with self._conn() as conn:
-            sql = """SELECT ar.action_id, rp.* FROM action_responsible ar
-                     JOIN responsible_persons rp ON rp.id = ar.person_id
-                     JOIN actions a ON a.id = ar.action_id"""
-            params: list = []
-            if tenant_name:
-                sql += " WHERE a.tenant_name=?"
-                params.append(tenant_name)
-            sql += " ORDER BY rp.name"
-            rows = conn.execute(sql, params).fetchall()
-        result: dict = {}
-        for r in rows:
-            d = dict(r)
-            aid = d.pop("action_id")
-            result.setdefault(aid, []).append(d)
-        return result
-
     # ── Action Links (cross-tool) ──
 
     def link_actions(self, source_id: str, target_id: str,
@@ -2145,6 +2160,87 @@ class Database:
                 (action_id, action_id, action_id, action_id),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_action_peers(self, action_id: str) -> list[dict]:
+        """Return tenant-scoped peer actions: other actions in the same tenant
+        that are correlated with this one via either correlation_group_id or
+        an explicit action_links row. Used to flag cross-tool peers whose
+        status may need review when this action changes."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT tenant_name, status, correlation_group_id FROM actions WHERE id=?",
+                (action_id,),
+            ).fetchone()
+            if not row:
+                return []
+            tenant_name = row["tenant_name"]
+            cg_id = row["correlation_group_id"]
+            self_status = row["status"]
+            peers = {}
+            if cg_id:
+                for r in conn.execute(
+                    """SELECT id, title, source_tool, status, workload
+                         FROM actions
+                        WHERE tenant_name=? AND correlation_group_id=? AND id<>?""",
+                    (tenant_name, cg_id, action_id),
+                ).fetchall():
+                    peers[r["id"]] = dict(r) | {"link_via": "correlation_group"}
+            for r in conn.execute(
+                """SELECT a.id, a.title, a.source_tool, a.status, a.workload
+                     FROM action_links al
+                     JOIN actions a ON a.id = CASE WHEN al.source_action_id=?
+                          THEN al.target_action_id ELSE al.source_action_id END
+                    WHERE (al.source_action_id=? OR al.target_action_id=?)
+                      AND a.tenant_name=? AND a.id<>?""",
+                (action_id, action_id, action_id, tenant_name, action_id),
+            ).fetchall():
+                if r["id"] not in peers:
+                    peers[r["id"]] = dict(r) | {"link_via": "action_link"}
+            for p in peers.values():
+                p["status_differs"] = p.get("status") != self_status
+            return list(peers.values())
+
+    def get_peer_disagreements_for_tenant(self, tenant_name: str) -> dict:
+        """Return {action_id: peer_count_with_different_status} so the actions
+        list can render a "*" badge without one query per row."""
+        with self._conn() as conn:
+            cg_rows = conn.execute(
+                """SELECT a1.id as a_id, a1.status as a_status,
+                          a2.id as p_id, a2.status as p_status
+                     FROM actions a1
+                     JOIN actions a2
+                       ON a2.tenant_name=a1.tenant_name
+                      AND a2.correlation_group_id=a1.correlation_group_id
+                      AND a2.id<>a1.id
+                    WHERE a1.tenant_name=? AND a1.correlation_group_id IS NOT NULL""",
+                (tenant_name,),
+            ).fetchall()
+            link_rows = conn.execute(
+                """SELECT a1.id as a_id, a1.status as a_status,
+                          a2.id as p_id, a2.status as p_status
+                     FROM action_links al
+                     JOIN actions a1 ON a1.id = al.source_action_id
+                     JOIN actions a2 ON a2.id = al.target_action_id
+                    WHERE a1.tenant_name=? AND a2.tenant_name=?
+                    UNION
+                   SELECT a2.id as a_id, a2.status as a_status,
+                          a1.id as p_id, a1.status as p_status
+                     FROM action_links al
+                     JOIN actions a1 ON a1.id = al.source_action_id
+                     JOIN actions a2 ON a2.id = al.target_action_id
+                    WHERE a1.tenant_name=? AND a2.tenant_name=?""",
+                (tenant_name, tenant_name, tenant_name, tenant_name),
+            ).fetchall()
+        seen = set()
+        result: dict = {}
+        for row in list(cg_rows) + list(link_rows):
+            key = (row["a_id"], row["p_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if row["a_status"] != row["p_status"]:
+                result[row["a_id"]] = result.get(row["a_id"], 0) + 1
+        return result
 
     # ── Scoring helpers ──
 
@@ -2283,14 +2379,6 @@ class Database:
             row = conn.execute("SELECT * FROM global_actions WHERE id=?", (ga_id,)).fetchone()
         return self._row_to_global_action(row) if row else None
 
-    def get_global_action_by_source(self, source_tool: str, source_id: str) -> dict | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM global_actions WHERE source_tool=? AND source_id=?",
-                (source_tool, source_id),
-            ).fetchone()
-        return self._row_to_global_action(row) if row else None
-
     def create_global_action(self, ga: GlobalAction) -> dict:
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
@@ -2345,6 +2433,40 @@ class Database:
     def delete_global_action(self, ga_id: str):
         with self._conn() as conn:
             conn.execute("DELETE FROM global_actions WHERE id=?", (ga_id,))
+
+    # ── Per-tenant implementation overrides ──
+
+    def set_implementation_override(self, tenant_name: str, global_action_id: str,
+                                    implementation_steps: str, updated_by: str = "") -> dict:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO action_implementation_overrides
+                    (tenant_name, global_action_id, implementation_steps, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_name, global_action_id) DO UPDATE SET
+                        implementation_steps=excluded.implementation_steps,
+                        updated_by=excluded.updated_by,
+                        updated_at=excluded.updated_at""",
+                (tenant_name, global_action_id, implementation_steps or "",
+                 updated_by or "", now),
+            )
+        return {
+            "tenant_name": tenant_name,
+            "global_action_id": global_action_id,
+            "implementation_steps": implementation_steps or "",
+            "updated_by": updated_by or "",
+            "updated_at": now,
+        }
+
+    def clear_implementation_override(self, tenant_name: str, global_action_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """DELETE FROM action_implementation_overrides
+                    WHERE tenant_name=? AND global_action_id=?""",
+                (tenant_name, global_action_id),
+            )
+            return cur.rowcount > 0
 
     def link_action_to_global(self, action_id: str, global_action_id: str):
         with self._conn() as conn:
@@ -2584,13 +2706,6 @@ class Database:
             ).fetchall()
         return [r["framework"] for r in rows]
 
-    def set_tenant_framework(self, tenant_name: str, framework: str):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO tenant_frameworks (tenant_name, framework) VALUES (?,?)",
-                (tenant_name, framework),
-            )
-
     def remove_tenant_framework(self, tenant_name: str, framework: str):
         with self._conn() as conn:
             conn.execute(
@@ -2650,22 +2765,6 @@ class Database:
     def remove_global_action_link(self, link_id: int):
         with self._conn() as conn:
             conn.execute("DELETE FROM global_action_links WHERE id=?", (link_id,))
-
-    # ── Global Action Source Aliases ──
-
-    def get_source_aliases(self, ga_id: str) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM global_action_source_aliases WHERE global_action_id=?", (ga_id,)
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def add_source_alias(self, ga_id: str, source_tool: str, source_id: str):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO global_action_source_aliases (global_action_id, source_tool, source_id) VALUES (?,?,?)",
-                (ga_id, source_tool, source_id),
-            )
 
     # ── Merge Global Actions ──
 
@@ -2873,27 +2972,6 @@ class Database:
                 "INSERT INTO audit_log(timestamp, actor, action, entity_type, entity_id, detail) VALUES(?,?,?,?,?,?)",
                 (datetime.utcnow().isoformat(), actor, action, entity_type, entity_id, detail),
             )
-
-    def get_audit_log(self, entity_type: str = None, entity_id: str = None,
-                      limit: int = 100, offset: int = 0) -> list[dict]:
-        """Fetch audit records, optionally filtered by entity."""
-        with self._conn() as conn:
-            if entity_type and entity_id:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (entity_type, entity_id, limit, offset),
-                ).fetchall()
-            elif entity_type:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log WHERE entity_type=? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (entity_type, limit, offset),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
-                ).fetchall()
-            return [dict(r) for r in rows]
 
     def bulk_auto_link_imported(self, action_ids: list[str]) -> dict:
         """Auto-link a batch of freshly imported tenant actions to global actions

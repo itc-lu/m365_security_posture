@@ -5,14 +5,12 @@ Launch with: m365-posture web [--port 8080] [--no-browser]
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import re
 import shutil
 import tempfile
 import webbrowser
-import zipfile
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -33,14 +31,14 @@ from .parsers import (
 )
 from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
 from .correlation import auto_correlate, get_correlation_summary
-from .planner import simulate_plan, suggest_phases, get_prioritized_actions, calculate_action_roi
+from .planner import simulate_plan, suggest_phases, get_prioritized_actions
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
-from .compliance import auto_map_compliance, map_action_to_frameworks
+from .compliance import auto_map_compliance
 from .drift import detect_drift
 from .graph_api import (
     start_device_code_flow, poll_for_token, fetch_secure_scores,
     fetch_control_profiles, client_credentials_token,
-    start_interactive_auth, exchange_auth_code, _interactive_sessions,
+    start_interactive_auth, exchange_auth_code,
 )
 from .web_frontend import get_spa_html
 
@@ -153,7 +151,7 @@ def create_app(db_path: str = None) -> Flask:
         if not request.path.startswith("/api/"):
             return
         if "user_id" not in session:
-            return jsonify({"error": "Authentication required"}), 401
+            return jsonify({"error": "Authentication required", "login_required": True}), 401
         # CSRF: state-changing requests must carry X-Requested-With header
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
@@ -331,6 +329,61 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/actions/<action_id>/history", methods=["GET"])
     def api_action_history(action_id):
         return jsonify(db.get_action_history(action_id))
+
+    @app.route("/api/actions/<action_id>/implementation", methods=["PUT"])
+    def api_update_action_implementation(action_id):
+        """Save implementation steps either globally (default) or only for
+        this tenant. Body: {implementation_steps, scope: 'global'|'tenant'}.
+        Requires the action to be linked to a global action."""
+        data = request.get_json() or {}
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        ga_id = action.get("global_action_id")
+        if not ga_id:
+            return _json_error("Action is not linked to a global action; promote it in Control Plane first", 400)
+        scope = (data.get("scope") or "global").lower()
+        steps = data.get("implementation_steps", "")
+        actor = session.get("username") or data.get("changed_by", "")
+        if scope == "tenant":
+            db.set_implementation_override(action["tenant_name"], ga_id, steps, actor)
+        elif scope == "global":
+            db.update_global_action(ga_id, implementation_steps=steps)
+            # If a tenant override was masking the global value, drop it so the
+            # newly-saved global value takes effect immediately.
+            db.clear_implementation_override(action["tenant_name"], ga_id)
+        else:
+            return _json_error("scope must be 'global' or 'tenant'", 400)
+        return jsonify(db.get_action(action_id))
+
+    @app.route("/api/actions/<action_id>/peers", methods=["GET"])
+    def api_action_peers(action_id):
+        """Cross-tool peers for an action: other tenant actions correlated via
+        correlation group or explicit link. Includes a status_differs flag so
+        the UI can mark peers whose status disagrees."""
+        return jsonify(db.get_action_peers(action_id))
+
+    @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
+    def api_tenant_peer_disagreements(name):
+        """Map of action_id -> count of correlated peers whose status differs.
+        Used by the actions list to render a peer-disagreement indicator."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_peer_disagreements_for_tenant(name))
+
+    @app.route("/api/actions/<action_id>/implementation-override", methods=["DELETE"])
+    def api_clear_action_implementation_override(action_id):
+        """Drop the per-tenant override and revert to the global value."""
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        ga_id = action.get("global_action_id")
+        if not ga_id:
+            return _json_error("Action is not linked to a global action", 400)
+        removed = db.clear_implementation_override(action["tenant_name"], ga_id)
+        if not removed:
+            return _json_error("No override to remove", 404)
+        return jsonify(db.get_action(action_id))
 
     # ── Import endpoint ──
 
@@ -641,11 +694,6 @@ def create_app(db_path: str = None) -> Flask:
         summary = get_e8_summary(action_objects, target_maturity=target, exclude_na=exclude_na)
         return jsonify(summary)
 
-    @app.route("/api/e8/controls", methods=["GET"])
-    def api_e8_controls():
-        """Return the full E8 control definitions with maturity requirements."""
-        return jsonify(get_e8_controls_data())
-
     # ── SCuBA endpoints ──
 
     @app.route("/api/tenants/<name>/scuba", methods=["GET"])
@@ -834,7 +882,7 @@ def create_app(db_path: str = None) -> Flask:
 
     @app.route("/api/correlation-groups", methods=["GET"])
     def api_correlation_groups():
-        return jsonify(db.get_correlation_groups())
+        return jsonify(db.list_correlation_groups())
 
     @app.route("/api/correlation-groups", methods=["POST"])
     def api_create_correlation_group():
@@ -870,7 +918,7 @@ def create_app(db_path: str = None) -> Flask:
     def api_seed_default_families():
         """Seed the default control families from CONTROL_FAMILIES if DB is empty."""
         from .correlation import CONTROL_FAMILIES
-        existing = db.get_correlation_groups()
+        existing = db.list_correlation_groups()
         existing_names = {g["canonical_name"] for g in existing}
         created = 0
         for canonical_name, description, keywords in CONTROL_FAMILIES:
@@ -1196,58 +1244,23 @@ def create_app(db_path: str = None) -> Flask:
 
     # ── Responsible Persons ──
 
-    @app.route("/api/responsible-persons", methods=["GET"])
-    def api_list_persons():
-        return jsonify(db.get_responsible_persons())
-
-    @app.route("/api/responsible-persons", methods=["POST"])
-    def api_create_person():
-        data = request.get_json() or {}
-        if not data.get("name"):
-            return _json_error("name is required")
-        pid = db.create_responsible_person(
-            data["name"], data.get("email", ""),
-            data.get("role", ""), data.get("department", ""))
-        return jsonify({"id": pid, "name": data["name"]})
-
-    @app.route("/api/responsible-persons/<pid>", methods=["PUT"])
-    def api_update_person(pid):
-        data = request.get_json() or {}
-        db.update_responsible_person(pid, data)
-        return jsonify({"ok": True})
-
-    @app.route("/api/responsible-persons/<pid>", methods=["DELETE"])
-    def api_delete_person(pid):
-        db.delete_responsible_person(pid)
-        return jsonify({"ok": True})
-
-    @app.route("/api/actions/<action_id>/persons", methods=["GET"])
-    def api_action_persons(action_id):
-        return jsonify(db.get_action_persons(action_id))
-
-    @app.route("/api/actions/<action_id>/persons", methods=["POST"])
-    def api_assign_person(action_id):
-        data = request.get_json() or {}
-        person_id = data.get("person_id")
-        if not person_id:
-            return _json_error("person_id required")
-        db.assign_person_to_action(action_id, person_id)
-        return jsonify({"ok": True})
-
-    @app.route("/api/actions/<action_id>/persons/<pid>", methods=["DELETE"])
-    def api_unassign_person(action_id, pid):
-        db.unassign_person_from_action(action_id, pid)
-        return jsonify({"ok": True})
-
-    @app.route("/api/responsible-persons/<pid>/actions", methods=["GET"])
-    def api_person_actions(pid):
-        tenant = request.args.get("tenant")
-        return jsonify(db.get_person_actions(pid, tenant))
-
-    @app.route("/api/tenants/<name>/action-persons", methods=["GET"])
-    def api_all_action_persons(name):
-        """Return all action→person assignments for a tenant."""
-        return jsonify(db.get_all_action_person_assignments(name))
+    @app.route("/api/users", methods=["GET"])
+    def api_list_users_for_select():
+        """Lightweight user list for selectors (responsible/owner pickers).
+        Available to any authenticated user; returns only fields needed for
+        rendering a dropdown."""
+        users = db.list_users()
+        return jsonify([
+            {
+                "id": u.get("id"),
+                "username": u.get("username"),
+                "display_name": u.get("display_name") or u.get("username"),
+                "email": u.get("email", ""),
+                "role": u.get("role", ""),
+                "is_active": bool(u.get("is_active", True)),
+            }
+            for u in users
+        ])
 
     # ── Action Links (cross-tool) ──
 
@@ -1646,48 +1659,6 @@ def create_app(db_path: str = None) -> Flask:
         result = detect_drift(db, name, data.get("source_tool"))
         return jsonify(result)
 
-    # ── Secure Score Controls (reference table) endpoints ──
-
-    @app.route("/api/secure-score-controls", methods=["GET"])
-    def api_list_controls():
-        return jsonify(db.list_controls())
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["GET"])
-    def api_get_control(control_id):
-        ctrl = db.get_control(control_id)
-        if not ctrl:
-            return _json_error("Control not found", 404)
-        return jsonify(ctrl)
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["PUT"])
-    def api_update_control(control_id):
-        data = request.get_json() or {}
-        from .models import SecureScoreControl as SSC
-        existing = db.get_control(control_id)
-        if not existing:
-            return _json_error("Control not found", 404)
-        existing.update(data)
-        existing["id"] = control_id  # Prevent id change
-        ctrl = SSC.from_dict(existing)
-        result = db.upsert_control(ctrl)
-        return jsonify(result)
-
-    @app.route("/api/secure-score-controls/<control_id>", methods=["DELETE"])
-    def api_delete_control(control_id):
-        if not db.get_control(control_id):
-            return _json_error("Control not found", 404)
-        db.delete_control(control_id)
-        return jsonify({"deleted": True})
-
-    @app.route("/api/secure-score-controls/seed", methods=["POST"])
-    def api_seed_controls():
-        """Load built-in seed data into the controls reference table."""
-        controls = load_seed_controls()
-        if not controls:
-            return _json_error("Seed data file not found")
-        result = db.seed_controls(controls)
-        return jsonify(result)
-
     # ── Graph API (Device Code Auth) ──
 
     # In-memory store for pending device code flows (per-tenant)
@@ -2006,12 +1977,6 @@ def create_app(db_path: str = None) -> Flask:
             return jsonify({"authenticated": True, "expires_in": remaining})
         return jsonify({"authenticated": False})
 
-    # ── Enums update ──
-
-    @app.route("/api/enums/frameworks", methods=["GET"])
-    def api_frameworks():
-        return jsonify([f.value for f in ComplianceFramework])
-
     # ── Auth ──
 
     @app.route("/api/auth/login", methods=["POST"])
@@ -2197,7 +2162,7 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_cross_tenant():
         """Show implementation status of global actions across all tenants.
         Supports pagination (limit/offset) and filtering by source_tool/workload."""
-        limit = min(int(request.args.get("limit", 100)), 500)
+        limit = min(int(request.args.get("limit", 100)), 5000)
         offset = max(int(request.args.get("offset", 0)), 0)
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")

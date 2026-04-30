@@ -230,41 +230,63 @@ def map_action_to_frameworks(action_dict: dict) -> list[dict]:
     return mappings
 
 
-def auto_map_compliance(db: Database, tenant_name: str,
-                        frameworks: list[str] = None) -> dict:
-    """Auto-map all actions to compliance frameworks.
-
-    Args:
-        db: Database instance
-        tenant_name: Tenant to process
-        frameworks: Optional list of frameworks to map (default: all)
-
-    Returns:
-        {total_mappings, by_framework: {framework: count}}
-    """
-    actions = db.get_actions(tenant_name)
+def auto_map_global_compliance(db: Database, frameworks: list[str] = None) -> dict:
+    """Auto-map every global action to compliance frameworks. Mappings live on
+    the global action so the work is shared across all tenants."""
     frameworks_to_map = frameworks or list(FRAMEWORK_MAPPINGS.keys())
-
-    # Clear existing auto-mapped entries for these frameworks
-    for fw in frameworks_to_map:
-        db.clear_compliance_mappings(tenant_name, fw)
-
     total = 0
     by_framework = {}
-    all_mappings = []
+    global_actions = db.list_global_actions()
+    for ga in global_actions:
+        # Compose a synthetic action dict that map_action_to_frameworks can read.
+        synth = {
+            "title": ga.get("title", ""),
+            "description": ga.get("description", ""),
+            "remediation_steps": ga.get("implementation_steps", ""),
+            "category": ga.get("category", ""),
+            "subcategory": ga.get("subcategory", ""),
+            "essential_eight_control": ga.get("essential_eight_control"),
+        }
+        existing = {(m["framework"], m["control_id"]) for m in db.get_global_compliance_mappings(ga["id"])}
+        for m in map_action_to_frameworks(synth):
+            if m["framework"] not in frameworks_to_map:
+                continue
+            key = (m["framework"], m["control_id"])
+            if key in existing:
+                continue
+            db.add_global_compliance_mapping(
+                ga["id"], m["framework"], m["control_id"],
+                m.get("control_name", ""), m.get("control_family", ""),
+            )
+            by_framework[m["framework"]] = by_framework.get(m["framework"], 0) + 1
+            total += 1
+    return {"total_mappings": total, "by_framework": by_framework, "scope": "global"}
 
+
+def auto_map_compliance(db: Database, tenant_name: str,
+                        frameworks: list[str] = None) -> dict:
+    """Auto-map a tenant's compliance posture. Framework correlations live on
+    the global action; this helper drives the global mapper plus a legacy
+    fallback for any tenant action not yet linked to a global action."""
+    frameworks_to_map = frameworks or list(FRAMEWORK_MAPPINGS.keys())
+    global_result = auto_map_global_compliance(db, frameworks_to_map)
+
+    # Legacy: handle un-globalized actions in this tenant by writing to the
+    # per-tenant compliance_mappings table so the dashboard still has data.
+    actions = [a for a in db.get_actions(tenant_name) if not a.get("global_action_id")]
+    for fw in frameworks_to_map:
+        db.clear_compliance_mappings(tenant_name, fw)
+    legacy = []
+    by_framework = dict(global_result["by_framework"])
+    total = global_result["total_mappings"]
     for action in actions:
-        mappings = map_action_to_frameworks(action)
-        for m in mappings:
-            if m["framework"] in frameworks_to_map:
-                all_mappings.append({
-                    "action_id": action["id"],
-                    **m,
-                })
-                by_framework[m["framework"]] = by_framework.get(m["framework"], 0) + 1
-                total += 1
-
-    if all_mappings:
-        db.bulk_add_compliance_mappings(all_mappings)
+        for m in map_action_to_frameworks(action):
+            if m["framework"] not in frameworks_to_map:
+                continue
+            legacy.append({"action_id": action["id"], **m})
+            by_framework[m["framework"]] = by_framework.get(m["framework"], 0) + 1
+            total += 1
+    if legacy:
+        db.bulk_add_compliance_mappings(legacy)
 
     return {"total_mappings": total, "by_framework": by_framework}

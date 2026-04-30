@@ -156,15 +156,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
 
 /* Phase card */
-.phase-card { border-left:4px solid var(--primary); padding-left:16px; }
-.phase-card.phase-1 { border-left-color:var(--success); }
-.phase-card.phase-2 { border-left-color:var(--warning); }
-.phase-card.phase-3 { border-left-color:var(--purple); }
-.phase-card table { table-layout:fixed; width:100%; }
-.phase-card th, .phase-card td { overflow:hidden; text-overflow:ellipsis; }
-.phase-card.drag-over { background:var(--primary-light); border:2px dashed var(--primary); border-left:4px solid var(--primary); }
-.phase-card [draggable] { cursor:grab; }
-.phase-card [draggable]:active { cursor:grabbing; opacity:.7; }
 
 /* Login overlay */
 .login-overlay { position:fixed; inset:0; background:rgba(15,23,42,.85); z-index:1000; display:flex; align-items:center; justify-content:center; }
@@ -269,6 +260,8 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .compliance-family-body { padding:0 16px 12px; }
 
 .hidden { display:none !important; }
+.app-shell.locked { display:none; }
+body.unauth { background:#0f172a; }
 .text-center { text-align:center; }
 .mb-16 { margin-bottom:16px; }
 .mb-8 { margin-bottom:8px; }
@@ -280,10 +273,10 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .flex-1 { flex:1; }
 </style>
 </head>
-<body>
+<body class="unauth">
 
 <!-- Sidebar -->
-<div class="sidebar" id="sidebar">
+<div class="sidebar app-shell locked" id="sidebar">
   <div class="logo">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     M365 Posture
@@ -292,10 +285,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
     <a href="#dashboard" data-page="dashboard" class="active">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Dashboard
-    </a>
-    <a href="#tenants" data-page="tenants">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
-      Tenants
     </a>
     <a href="#actions" data-page="actions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,11 12,14 22,4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
@@ -308,10 +297,6 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
     <a href="#plans" data-page="plans">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Plans
-    </a>
-    <a href="#people" data-page="people">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      People
     </a>
     <a href="#correlations" data-page="correlations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
@@ -389,7 +374,7 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 </div>
 
 <!-- Main content -->
-<div class="main">
+<div class="main app-shell locked" id="main-shell">
   <div class="topbar">
     <h1 id="page-title">Dashboard</h1>
     <div class="actions" id="topbar-actions"></div>
@@ -456,6 +441,11 @@ const api = {
   async _handle(r) {
     const data = await r.json().catch(()=>({error:'Invalid response'}));
     if(!r.ok && !data.error) data.error = `HTTP ${r.status}`;
+    if(r.status === 401 && data.login_required) {
+      _authUser = null;
+      if(typeof updateAuthUI === 'function') updateAuthUI();
+      if(typeof applyAuthGate === 'function') applyAuthGate();
+    }
     return data;
   },
   async get(url) { const r = await fetch(url); return this._handle(r); },
@@ -627,6 +617,8 @@ function applySort() {
 
 // ── Router ──
 async function navigate(page) {
+  // Tenants management lives under Control Plane → Tenant Config
+  if (page === 'tenants') page = 'cp-tenants';
   state.currentPage = page;
   if (page.startsWith('cp-')) {
     const _cpLinks = document.getElementById('cp-nav-links');
@@ -638,13 +630,13 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',tenants:'Tenants',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
-    dashboard:renderDashboard,tenants:renderTenants,actions:renderActions,import:renderImport,
+    dashboard:renderDashboard,actions:renderActions,import:renderImport,
     plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
     compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
     history:renderHistory,
@@ -682,7 +674,8 @@ function toggleCpNav() {
 (function initCpNav() {
   const links = document.getElementById('cp-nav-links');
   if (!links) return;
-  if (localStorage.getItem('cpNavCollapsed') === '1') {
+  // Collapsed by default unless the user has explicitly expanded it.
+  if (localStorage.getItem('cpNavCollapsed') !== '0') {
     links.classList.add('cp-collapsed');
     const chevron = document.getElementById('cp-nav-chevron');
     if (chevron) chevron.style.transform = 'rotate(-90deg)';
@@ -722,12 +715,33 @@ async function checkAuth() {
   const me = await api.get('/api/auth/me');
   _authUser = me.authenticated ? me : null;
   updateAuthUI();
+  applyAuthGate();
   if(_authUser && _authUser.must_change_password) showForcedPasswordChange('');
+}
+
+function applyAuthGate() {
+  const shells = document.querySelectorAll('.app-shell');
+  if(_authUser) {
+    document.body.classList.remove('unauth');
+    shells.forEach(s => s.classList.remove('locked'));
+    document.getElementById('login-overlay').classList.add('hidden');
+  } else {
+    document.body.classList.add('unauth');
+    shells.forEach(s => s.classList.add('locked'));
+    document.getElementById('content').innerHTML = '';
+    document.getElementById('topbar-actions').innerHTML = '';
+    document.getElementById('login-overlay').classList.remove('hidden');
+    setTimeout(() => {
+      const u = document.getElementById('login-username');
+      if(u) u.focus();
+    }, 50);
+  }
 }
 
 function updateAuthUI() {
   const btn = document.getElementById('auth-btn');
   const info = document.getElementById('auth-user-info');
+  if(!btn || !info) return;
   if(_authUser) {
     info.textContent = `${_authUser.display_name||_authUser.username} (${_authUser.role})`;
     btn.textContent = 'Logout';
@@ -754,13 +768,23 @@ async function doLogin() {
   if(r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
   _authUser = r;
   updateAuthUI();
-  document.getElementById('login-overlay').classList.add('hidden');
+  applyAuthGate();
   document.getElementById('login-password').value = '';
   if(r.must_change_password) {
     showForcedPasswordChange(password);
     return;
   }
   toast(`Welcome, ${r.display_name||r.username}!`, 'success');
+  await loadAuthenticatedState();
+}
+
+async function loadAuthenticatedState() {
+  state.enums = await api.get('/api/enums');
+  state.tenants = await api.get('/api/tenants');
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
+  updateTenantIndicator();
+  navigate(location.hash.slice(1)||'dashboard');
 }
 
 function showForcedPasswordChange(prefillCurrent) {
@@ -795,7 +819,11 @@ async function doForcedPasswordChange() {
 async function doLogout() {
   await api.post('/api/auth/logout', {});
   _authUser = null;
+  state.activeTenant = null;
+  state.tenants = [];
+  state.enums = {};
   updateAuthUI();
+  applyAuthGate();
   toast('Logged out', 'info');
 }
 
@@ -833,12 +861,8 @@ function esc(s) {
 // ── Init ──
 async function init() {
   await checkAuth();
-  state.enums = await api.get('/api/enums');
-  state.tenants = await api.get('/api/tenants');
-  const active = await api.get('/api/active-tenant');
-  state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
-  updateTenantIndicator();
-  navigate(location.hash.slice(1)||'dashboard');
+  if(!_authUser) return;
+  await loadAuthenticatedState();
 }
 
 function updateTenantIndicator() {
@@ -880,7 +904,7 @@ document.addEventListener('click', () => {
 });
 
 function requireTenant() {
-  if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('tenants'); return false; }
+  if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('cp-tenants'); return false; }
   return true;
 }
 
@@ -1473,112 +1497,6 @@ async function pinSelectedActions() {
   renderDashboard(document.getElementById('dash-source-filter')?.value||'');
 }
 
-// ── Tenants ──
-async function renderTenants() {
-  state.tenants = await api.get('/api/tenants');
-  const active = await api.get('/api/active-tenant');
-  state.activeTenant = active && active.name ? active : null;
-  updateTenantIndicator();
-
-  document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button>';
-
-  let cards = state.tenants.map(t => `
-    <div class="card" style="${t.is_active?'border-left:4px solid var(--primary)':''}">
-      <div class="card-header">${esc(t.display_name||t.name)} ${t.is_active?'<span class="badge badge-info">Active</span>':''}</div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(t.tenant_id||'No tenant ID')}</div>
-      <div style="font-size:14px;margin-bottom:12px">${t.action_count||0} actions</div>
-      <div class="btn-group">
-        ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenant('${t.name}')">Activate</button>`:''}
-        <button class="btn btn-sm" onclick="showEditTenant('${t.name}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteTenant('${t.name}')">Delete</button>
-      </div>
-    </div>`).join('');
-
-  // Migration status
-  const migStatus = await api.get('/api/admin/migration-status');
-  const migHtml = migStatus.migrated
-    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
-    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
-       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
-       <div id="migration-result" style="margin-top:8px"></div>`;
-
-  document.getElementById('content').innerHTML = (cards ? `<div class="grid grid-3">${cards}</div>` : '<div class="card text-center" style="padding:60px"><h3>No tenants yet</h3><p style="color:var(--text-light);margin:12px 0">Add your first tenant to get started</p><button class="btn btn-primary" onclick="showAddTenant()">+ Add Tenant</button></div>')
-    + `<div class="card mt-16"><div class="card-header">Database Administration</div>${migHtml}</div>`;
-}
-
-async function migrateDatabase() {
-  if(!confirm('This will migrate to per-tenant databases. The original database will be backed up. Continue?')) return;
-  const el = document.getElementById('migration-result');
-  el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
-  const r = await api.post('/api/admin/migrate-database');
-  if(r.error) {
-    el.innerHTML = `<div style="color:var(--danger)">${r.error}</div>`;
-    return;
-  }
-  if(r.success) {
-    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
-      `<div style="font-size:12px;padding:2px 0"><strong>${t}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
-    ).join('');
-    el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
-      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${r.backup}</div>
-      ${details}
-      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
-  }
-}
-
-function showAddTenant() {
-  openModal('Add Tenant', `
-    <div class="form-group"><label>Name (short, no spaces)</label><input id="t-name" placeholder="contoso"></div>
-    <div class="form-group"><label>Display Name</label><input id="t-display" placeholder="Contoso Ltd"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="t-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-    <div class="form-group"><label>Client ID (optional)</label><input id="t-cid"></div>
-    <div class="form-group"><label>Client Secret (optional)</label><input id="t-secret" type="password"></div>
-    <div class="form-group"><label>Notes</label><textarea id="t-notes" rows="2"></textarea></div>`,
-    '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addTenant()">Add Tenant</button>');
-}
-
-async function addTenant() {
-  const data = {name:document.getElementById('t-name').value.trim(), display_name:document.getElementById('t-display').value.trim(), tenant_id:document.getElementById('t-tid').value.trim(), client_id:document.getElementById('t-cid').value.trim(), client_secret:document.getElementById('t-secret').value.trim(), notes:document.getElementById('t-notes').value.trim()};
-  if(!data.name) return toast('Name is required','error');
-  const r = await api.post('/api/tenants', data);
-  if(r.error) return toast(r.error,'error');
-  closeModal(); toast('Tenant added','success'); renderTenants();
-}
-
-async function showEditTenant(name) {
-  const t = await api.get(`/api/tenants/${name}`);
-  openModal('Edit Tenant: '+name, `
-    <div class="form-group"><label>Display Name</label><input id="te-display" value="${esc(t.display_name||'')}"></div>
-    <div class="form-group"><label>Azure AD Tenant ID</label><input id="te-tid" value="${esc(t.tenant_id||'')}"></div>
-    <div class="form-group"><label>Client ID</label><input id="te-cid" value="${esc(t.client_id||'')}"></div>
-    <div class="form-group"><label>Client Secret</label><input id="te-secret" type="password" value="${esc(t.client_secret||'')}"></div>
-    <div class="form-group"><label>Notes</label><textarea id="te-notes" rows="2">${esc(t.notes||'')}</textarea></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateTenant('${name}')">Save</button>`);
-}
-
-async function updateTenant(name) {
-  const data = {display_name:document.getElementById('te-display').value.trim(), tenant_id:document.getElementById('te-tid').value.trim(), client_id:document.getElementById('te-cid').value.trim(), client_secret:document.getElementById('te-secret').value.trim(), notes:document.getElementById('te-notes').value.trim()};
-  await api.put(`/api/tenants/${name}`, data);
-  closeModal(); toast('Tenant updated','success'); renderTenants();
-}
-
-async function activateTenant(name) {
-  await api.post(`/api/tenants/${name}/activate`);
-  state.activeTenant = await api.get('/api/active-tenant');
-  updateTenantIndicator();
-  toast('Switched to '+name,'success');
-  renderTenants();
-}
-
-async function deleteTenant(name) {
-  if(!await showConfirm('Delete Tenant', `Delete tenant "${name}" and all its data? This cannot be undone.`)) return;
-  await api.del(`/api/tenants/${name}`);
-  state.activeTenant = await api.get('/api/active-tenant');
-  updateTenantIndicator();
-  toast('Tenant deleted','success');
-  renderTenants();
-}
-
 // ── Actions ──
 let actionsSort = {col:'priority', dir:1};
 let expandedAction = null;
@@ -1608,6 +1526,7 @@ async function renderActions() {
 }
 
 let _actionPlanMap = {};
+let _peerDisagreements = {};
 
 async function filterActions() {
   const t = state.activeTenant.name;
@@ -1618,11 +1537,13 @@ async function filterActions() {
   const src = document.getElementById('f-source')?.value; if(src) params.set('source_tool', src);
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
-  const [actions, planMap] = await Promise.all([
+  const [actions, planMap, peerDisagreements] = await Promise.all([
     api.get(`/api/tenants/${t}/actions?${params}`),
-    api.get(`/api/tenants/${t}/action-plans`)
+    api.get(`/api/tenants/${t}/action-plans`),
+    api.get(`/api/tenants/${t}/peer-disagreements`),
   ]);
   _actionPlanMap = planMap || {};
+  _peerDisagreements = peerDisagreements || {};
 
   // Show ZT filter row if ZT Report actions exist
   const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
@@ -1730,12 +1651,14 @@ function _renderActionsTableSorted() {
     const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
     const plans = _actionPlanMap[a.id] || [];
     const planBadge = plans.length ? `<span class="badge badge-info" title="${esc(plans.map(p=>p.plan_name).join(', '))}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
+    const peerCount = _peerDisagreements[a.id] || 0;
+    const peerStar = peerCount ? `<span title="${peerCount} cross-tool peer${peerCount>1?'s':''} with a different status — review whether they should also change" style="color:var(--warning);font-weight:700;cursor:help;margin-left:4px">*</span>` : '';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
       <td style="font-size:12px"><code>${esc(a.reference_id||'-')}</code></td>
-      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
+      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${peerStar}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${esc(a.workload||'')}</td>
@@ -1868,7 +1791,7 @@ async function showAddToPlan(actionIds) {
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Plan Name</span><input id="atp-new-name" placeholder="e.g. Q1 2026 Security Uplift"></div>
         <div class="form-group"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Description</span><textarea id="atp-new-desc" rows="2"></textarea></div>
         <div style="display:flex;gap:8px">
-          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span><input id="atp-new-responsible" placeholder="e.g. John Smith"></div>
+          <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Responsible</span>${userSelectHtml('atp-new-responsible','')}</div>
           <div class="form-group" style="flex:1"><span style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text-light)">Priority</span><select id="atp-new-priority">${['Critical','High','Medium','Low'].map(p=>'<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>').join('')}</select></div>
         </div>
         <div style="display:flex;gap:8px">
@@ -1880,6 +1803,7 @@ async function showAddToPlan(actionIds) {
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="addToPlanSubmit()">Add to Plan</button>`);
+  populateUserSelect('atp-new-responsible','');
 }
 
 async function addToPlanSubmit() {
@@ -1961,18 +1885,25 @@ function actionDetailHtml(a) {
   const srcColors = {'Microsoft Secure Score':'badge-info', 'SCuBA (CISA)':'badge-purple', 'Zero Trust Assessment':'badge-cyan', 'Zero Trust Report':'badge-cyan', 'Manual':'badge-gray'};
   const srcBadge = `<span class="badge ${srcColors[a.source_tool]||'badge-gray'}">${esc(a.source_tool||'')}</span>`;
 
-  // Remediation steps - split into structured parts if possible
+  // Implementation steps come from the merged value (global + per-tenant
+  // override) computed server-side in _row_to_action_dict; fall back to the
+  // legacy per-tenant column for un-globalized actions.
   let prerequisitesHtml = '';
   let stepsHtml = '';
-  const remText = a.remediation_steps || '';
-  if(remText.includes('Prerequisites:') && remText.includes('Next steps:')) {
-    const parts = remText.split('Next steps:');
+  const implText = a.implementation_steps || a.remediation_steps || '';
+  const implSourceLabel = a.global_action_id
+    ? (a.is_implementation_overridden
+        ? '<span class="badge badge-warning" style="font-size:10px">Tenant override</span>'
+        : '<span class="badge badge-info" style="font-size:10px">From global</span>')
+    : '';
+  if(implText.includes('Prerequisites:') && implText.includes('Next steps:')) {
+    const parts = implText.split('Next steps:');
     const prereq = parts[0].replace('Prerequisites:', '').trim();
     const steps = parts[1]?.trim() || '';
     prerequisitesHtml = prereq ? `<div class="field mb-16"><div class="field-label">Prerequisites</div><div class="field-value">${isZTR?mdToHtml(prereq):prereq}</div></div>` : '';
-    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
-  } else if(remText) {
-    stepsHtml = `<div class="field mb-16"><div class="field-label">Remediation Steps</div><div class="field-value">${isZTR?mdToHtml(remText):remText}</div></div>`;
+    stepsHtml = steps ? `<div class="field mb-16"><div class="field-label">Next Steps ${implSourceLabel}</div><div class="field-value">${isZTR?mdToHtml(steps):steps}</div></div>` : '';
+  } else if(implText) {
+    stepsHtml = `<div class="field mb-16"><div class="field-label">Implementation Steps ${implSourceLabel}</div><div class="field-value">${isZTR?mdToHtml(implText):implText}</div></div>`;
   }
 
   const uid = a.id.replace(/[^a-zA-Z0-9]/g,'');
@@ -1989,11 +1920,12 @@ function actionDetailHtml(a) {
       <div>${srcBadge} ${statusBadge(a.status)}</div>
     </div>
     ${riskHtml}
+    <div id="peers-banner-${a.id}" style="display:none"></div>
     <div class="action-tabs">
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
       <div class="atab" onclick="switchActionTab('${uid}','implementation',this);event.stopPropagation()">Implementation</div>
       <div class="atab" onclick="switchActionTab('${uid}','notes',this);event.stopPropagation()">Notes${a.notes?' *':''}</div>
-      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Links & People</div>
+      <div class="atab" onclick="switchActionTab('${uid}','links',this);loadActionLinks('${a.id}','${uid}');event.stopPropagation()">Linked Actions</div>
       ${hist?`<div class="atab" onclick="switchActionTab('${uid}','history',this);event.stopPropagation()">History (${a.history.length})</div>`:''}
     </div>
     <!-- General Tab -->
@@ -2059,7 +1991,11 @@ function actionDetailHtml(a) {
     <div class="action-tab-content" id="atab-${uid}-implementation">
       ${prerequisitesHtml}
       ${stepsHtml}
-      ${!prerequisitesHtml && !stepsHtml ? '<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation details available. Seed control reference data or import from Graph API to populate.</div>' : ''}
+      ${!prerequisitesHtml && !stepsHtml ? `<div style="color:var(--text-light);font-style:italic;padding:16px 0">No implementation steps yet. Click <a href="javascript:void(0)" onclick="showEditAction('${a.id}');event.stopPropagation()">Edit</a> to add them${a.global_action_id?' globally or just for this tenant':''}.</div>` : ''}
+      ${a.is_implementation_overridden && a.global_implementation_steps ? `
+        <details style="margin:0 0 16px"><summary style="font-size:12px;color:var(--text-light);cursor:pointer" onclick="event.stopPropagation()">Show global value</summary>
+          <pre style="font-size:12px;background:var(--bg);padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px">${esc(a.global_implementation_steps)}</pre>
+        </details>` : ''}
       ${a.reference_url?`<div class="field mb-16"><div class="field-label">Reference Documentation</div><div class="field-value"><a href="${esc(a.reference_url)}" target="_blank" onclick="event.stopPropagation()">${esc(a.reference_url)}</a></div></div>`:''}
       <div class="grid grid-4 mb-16">
         <div class="field"><div class="field-label">E8 Control</div><div class="field-value">${esc(a.essential_eight_control||'N/A')}</div></div>
@@ -2075,20 +2011,11 @@ function actionDetailHtml(a) {
       </div>
       <button class="btn btn-sm btn-primary" onclick="saveActionNotes('${a.id}','${uid}');event.stopPropagation()">Save Notes</button>
     </div>
-    <!-- Links & People Tab -->
+    <!-- Linked Actions Tab -->
     <div class="action-tab-content" id="atab-${uid}-links">
-      <div class="grid grid-2" style="gap:20px">
-        <div>
-          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Responsible Persons</div>
-          <div id="action-persons-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
-          <button class="btn btn-sm" onclick="showAssignPerson('${a.id}','${uid}');event.stopPropagation()">+ Assign Person</button>
-        </div>
-        <div>
-          <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
-          <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
-          <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
-        </div>
-      </div>
+      <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
+      <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
+      <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
       ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span>
       ${a.import_suggested_status?` &middot; <span style="font-size:12px;color:var(--warning)">Import wanted status: <strong>${a.import_suggested_status}</strong> (protected)</span>`:''}</div>`:''}
     </div>
@@ -2113,73 +2040,53 @@ function toggleActionDetail(id) {
   if(expandedAction && expandedAction!==id) document.getElementById('detail-'+expandedAction)?.classList.add('hidden');
   el.classList.toggle('hidden');
   expandedAction = el.classList.contains('hidden') ? null : id;
-  if(!el.classList.contains('hidden')) loadActionDeps(id);
+  if(!el.classList.contains('hidden')) {
+    loadActionDeps(id);
+    loadActionPeers(id);
+  }
+}
+
+async function loadActionPeers(actionId) {
+  const banner = document.getElementById(`peers-banner-${actionId}`);
+  if(!banner) return;
+  const peers = await api.get(`/api/actions/${actionId}/peers`);
+  const differing = (peers||[]).filter(p => p.status_differs);
+  if(!differing.length) {
+    banner.innerHTML = '';
+    banner.style.display = 'none';
+    return;
+  }
+  const items = differing.map(p =>
+    `<div style="font-size:12px;padding:2px 0">
+       <span style="color:var(--text-light)">${esc(p.source_tool||'')}</span>
+       — ${esc(p.title||'')} ${statusBadge(p.status)}
+     </div>`
+  ).join('');
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding:10px 12px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px">
+      <strong style="color:#92400e">*</strong>
+      <span style="font-size:13px;color:#92400e">${differing.length} cross-tool peer${differing.length>1?'s':''} have a different status — review whether they should also change.</span>
+      <div style="margin-top:6px">${items}</div>
+    </div>`;
 }
 
 async function loadActionLinks(actionId, uid) {
-  const [persons, links] = await Promise.all([
-    api.get(`/api/actions/${actionId}/persons`),
-    api.get(`/api/actions/${actionId}/links`),
-  ]);
-
-  // Render persons
-  const personsEl = document.getElementById(`action-persons-${uid}`);
-  if(personsEl) {
-    if(persons.length === 0) {
-      personsEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No persons assigned</div>';
-    } else {
-      personsEl.innerHTML = persons.map(p =>
-        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">
-          <span style="background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${p.name.charAt(0).toUpperCase()}</span>
-          <span><strong>${p.name}</strong>${p.role?' &middot; '+p.role:''}</span>
-          <button class="btn btn-sm" onclick="unassignPerson('${actionId}','${p.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
-        </div>`
-      ).join('');
-    }
-  }
-
-  // Render links
+  const links = await api.get(`/api/actions/${actionId}/links`);
   const linksEl = document.getElementById(`action-links-${uid}`);
-  if(linksEl) {
-    if(links.length === 0) {
-      linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
-    } else {
-      linksEl.innerHTML = links.map(l =>
-        `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
-          <span style="font-size:10px;color:var(--text-light)">${l.source_tool}</span>
-          <span>${l.title}</span>
-          ${statusBadge(l.status)}
-          <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
-        </div>`
-      ).join('');
-    }
-  }
-}
-
-async function showAssignPerson(actionId, uid) {
-  const persons = await api.get('/api/responsible-persons');
-  if(!persons.length) {
-    toast('No persons registered. Add people first in the People page.','error');
+  if(!linksEl) return;
+  if(!links || links.length === 0) {
+    linksEl.innerHTML = '<div style="color:var(--text-light);font-size:12px">No linked actions</div>';
     return;
   }
-  const opts = persons.map(p => `<option value="${p.id}">${p.name}${p.role?' ('+p.role+')':''}</option>`).join('');
-  openModal('Assign Person', `
-    <div class="form-group"><label>Person</label><select id="assign-person-select">${opts}</select></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" onclick="doAssignPerson('${actionId}','${uid}')">Assign</button>`);
-}
-
-async function doAssignPerson(actionId, uid) {
-  const personId = document.getElementById('assign-person-select').value;
-  await api.post(`/api/actions/${actionId}/persons`, {person_id: personId});
-  closeModal(); toast('Person assigned','success');
-  loadActionLinks(actionId, uid);
-}
-
-async function unassignPerson(actionId, personId, uid) {
-  await api.del(`/api/actions/${actionId}/persons/${personId}`);
-  toast('Person unassigned','success');
-  loadActionLinks(actionId, uid);
+  linksEl.innerHTML = links.map(l =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--bg-hover)">
+      <span style="font-size:10px;color:var(--text-light)">${esc(l.source_tool||'')}</span>
+      <span>${esc(l.title||'')}</span>
+      ${statusBadge(l.status)}
+      <button class="btn btn-sm" onclick="unlinkAction('${actionId}','${l.id}','${uid}');event.stopPropagation()" style="padding:1px 4px;font-size:10px;color:var(--danger);margin-left:auto">&times;</button>
+    </div>`
+  ).join('');
 }
 
 async function showLinkAction(actionId, uid) {
@@ -2229,26 +2136,130 @@ async function addAction() {
 
 async function showEditAction(id) {
   const a = await api.get(`/api/actions/${id}`);
-  openModal('Edit Action: '+(a.title||'').substring(0,40), `
-    <div class="form-group"><label>Title</label><input id="ae-title" value="${esc(a.title||'')}"></div>
-    <div class="form-row"><div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
-    <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Workload</label><select id="ae-workload">${selectOptions(state.enums.workloads,a.workload)}</select></div>
-    <div class="form-group"><label>Risk Level</label><select id="ae-risk">${selectOptions(state.enums.risk_levels,a.risk_level)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>User Impact</label><select id="ae-impact">${selectOptions(state.enums.user_impacts,a.user_impact)}</select></div>
-    <div class="form-group"><label>Impl. Effort</label><select id="ae-effort">${selectOptions(state.enums.implementation_efforts,a.implementation_effort)}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Responsible</label><input id="ae-responsible" value="${esc(a.responsible||'')}"></div>
-    <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div></div>
-    <div class="form-row"><div class="form-group"><label>E8 Control</label><select id="ae-e8ctrl"><option value="">— None —</option>${(state.enums.e8_controls||[]).map(c=>'<option'+(c===a.essential_eight_control?' selected':'')+'>'+c+'</option>').join('')}</select></div>
-    <div class="form-group"><label>E8 Maturity</label><select id="ae-e8ml"><option value="">— Auto —</option>${(state.enums.e8_maturities||[]).filter(m=>m!=='Level 0').map(m=>'<option'+(m===a.essential_eight_maturity?' selected':'')+'>'+m+'</option>').join('')}</select></div></div>
-    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${a.notes||''}</textarea></div>
+  const linkedToGlobal = !!a.global_action_id;
+  const overridden = !!a.is_implementation_overridden;
+  const globalSteps = a.global_implementation_steps || '';
+  const implSteps = a.implementation_steps || '';
+
+  // General (read-only) — sourced from the report. The Tenant tab below
+  // carries the editable per-tenant fields.
+  const general = `
+    <div class="form-group"><label>Title</label><input value="${esc(a.title||'')}" readonly></div>
+    <div class="form-row">
+      <div class="form-group"><label>Source Tool</label><input value="${esc(a.source_tool||'')}" readonly></div>
+      <div class="form-group"><label>Reference ID</label><input value="${esc(a.reference_id||a.source_id||'')}" readonly></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Workload</label><input value="${esc(a.workload||'')}" readonly></div>
+      <div class="form-group"><label>Required Licence</label><input value="${esc(a.required_licence||'')}" readonly></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Risk Level</label><input value="${esc(a.risk_level||'')}" readonly></div>
+      <div class="form-group"><label>User Impact</label><input value="${esc(a.user_impact||'')}" readonly></div>
+      <div class="form-group"><label>Impl. Effort</label><input value="${esc(a.implementation_effort||'')}" readonly></div>
+    </div>
+    <div class="form-group"><label>Description</label><textarea rows="2" readonly>${esc(a.description||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Current Value (per tenant)</label><input value="${esc(a.current_value||'')}" readonly></div>
+      <div class="form-group"><label>Recommended Value</label><input value="${esc(a.recommended_value||'')}" readonly></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Essential Eight Control</label><input value="${esc(a.essential_eight_control||'')}" readonly></div>
+      <div class="form-group"><label>E8 Maturity</label><input value="${esc(a.essential_eight_maturity||'')}" readonly></div>
+    </div>
+    <p style="font-size:12px;color:var(--text-light);margin-top:4px">General fields and framework correlations are imported / auto-mapped on the global action and are not editable per tenant.</p>`;
+
+  const overrideBanner = overridden
+    ? `<div style="padding:8px 12px;background:var(--warning-light);color:#92400e;border-radius:6px;font-size:13px;margin-bottom:8px">
+         This tenant has its own implementation override.
+         <a href="javascript:void(0)" onclick="resetImplementationOverride('${id}')">Reset to global</a>
+       </div>`
+    : (linkedToGlobal
+        ? `<div style="padding:8px 12px;background:var(--primary-light);color:#1e40af;border-radius:6px;font-size:13px;margin-bottom:8px">
+             Implementation steps are shared across all tenants. "Save globally" updates everywhere; "Save for this tenant only" creates an override.
+           </div>`
+        : `<div style="padding:8px 12px;background:var(--bg);color:var(--text-light);border-radius:6px;font-size:13px;margin-bottom:8px">
+             This action isn't linked to a global action yet, so saving here only affects the local copy.
+           </div>`);
+
+  const implementation = `
+    ${overrideBanner}
+    <div class="form-group"><label>Implementation Steps</label>
+      <textarea id="ae-impl" rows="8" style="font-family:inherit">${esc(implSteps)}</textarea>
+    </div>
+    ${linkedToGlobal && overridden ? `
+      <details style="margin-bottom:8px"><summary style="font-size:12px;color:var(--text-light);cursor:pointer">Show global value</summary>
+        <pre style="font-size:12px;background:var(--bg);padding:8px;border-radius:6px;white-space:pre-wrap">${esc(globalSteps||'(empty)')}</pre>
+      </details>` : ''}
+    <div class="flex gap-8" style="margin-top:8px">
+      ${linkedToGlobal
+        ? `<button class="btn btn-primary" onclick="saveImplementation('${id}','global')">Save globally</button>
+           <button class="btn" onclick="saveImplementation('${id}','tenant')">Save for this tenant only</button>`
+        : `<button class="btn btn-primary" onclick="saveImplementationLocal('${id}')">Save</button>`}
+    </div>`;
+
+  const tenant = `
+    <div class="form-row">
+      <div class="form-group"><label>Status</label><select id="ae-status">${selectOptions(state.enums.statuses,a.status)}</select></div>
+      <div class="form-group"><label>Priority</label><select id="ae-priority">${selectOptions(state.enums.priorities,a.priority)}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsible</label>${userSelectHtml('ae-responsible', a.responsible||'')}</div>
+      <div class="form-group"><label>Planned Date</label><input id="ae-date" type="date" value="${esc(a.planned_date||'')}"></div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="ae-notes" rows="2">${esc(a.notes||'')}</textarea></div>
     ${a.max_score != null ? `<div class="form-row"><div class="form-group"><label>Score</label><input id="ae-score" type="number" min="0" step="any" value="${a.score??''}"></div><div class="form-group"><label>Max Score</label><input id="ae-maxscore" type="number" min="0" step="any" value="${a.max_score??''}"></div></div>` : ''}
-    <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updateAction('${id}')">Save</button>`);
+    <div class="form-group"><label>Changed By</label><input id="ae-by" placeholder="Your name"></div>`;
+
+  openModal('Edit Action: '+(a.title||'').substring(0,40), `
+    <div class="action-tabs">
+      <div class="atab active" onclick="switchTab(event,'ae-tab-tenant')">Tenant</div>
+      <div class="atab" onclick="switchTab(event,'ae-tab-impl')">Implementation</div>
+      <div class="atab" onclick="switchTab(event,'ae-tab-general')">General (read-only)</div>
+    </div>
+    <div class="action-tab-content active" id="ae-tab-tenant">${tenant}</div>
+    <div class="action-tab-content" id="ae-tab-impl">${implementation}</div>
+    <div class="action-tab-content" id="ae-tab-general">${general}</div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="updateAction('${id}')">Save Tenant Fields</button>`);
+  populateUserSelect('ae-responsible', a.responsible||'');
+}
+
+async function saveImplementation(id, scope) {
+  const steps = document.getElementById('ae-impl').value;
+  const r = await api.put(`/api/actions/${id}/implementation`, {implementation_steps: steps, scope});
+  if(r.error) return toast(r.error, 'error');
+  toast(scope === 'global' ? 'Saved globally for all tenants' : 'Saved for this tenant only','success');
+  closeModal(); filterActions();
+}
+
+async function saveImplementationLocal(id) {
+  const steps = document.getElementById('ae-impl').value;
+  const r = await api.put(`/api/actions/${id}`, {remediation_steps: steps});
+  if(r.error) return toast(r.error, 'error');
+  toast('Saved','success');
+  closeModal(); filterActions();
+}
+
+async function resetImplementationOverride(id) {
+  if(!await showConfirm('Reset Override','Drop the per-tenant override and revert to the global implementation steps?','Reset','btn-primary')) return;
+  const r = await api.del(`/api/actions/${id}/implementation-override`);
+  if(r.error) return toast(r.error, 'error');
+  toast('Override removed','success');
+  closeModal(); showEditAction(id);
 }
 
 async function updateAction(id) {
-  const data = {title:document.getElementById('ae-title').value, status:document.getElementById('ae-status').value, priority:document.getElementById('ae-priority').value, workload:document.getElementById('ae-workload').value, risk_level:document.getElementById('ae-risk').value, user_impact:document.getElementById('ae-impact').value, implementation_effort:document.getElementById('ae-effort').value, responsible:document.getElementById('ae-responsible').value, planned_date:document.getElementById('ae-date').value||null, essential_eight_control:document.getElementById('ae-e8ctrl').value||null, essential_eight_maturity:document.getElementById('ae-e8ml').value||null, notes:document.getElementById('ae-notes').value, changed_by:document.getElementById('ae-by').value};
+  // Only the per-tenant fields are saved here; General is read-only and
+  // Implementation has its own save buttons (saveImplementation*).
+  const data = {
+    status: document.getElementById('ae-status').value,
+    priority: document.getElementById('ae-priority').value,
+    responsible: document.getElementById('ae-responsible').value,
+    planned_date: document.getElementById('ae-date').value || null,
+    notes: document.getElementById('ae-notes').value,
+    changed_by: document.getElementById('ae-by').value,
+  };
   const scoreEl = document.getElementById('ae-score');
   const maxEl = document.getElementById('ae-maxscore');
   if(scoreEl) {
@@ -2257,7 +2268,8 @@ async function updateAction(id) {
     if(!isNaN(s)) data.score = s;
     if(!isNaN(m)) { data.max_score = m; data.score_percentage = m > 0 ? Math.round(s/m*100*100)/100 : 0; }
   }
-  await api.put(`/api/actions/${id}`, data);
+  const r = await api.put(`/api/actions/${id}`, data);
+  if(r && r.error) return toast(r.error,'error');
   closeModal(); toast('Action updated','success'); filterActions();
 }
 
@@ -2297,7 +2309,7 @@ async function renderImport() {
                 or: set <strong>Allow public client flows = Yes</strong> and use <strong>delegated</strong> permissions with device code</li>
             <li>Set the <strong>Tenant ID</strong>, <strong>Client ID</strong>, and optionally <strong>Client Secret</strong> on your tenant configuration</li>
           </ol>
-          <button class="btn btn-sm mt-16" onclick="navigate('tenants')">Go to Tenant Settings</button>
+          <button class="btn btn-sm mt-16" onclick="navigate('cp-tenants')">Go to Tenant Settings</button>
         </div>
       </div>`;
   } else if(graphStatus.authenticated) {
@@ -2742,7 +2754,7 @@ async function showCreatePlan() {
     <div class="form-group"><label>Plan Name</label><input id="p-name" placeholder="Q1 2026 Security Uplift"></div>
     <div class="form-group"><label>Description</label><textarea id="p-desc" rows="2"></textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="p-responsible" placeholder="e.g. John Smith"></div>
+      <div class="form-group"><label>Responsible Person</label>${userSelectHtml('p-responsible','')}</div>
       <div class="form-group"><label>Priority</label><select id="p-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
@@ -2757,6 +2769,7 @@ async function showCreatePlan() {
       <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.plan-action-cb').forEach(c=>c.checked=this.checked)"></th><th>Title</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`,
     '<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createPlan()">Create & Simulate</button>');
+  populateUserSelect('p-responsible','');
 }
 
 async function createPlan() {
@@ -2811,42 +2824,6 @@ async function viewPlan(planId) {
 
   let riskReduction = Object.entries(sim.risk_reduction||{}).map(([level,n]) => `<span class="badge badge-${level==='Critical'||level==='High'?'danger':'warning'}">${n}x ${level}</span>`).join(' ');
 
-  // Plan actions table with remove button
-  let planActionsRows = plan.items.map(item => {
-    const a = item;
-    const scoreDisplay = a.score != null && a.max_score != null ? `${a.score}/${a.max_score}` : '-';
-    const phaseOpts = [1,2,3].map(p => `<option value="${p}"${p===(a.phase||1)?' selected':''}>${p}</option>`).join('');
-    return `<tr>
-      <td style="max-width:250px">${esc((a.title||'').substring(0,60))}</td>
-      <td>${statusBadge(a.status||'ToDo')}</td>
-      <td>${priorityBadge(a.priority||'Medium')}</td>
-      <td style="font-size:12px">${esc(a.workload||'')}</td>
-      <td style="font-size:12px">${esc(a.implementation_effort||'')}</td>
-      <td>${scoreDisplay}</td>
-      <td><select style="padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:12px" title="Phase" onchange="updatePlanItemPhase('${planId}','${a.action_id}',this.value)">${phaseOpts}</select></td>
-      <td><button class="btn btn-sm btn-danger" onclick="removePlanItem('${planId}','${a.action_id}');event.stopPropagation()" title="Remove from plan">&times;</button></td>
-    </tr>`;
-  }).join('');
-
-  let phaseHtml = phases.map((ph,i) => `
-    <div class="card phase-card phase-${i+1} mb-16" data-phase="${i+1}"
-         ondragover="onPhaseDragOver(event,this)" ondragleave="onPhaseDragLeave(this)" ondrop="onPhaseDrop(event,'${planId}',${i+1})">
-      <div class="card-header">${esc(ph.name||'')} <span class="badge badge-info">${ph.action_count} actions</span>
-        <span style="font-size:11px;color:var(--text-light);margin-left:8px">&#8693; drag actions between phases</span>
-      </div>
-      <div class="grid grid-3 mb-8">
-        <div><span style="font-size:12px;color:var(--text-light)">Score Gain</span><div style="font-weight:600;color:var(--success)">+${ph.projected_score_gain}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Effort</span><div style="font-size:13px">${esc(Object.entries(ph.effort_summary).map(([e,n])=>`${n}x ${e}`).join(', '))}</div></div>
-        <div><span style="font-size:12px;color:var(--text-light)">Licences</span><div style="font-size:13px">${esc(ph.licences_needed.join(', ')||'None required')}</div></div>
-      </div>
-      <div class="table-wrap"><table><thead><tr><th></th><th>Action</th><th>Priority</th><th>Workload</th><th>Effort</th></tr></thead><tbody>
-        ${ph.actions.map(a=>`<tr draggable="true" data-action-id="${a.action_id||a.id}" data-plan-id="${planId}"
-          ondragstart="onPhaseDragStart(event,'${a.action_id||a.id}','${planId}')"
-          style="cursor:grab">
-          <td style="width:24px;color:var(--text-light);font-size:16px">&#8597;</td>
-          <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${esc(a.workload||'')}</td><td>${esc(a.implementation_effort||'')}</td></tr>`).join('')}
-      </tbody></table></div>
-    </div>`).join('');
   // Phase names
   const phaseNames = {1:'Quick Wins', 2:'Core Controls', 3:'Advanced Hardening'};
   const phaseColors = {1:'var(--success)', 2:'var(--primary)', 3:'var(--warning)'};
@@ -2942,11 +2919,10 @@ async function viewPlan(planId) {
         <button class="btn btn-sm" onclick="autoAssignPhases('${planId}')" title="Auto-assign actions to phases based on ROI, effort, and licence requirements">Auto-assign Phases</button>
         <button class="btn btn-sm btn-primary" onclick="showAddActionsToPlan('${planId}')">+ Add Actions</button>
       </div>
-      ${plan.items.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Workload</th><th>Effort</th><th>Score</th><th>Phase</th><th></th></tr></thead><tbody>${planActionsRows}</tbody></table></div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
     </div>
-    ${renderPhaseCard(1)}
-    ${renderPhaseCard(2)}
-    ${renderPhaseCard(3)}
+    ${plan.items.length
+      ? `${renderPhaseCard(1)}${renderPhaseCard(2)}${renderPhaseCard(3)}`
+      : '<div class="card text-center" style="padding:40px;color:var(--text-light)">No actions in this plan yet. Add actions to get started.</div>'}
 
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">Impact by Source Tool</div>${toolImpact||'<div style="color:var(--text-light)">No data</div>'}</div>
@@ -3003,11 +2979,6 @@ async function updatePlanStatus(planId, status) {
   toast('Plan status updated to ' + status, 'success');
 }
 
-async function updatePlanItemPhase(planId, actionId, phase) {
-  await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: parseInt(phase)});
-  toast(`Moved to Phase ${phase}`, 'success');
-}
-
 async function showEditPlan(planId) {
   const plan = await api.get(`/api/plans/${planId}`);
   const effortOpts = ['Small','Medium','Large'].map(e => `<option value="${e}"${e===(plan.implementation_effort||'Medium')?' selected':''}>${e}</option>`).join('');
@@ -3017,7 +2988,7 @@ async function showEditPlan(planId) {
     <div class="form-group"><label>Plan Name</label><input id="ep-name" value="${esc(plan.name||'')}"></div>
     <div class="form-group"><label>Description</label><textarea id="ep-desc" rows="3">${esc(plan.description||'')}</textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Responsible Person</label><input id="ep-responsible" value="${esc(plan.responsible_person||'')}"></div>
+      <div class="form-group"><label>Responsible Person</label>${userSelectHtml('ep-responsible', plan.responsible_person||'')}</div>
       <div class="form-group"><label>Priority</label><select id="ep-priority">${prioOpts}</select></div>
     </div>
     <div class="form-row">
@@ -3029,6 +3000,7 @@ async function showEditPlan(planId) {
     </div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" onclick="submitEditPlan('${planId}')">Save</button>`);
+  populateUserSelect('ep-responsible', plan.responsible_person||'');
 }
 
 async function submitEditPlan(planId) {
@@ -3193,173 +3165,40 @@ async function deletePlan(id) {
   toast('Plan deleted','success'); renderPlans();
 }
 
-// ── People & Assignments ──
-let _peopleView = 'list'; // 'list' or 'kanban'
-let _peopleFilter = '';
+// ── User selector helper (replaces former "People" list) ──
+function userLabel(u) {
+  if(!u) return '';
+  return u.display_name || u.username || u.email || '';
+}
 
-async function renderPeople() {
-  const c = document.getElementById('content');
-  const [persons, allActions] = await Promise.all([
-    api.get('/api/responsible-persons'),
-    requireTenant() ? api.get(`/api/tenants/${state.activeTenant.name}/actions`) : Promise.resolve([]),
-  ]);
-  const assignments = requireTenant() ? await api.get(`/api/tenants/${state.activeTenant.name}/action-persons`) : {};
-  // Build reverse map: person_id -> [actions]
-  const personActions = {};
-  persons.forEach(p => personActions[p.id] = []);
-  for(const [aid, plist] of Object.entries(assignments)) {
-    const action = allActions.find(a => a.id === aid);
-    if(!action) continue;
-    for(const p of plist) {
-      if(!personActions[p.id]) personActions[p.id] = [];
-      personActions[p.id].push(action);
-    }
+function userSelectHtml(id, selectedValue, opts) {
+  // Renders an empty placeholder; populateUserSelect fills it.
+  const required = opts && opts.required ? ' required' : '';
+  const allowEmpty = !(opts && opts.required);
+  const initial = selectedValue ? `<option value="${esc(selectedValue)}" selected>${esc(selectedValue)}</option>` : '';
+  return `<select id="${id}"${required}>${allowEmpty?'<option value=""></option>':''}${initial}</select>`;
+}
+
+async function populateUserSelect(id, selectedValue, opts) {
+  const sel = document.getElementById(id);
+  if(!sel) return;
+  const users = await api.get('/api/users');
+  const list = Array.isArray(users) ? users : [];
+  const allowEmpty = !(opts && opts.required);
+  const seen = new Set();
+  let options = allowEmpty ? '<option value=""></option>' : '';
+  for(const u of list) {
+    if(!u.is_active) continue;
+    const v = u.username || u.id;
+    seen.add(v);
+    const isSel = (selectedValue && (selectedValue === v || selectedValue === u.id || selectedValue === u.display_name)) ? ' selected' : '';
+    options += `<option value="${esc(v)}"${isSel}>${esc(userLabel(u))}${u.email?` (${esc(u.email)})`:''}</option>`;
   }
-  // Unassigned actions
-  const assignedIds = new Set(Object.keys(assignments));
-  const unassigned = allActions.filter(a => !assignedIds.has(a.id));
-
-  // Plans map
-  let plansMap = {};
-  if(requireTenant()) {
-    try {
-      const plans = await api.get(`/api/tenants/${state.activeTenant.name}/plans`);
-      for(const p of plans) for(const pa of (p.actions||[])) {
-        if(!plansMap[pa.action_id]) plansMap[pa.action_id] = [];
-        plansMap[pa.action_id].push(p.name);
-      }
-    } catch(e) {}
+  // Preserve a legacy free-text value that doesn't match any current user.
+  if(selectedValue && !seen.has(selectedValue)) {
+    options += `<option value="${esc(selectedValue)}" selected>${esc(selectedValue)} (legacy)</option>`;
   }
-
-  const personList = persons.map(p => {
-    const acts = personActions[p.id] || [];
-    const todo = acts.filter(a=>a.status==='ToDo').length;
-    const prog = acts.filter(a=>a.status==='In Progress').length;
-    const done = acts.filter(a=>a.status==='Completed').length;
-    return `<tr>
-      <td><strong>${p.name}</strong></td>
-      <td style="font-size:12px">${p.email||'—'}</td>
-      <td style="font-size:12px">${p.role||'—'}</td>
-      <td style="font-size:12px">${p.department||'—'}</td>
-      <td>${acts.length}</td>
-      <td><span class="badge badge-danger">${todo}</span> <span class="badge badge-warning">${prog}</span> <span class="badge badge-success">${done}</span></td>
-      <td>
-        <button class="btn btn-sm" onclick="editPerson('${p.id}','${p.name.replace(/'/g,"\\'")}','${(p.email||'').replace(/'/g,"\\'")}','${(p.role||'').replace(/'/g,"\\'")}','${(p.department||'').replace(/'/g,"\\'")}')">Edit</button>
-        <button class="btn btn-sm" onclick="deletePerson('${p.id}')" style="color:var(--danger)">Del</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  // Kanban: columns per person + unassigned
-  const filterLower = _peopleFilter.toLowerCase();
-  const kanbanCols = persons.map(p => {
-    let acts = (personActions[p.id]||[]);
-    if(filterLower) acts = acts.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower) || a.source_tool.toLowerCase().includes(filterLower));
-    const cards = acts.map(a => {
-      const planBadge = plansMap[a.id] ? `<div style="font-size:10px;color:var(--primary);margin-top:4px">&#128203; ${plansMap[a.id].join(', ')}</div>` : '';
-      return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer" onclick="navigate('actions');setTimeout(()=>toggleActionDetail('${a.id}'),300)">
-        <div style="font-size:12px;font-weight:500">${a.title}</div>
-        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
-        <div style="font-size:10px;color:var(--text-light);margin-top:4px">${a.source_tool} &middot; ${a.workload}</div>
-        ${planBadge}
-      </div>`;
-    }).join('');
-    return `<div style="min-width:280px;max-width:320px;flex-shrink:0">
-      <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
-        <span>${p.name}</span>
-        <span class="badge" style="background:var(--primary);color:#fff">${acts.length}</span>
-      </div>
-      <div style="max-height:calc(100vh - 260px);overflow-y:auto">${cards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">No actions</div>'}</div>
-    </div>`;
-  }).join('');
-
-  // Unassigned column
-  let unassignedFiltered = unassigned;
-  if(filterLower) unassignedFiltered = unassigned.filter(a => a.title.toLowerCase().includes(filterLower) || a.status.toLowerCase().includes(filterLower));
-  const unassignedCards = unassignedFiltered.slice(0,50).map(a => {
-    return `<div style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px">
-      <div style="font-weight:500">${a.title}</div>
-      <div style="margin-top:4px">${statusBadge(a.status)} ${priorityBadge(a.priority)}</div>
-    </div>`;
-  }).join('');
-
-  c.innerHTML = `
-    <div class="flex justify-between items-center mb-16">
-      <div class="flex gap-8">
-        <button class="btn btn-sm ${_peopleView==='list'?'btn-primary':''}" onclick="_peopleView='list';renderPeople()">List</button>
-        <button class="btn btn-sm ${_peopleView==='kanban'?'btn-primary':''}" onclick="_peopleView='kanban';renderPeople()">Kanban</button>
-      </div>
-      <div class="flex gap-8">
-        ${_peopleView==='kanban'?`<input class="form-control" style="width:200px" placeholder="Filter actions..." value="${_peopleFilter}" oninput="_peopleFilter=this.value;renderPeople()">`:''}
-        <button class="btn btn-primary btn-sm" onclick="showAddPerson()">+ Add Person</button>
-      </div>
-    </div>
-    ${_peopleView==='list' ? `
-    <div class="card mb-16">
-      <div class="card-header">Responsible Persons (${persons.length})</div>
-      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Actions</th><th>Status</th><th></th></tr></thead>
-      <tbody>${personList||'<tr><td colspan="7" class="text-center">No persons registered. Add your first team member.</td></tr>'}</tbody></table></div>
-    </div>` : `
-    <div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:16px">
-      ${kanbanCols}
-      <div style="min-width:280px;max-width:320px;flex-shrink:0">
-        <div style="font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--bg-hover);border-radius:6px;display:flex;justify-content:space-between;align-items:center">
-          <span style="color:var(--text-light)">Unassigned</span>
-          <span class="badge">${unassigned.length}</span>
-        </div>
-        <div style="max-height:calc(100vh - 260px);overflow-y:auto">${unassignedCards||'<div style="color:var(--text-light);font-size:12px;padding:8px;text-align:center">All actions assigned</div>'}</div>
-        ${unassigned.length>50?`<div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px">${unassigned.length-50} more...</div>`:''}
-      </div>
-    </div>`}`;
-}
-
-function showAddPerson() {
-  openModal('Add Person', `
-    <div class="form-group"><label>Name</label><input id="rp-name" placeholder="Jane Doe"></div>
-    <div class="form-group"><label>Email</label><input id="rp-email" placeholder="jane@company.com"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Role</label><input id="rp-role" placeholder="Security Engineer"></div>
-      <div class="form-group"><label>Department</label><input id="rp-department" placeholder="IT Security"></div>
-    </div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="addPerson()">Add</button>`);
-}
-
-async function addPerson() {
-  const name = document.getElementById('rp-name').value;
-  if(!name) return toast('Name is required','error');
-  await api.post('/api/responsible-persons', {
-    name, email:document.getElementById('rp-email').value,
-    role:document.getElementById('rp-role').value,
-    department:document.getElementById('rp-department').value
-  });
-  closeModal(); toast('Person added','success'); renderPeople();
-}
-
-function editPerson(id, name, email, role, dept) {
-  openModal('Edit Person', `
-    <div class="form-group"><label>Name</label><input id="rp-name" value="${name}"></div>
-    <div class="form-group"><label>Email</label><input id="rp-email" value="${email}"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Role</label><input id="rp-role" value="${role}"></div>
-      <div class="form-group"><label>Department</label><input id="rp-department" value="${dept}"></div>
-    </div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="updatePerson('${id}')">Save</button>`);
-}
-
-async function updatePerson(id) {
-  await api.put(`/api/responsible-persons/${id}`, {
-    name:document.getElementById('rp-name').value,
-    email:document.getElementById('rp-email').value,
-    role:document.getElementById('rp-role').value,
-    department:document.getElementById('rp-department').value
-  });
-  closeModal(); toast('Person updated','success'); renderPeople();
-}
-
-async function deletePerson(id) {
-  if(!confirm('Delete this person? They will be unassigned from all actions.')) return;
-  await api.del(`/api/responsible-persons/${id}`);
-  toast('Person deleted','success'); renderPeople();
+  sel.innerHTML = options;
 }
 
 // ── Correlations ──
@@ -4650,13 +4489,14 @@ function showAcceptRisk(actionId) {
   openModal('Accept Risk', `
     <p style="margin-bottom:12px;color:var(--text-light)">Document the risk acceptance decision. The action will be marked as "Risk Accepted".</p>
     <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Why is this risk being accepted?"></textarea></div>
-    <div class="form-group"><label>Risk Owner (required)</label><input id="ra-owner" placeholder="Person responsible for this risk"></div>
+    <div class="form-group"><label>Risk Owner (required)</label>${userSelectHtml('ra-owner','',{required:true})}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="ra-review" type="date"></div>
       <div class="form-group"><label>Expiry Date (auto-revert to ToDo)</label><input id="ra-expiry" type="date"></div>
     </div>
     <div class="form-group"><label>Your Name</label><input id="ra-by" placeholder="Who is recording this"></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn" style="background:var(--warning);color:#fff;border-color:var(--warning)" onclick="acceptRisk('${actionId}')">Accept Risk</button>`);
+  populateUserSelect('ra-owner','',{required:true});
 }
 
 async function acceptRisk(actionId) {
@@ -4732,39 +4572,6 @@ async function removeDep(actionId, dependsOnId) {
   loadActionDeps(actionId);
 }
 
-
-// ── Plan Phase Drag-and-Drop ──
-let _dragActionId = null;
-let _dragPlanId = null;
-
-function onPhaseDragStart(event, actionId, planId) {
-  _dragActionId = actionId;
-  _dragPlanId = planId;
-  event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('text/plain', actionId);
-}
-
-function onPhaseDragOver(event, el) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  el.classList.add('drag-over');
-}
-
-function onPhaseDragLeave(el) {
-  el.classList.remove('drag-over');
-}
-
-async function onPhaseDrop(event, planId, targetPhase) {
-  event.preventDefault();
-  event.currentTarget.classList.remove('drag-over');
-  const actionId = _dragActionId;
-  if(!actionId) return;
-  _dragActionId = null;
-  const r = await api.put(`/api/plans/${planId}/items/${actionId}`, {phase: targetPhase});
-  if(r && r.error) return toast(r.error, 'error');
-  toast(`Moved to Phase ${targetPhase}`, 'success');
-  viewPlan(planId);
-}
 
 // ── Control Plane: Global Actions ──
 let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:''};
@@ -4972,9 +4779,21 @@ function switchTab(event, tabId) {
 
 // ── Control Plane: Cross-Tenant View ──
 async function renderCpCrossTenant() {
-  const data = await api.get('/api/control-plane/cross-tenant');
-  const tenants = data.tenants || [];
-  const globalActions = data.global_actions || [];
+  // Page through the API to fetch every global action, not just the first 100.
+  const pageSize = 1000;
+  let offset = 0;
+  let tenants = [];
+  let globalActions = [];
+  let total = 0;
+  while (true) {
+    const data = await api.get(`/api/control-plane/cross-tenant?limit=${pageSize}&offset=${offset}`);
+    if (!offset) tenants = data.tenants || [];
+    total = data.total || 0;
+    const page = data.global_actions || [];
+    globalActions = globalActions.concat(page);
+    if (page.length < pageSize || globalActions.length >= total) break;
+    offset += pageSize;
+  }
   const statusColors = {
     'Completed':'success','In Progress':'info','ToDo':'warning',
     'Risk Accepted':'purple','Not Applicable':'gray','Warning':'danger'
@@ -5006,7 +4825,7 @@ async function renderCpCrossTenant() {
         <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
       </div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:12px">
-        Showing ${globalActions.length} global actions across ${tenants.length} tenants.
+        Showing ${globalActions.length} of ${total} global actions across ${tenants.length} tenants.
         Actions without a tenant column entry are not yet imported for that tenant.
       </div>
       <div class="table-wrap" id="cross-tenant-table-wrap"><table id="cross-tenant-table">
@@ -5256,6 +5075,10 @@ async function deleteUser(userId, username) {
 // ── Control Plane: Tenant Management ──
 async function renderCpTenants() {
   const tenants = await api.get('/api/tenants');
+  state.tenants = tenants;
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  updateTenantIndicator();
   const allFw = await api.get('/api/control-plane/tenant-frameworks');
   const allUsers = await api.get('/api/control-plane/users');
 
@@ -5266,18 +5089,28 @@ async function renderCpTenants() {
     const fws = (allFw[t.name]||[]).map(f=>`<span class="badge badge-info" style="margin:2px;font-size:10px">${esc(f)}</span>`).join('');
     const usersWithAccess = allUsers.filter(u=>u.role==='admin'||(u.tenant_access||[]).some(ta=>ta.tenant_name===t.name));
     const userBadges = usersWithAccess.slice(0,4).map(u=>`<span class="badge badge-gray" style="margin:1px;font-size:10px">${esc(u.display_name||u.username)}</span>`).join('');
+    const activeBadge = t.is_active ? '<span class="badge badge-info" style="margin-left:6px">Active</span>' : '';
     return `<tr onclick="showCpTenantDetail('${t.name}')" style="cursor:pointer">
-      <td><strong>${esc(t.display_name||t.name)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
+      <td><strong>${esc(t.display_name||t.name)}</strong>${activeBadge}<br><span style="font-size:11px;color:var(--text-light)">${esc(t.name)}</span></td>
       <td>${t.action_count||0}</td>
       <td>${fws||'<span style="color:var(--text-light);font-size:12px">None</span>'}</td>
       <td>${userBadges||'<span style="color:var(--text-light);font-size:12px">None</span>'}${usersWithAccess.length>4?`<span style="font-size:11px;color:var(--text-light)"> +${usersWithAccess.length-4}</span>`:''}</td>
       <td style="font-size:12px;color:var(--text-light)">${esc(t.created_at?t.created_at.substring(0,10):'')}</td>
       <td onclick="event.stopPropagation()">
+        ${!t.is_active?`<button class="btn btn-sm btn-primary" onclick="activateTenantCp('${t.name}')">Activate</button>`:''}
         <button class="btn btn-sm" onclick="showCpTenantDetail('${t.name}')">Configure</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTenantCp('${t.name}')">&#x2715;</button>
       </td>
     </tr>`;
   }).join('');
+
+  // Database migration status
+  const migStatus = await api.get('/api/admin/migration-status');
+  const migHtml = migStatus.migrated
+    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
+    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
+       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
+       <div id="migration-result" style="margin-top:8px"></div>`;
 
   document.getElementById('content').innerHTML = `
     <div class="grid grid-4 mb-16">
@@ -5286,7 +5119,7 @@ async function renderCpTenants() {
       <div class="card stat-card"><div class="value">${tenants.filter(t=>(allFw[t.name]||[]).length>0).length}</div><div class="label">Framework Assigned</div></div>
       <div class="card stat-card"><div class="value">${allUsers.length}</div><div class="label">Users</div></div>
     </div>
-    <div class="card">
+    <div class="card mb-16">
       <div class="flex justify-between items-center mb-12">
         <div class="card-header" style="margin:0">Tenant Overview</div>
         <button class="btn btn-primary btn-sm" onclick="showCreateTenantCp()">+ New Tenant</button>
@@ -5295,7 +5128,37 @@ async function renderCpTenants() {
         <thead><tr><th>Tenant</th><th>Actions</th><th>Frameworks</th><th>Users</th><th>Created</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light)">No tenants yet.</td></tr>'}</tbody>
       </table></div>
-    </div>`;
+    </div>
+    <div class="card"><div class="card-header">Database Administration</div>${migHtml}</div>`;
+}
+
+async function activateTenantCp(name) {
+  await api.post(`/api/tenants/${name}/activate`);
+  state.activeTenant = await api.get('/api/active-tenant');
+  state.tenants = await api.get('/api/tenants');
+  updateTenantIndicator();
+  toast('Switched to '+name,'success');
+  renderCpTenants();
+}
+
+async function migrateDatabase() {
+  if(!await showConfirm('Migrate Database', 'This will migrate to per-tenant databases. The original database will be backed up. Continue?', 'Migrate', 'btn-primary')) return;
+  const el = document.getElementById('migration-result');
+  if(el) el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
+  const r = await api.post('/api/admin/migrate-database');
+  if(r.error) {
+    if(el) el.innerHTML = `<div style="color:var(--danger)">${esc(r.error)}</div>`;
+    return;
+  }
+  if(r.success) {
+    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
+      `<div style="font-size:12px;padding:2px 0"><strong>${esc(t)}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
+    ).join('');
+    if(el) el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
+      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${esc(r.backup||'')}</div>
+      ${details}
+      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
+  }
 }
 
 async function showCpTenantDetail(tenantName) {
@@ -5336,8 +5199,15 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Display Name</label><input id="cpt-display" value="${esc(tenant.display_name||'')}"></div>
         <div class="form-group"><label>Tenant ID (Azure)</label><input id="cpt-tid" value="${esc(tenant.tenant_id||'')}"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
+        <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
+      </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
-      <div style="margin-top:12px"><button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button>
+        ${!tenant.is_active?`<button class="btn" onclick="activateTenantCp('${tenantName}');closeModal()">Activate Tenant</button>`:'<span class="badge badge-info" style="align-self:center">Currently Active</span>'}
+      </div>
     </div>
     <div class="action-tab-content" id="cpt-frameworks">
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Select which compliance frameworks this tenant must follow.</p>
@@ -5373,11 +5243,15 @@ async function showCpTenantDetail(tenantName) {
 }
 
 async function saveTenantConfigCp(tenantName) {
-  const r = await api.put(`/api/tenants/${tenantName}`, {
+  const payload = {
     display_name: document.getElementById('cpt-display').value,
     tenant_id: document.getElementById('cpt-tid').value,
+    client_id: document.getElementById('cpt-cid').value,
     notes: document.getElementById('cpt-notes').value,
-  });
+  };
+  const secret = document.getElementById('cpt-secret').value;
+  if(secret && secret !== '***') payload.client_secret = secret;
+  const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
   toast('Tenant updated','success');
 }
@@ -5403,6 +5277,10 @@ function showCreateTenantCp() {
       <div class="form-group"><label>Display Name</label><input id="nt-display" placeholder="Contoso Production"></div>
     </div>
     <div class="form-group"><label>Azure Tenant ID</label><input id="nt-tid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Client ID (optional)</label><input id="nt-cid"></div>
+      <div class="form-group"><label>Client Secret (optional)</label><input id="nt-secret" type="password"></div>
+    </div>
     <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2"></textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateTenantCp()">Create</button>`);
 }
@@ -5413,6 +5291,8 @@ async function submitCreateTenantCp() {
   const r = await api.post('/api/tenants', {
     name, display_name: document.getElementById('nt-display').value,
     tenant_id: document.getElementById('nt-tid').value,
+    client_id: document.getElementById('nt-cid').value,
+    client_secret: document.getElementById('nt-secret').value,
     notes: document.getElementById('nt-notes').value,
   });
   if(r.error) return toast(r.error,'error');
