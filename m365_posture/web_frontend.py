@@ -912,6 +912,7 @@ function requireTenant() {
 // Store dashboard data for source filter switching
 let _dashData = {};
 let _dashExcludeNA = false;
+let _cmpContext = null;  // {type:'tenants',tenants,data} or {type:'snapshot',tenantName,tenantDisplay,data}
 
 async function renderDashboard(sourceFilter) {
   const c = document.getElementById('content');
@@ -1177,6 +1178,8 @@ async function doSnapshotCompare() {
 
   const r = await api.post(`/api/tenants/${tenantName}/compare-snapshot`, {snapshot_id: snapshotId});
   const labels = r.labels || ['Current', 'Snapshot'];
+  const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
+  _cmpContext = {type: 'snapshot', tenantName, tenantDisplay, data: r};
   const c = document.getElementById('content');
 
   let rows = labels.map(l => {
@@ -1207,8 +1210,6 @@ async function doSnapshotCompare() {
     }).join('');
     return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
-
-  const tenantDisplay = state.tenants.find(t=>t.name===tenantName)?.display_name || tenantName;
 
   // Action differences between current and snapshot
   const actionDiffs = r.action_diffs || [];
@@ -1261,6 +1262,7 @@ async function doDashboardCompare() {
     api.post('/api/compare', {tenants}),
     api.post('/api/compare-actions', {tenants})
   ]);
+  _cmpContext = {type: 'tenants', tenants, data: r};
   const c = document.getElementById('content');
 
   let rows = tenants.map(t => {
@@ -1320,50 +1322,392 @@ async function doDashboardCompare() {
     </div>`;
 }
 
-function downloadComparisonPDF() {
+async function downloadComparisonPDF() {
+  if (!_cmpContext) { toast('Comparison not loaded','error'); return; }
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
-  const reportEl = document.getElementById('comparison-report');
-  if(!reportEl) { toast('Comparison not loaded','error'); return; }
+  toast('Building comparison report...', 'info');
 
-  const printWin = window.open('','_blank','width=900,height=700');
+  if (_cmpContext.type === 'tenants') {
+    await _downloadTenantComparisonPDF(today);
+  } else {
+    await _downloadSnapshotComparisonPDF(today);
+  }
+}
+
+async function _downloadTenantComparisonPDF(today) {
+  const {tenants, data} = _cmpContext;
+
+  // Fetch adjusted scores for each tenant
+  const adjMap = {};
+  await Promise.all(tenants.map(async t => {
+    adjMap[t] = await api.get(`/api/tenants/${t}/scores?exclude_na=1`);
+  }));
+  const fullMap = data.overall; // {tenantName: {percentage, total_actions, completed_actions}}
+
+  function scoreColor(pct) {
+    if (pct >= 80) return '#16a34a'; if (pct >= 60) return '#84cc16';
+    if (pct >= 40) return '#f59e0b'; if (pct >= 20) return '#f97316'; return '#dc2626';
+  }
+
+  // Overall table rows
+  const overallRows = tenants.map(t => {
+    const f = fullMap[t] || {};
+    const a = adjMap[t] || {};
+    const fp = (f.percentage||0).toFixed(1);
+    const ap = (a.percentage||0).toFixed(1);
+    return `<tr>
+      <td><strong>${esc(t)}</strong></td>
+      <td style="font-weight:700;color:${scoreColor(f.percentage||0)}">${fp}%</td>
+      <td style="font-weight:700;color:${scoreColor(a.percentage||0)}">${ap}%</td>
+      <td>${f.completed_actions||0} / ${f.total_actions||0}</td>
+    </tr>`;
+  }).join('');
+
+  // Workload table
+  const allWl = Object.keys(data.by_workload||{}).sort();
+  const wlRows = allWl.map(wl => {
+    const cells = tenants.map(t => {
+      const fd = (data.by_workload[wl]||{})[t] || {};
+      const ad = (adjMap[t].by_workload||{})[wl] || {};
+      const fp = (fd.percentage||0).toFixed(1);
+      const ap = (ad.percentage||0).toFixed(1);
+      return `<td style="color:${scoreColor(fd.percentage||0)};font-weight:600">${fp}%</td>
+              <td style="color:${scoreColor(ad.percentage||0)};font-size:10px;color:#3b82f6">${ap}%</td>`;
+    }).join('');
+    return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
+  }).join('');
+
+  // Tool table
+  const allTools = Object.keys(data.by_tool||{}).sort();
+  const toolRows = allTools.map(tool => {
+    const cells = tenants.map(t => {
+      const fd = (data.by_tool[tool]||{})[t] || {};
+      const ad = (adjMap[t].by_tool||{})[tool] || {};
+      const fp = (fd.percentage||0).toFixed(1);
+      const ap = (ad.percentage||0).toFixed(1);
+      return `<td style="color:${scoreColor(fd.percentage||0)};font-weight:600">${fp}%</td>
+              <td style="color:#3b82f6;font-size:10px">${ap}%</td>`;
+    }).join('');
+    return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
+  }).join('');
+
+  // Accepted risks per tenant
+  const allActions = {};
+  await Promise.all(tenants.map(async t => {
+    allActions[t] = await api.get(`/api/tenants/${t}/actions`);
+  }));
+
+  let riskSections = '';
+  for (const t of tenants) {
+    const ra = (allActions[t]||[]).filter(a => a.status === 'Risk Accepted');
+    if (!ra.length) continue;
+    const byWl = {};
+    ra.forEach(a => { const wl = a.workload||'General'; if(!byWl[wl]) byWl[wl]=[]; byWl[wl].push(a); });
+    const wlBlocks = Object.entries(byWl).sort(([a],[b])=>a.localeCompare(b)).map(([wl, acts]) => {
+      const rows = acts.map(a => `<tr>
+        <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong></td>
+        <td style="vertical-align:top;font-size:10px">${esc(a.priority||'')}</td>
+        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
+        <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
+      </tr>`).join('');
+      return `<h4 style="font-size:12px;color:#1e40af;margin:10px 0 5px">${esc(wl)} (${acts.length})</h4>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">
+          <thead><tr style="background:#eff6ff">
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:32%">Action</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:9%">Priority</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:34%">Justification</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:12%">Owner</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:13%">Expiry</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }).join('');
+    riskSections += `<h3 style="font-size:14px;color:#0f172a;margin:16px 0 6px;padding-bottom:4px;border-bottom:2px solid #3b82f6">${esc(t)} — Accepted Risks (${ra.length})</h3>${wlBlocks}`;
+  }
+
+  const tenantColHdrs = tenants.map(t =>
+    `<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0" colspan="2">${esc(t)}</th>`
+  ).join('');
+  const tenantSubHdrs = tenants.map(() =>
+    `<th style="padding:3px 7px;font-size:9px;border-bottom:1px solid #e2e8f0;color:#374151">Full</th>
+     <th style="padding:3px 7px;font-size:9px;border-bottom:1px solid #e2e8f0;color:#3b82f6">Adj.</th>`
+  ).join('');
+
+  const printWin = window.open('', '_blank', 'width=1000,height=800');
   printWin.document.write(`<!DOCTYPE html><html><head><title>Tenant Comparison Report</title>
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; padding:40px; font-size:13px; }
-      .report-header { text-align:center; margin-bottom:32px; padding-bottom:24px; border-bottom:3px solid #3b82f6; }
-      .report-header h1 { font-size:24px; color:#0f172a; }
-      .report-header .subtitle { color:#64748b; font-size:13px; margin-top:8px; }
-      .card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px; break-inside:avoid; }
-      .card-header { font-size:14px; font-weight:600; margin-bottom:12px; }
-      .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-      table { width:100%; border-collapse:collapse; font-size:12px; }
-      th { text-align:left; padding:6px 8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; font-size:11px; text-transform:uppercase; }
-      td { padding:6px 8px; border-bottom:1px solid #e2e8f0; }
-      .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
-      .badge-success { background:#d1fae5; color:#065f46; }
-      .badge-warning { background:#fef3c7; color:#92400e; }
-      .badge-danger { background:#fee2e2; color:#991b1b; }
-      .badge-info { background:#dbeafe; color:#1e40af; }
-      .badge-purple { background:#ede9fe; color:#5b21b6; }
-      .badge-gray { background:#f1f5f9; color:#475569; }
-      .gauge svg { transform:rotate(-90deg); }
-      .gauge .track { fill:none; stroke:#e2e8f0; stroke-width:10; }
-      .gauge .fill { fill:none; stroke-width:10; stroke-linecap:round; }
-      .gauge { position:relative; width:80px; height:80px; display:inline-block; }
-      .gauge .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:16px; font-weight:700; }
-      a { color:inherit; text-decoration:none; }
-      .table-wrap { max-height:none !important; overflow:visible !important; }
-      .mb-16 { margin-bottom:16px; }
-      .footer { text-align:center; margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; }
-      @media print { body { padding:20px; } }
-    </style></head><body>
-    <div class="report-header">
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; font-size:11px; }
+    h2 { font-size:13px; font-weight:600; color:#374151; margin:12px 0 6px; padding-bottom:4px; border-bottom:1px solid #e2e8f0; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; padding-bottom:12px; border-bottom:3px solid #3b82f6; }
+    .page-header h1 { font-size:19px; color:#0f172a; }
+    .page-header .sub { color:#64748b; font-size:11px; margin-top:3px; }
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; break-inside:avoid; margin-bottom:12px; }
+    .card-hdr { font-size:11px; font-weight:600; color:#374151; margin-bottom:8px; text-transform:uppercase; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    th { text-align:left; padding:5px 7px; background:#f8fafc; border-bottom:2px solid #e2e8f0; font-size:10px; text-transform:uppercase; color:#64748b; }
+    td { padding:5px 7px; border-bottom:1px solid #f1f5f9; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+    .footer { text-align:center; margin-top:20px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10px; }
+    @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body>
+  <div class="page-header">
+    <div>
       <h1>Tenant Comparison Report</h1>
-      <div class="subtitle">${today}</div>
+      <div class="sub">${today} &middot; ${tenants.length} tenants compared</div>
     </div>
-    ${reportEl.innerHTML}
-    <div class="footer">Generated by M365 Security Posture Manager &middot; ${today}</div>
-    <scr`+`ipt>setTimeout(()=>{window.print();},400);<\/scr`+`ipt>
+    <div style="font-size:11px;color:#64748b;text-align:right">
+      <em>Full Score: all actions &nbsp;|&nbsp; Adj. Score: excl. N/A &amp; Risk Accepted</em>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Overall Score</div>
+    <table>
+      <thead><tr>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Tenant</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Full Score</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#3b82f6">Adj. Score</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Completed / Total</th>
+      </tr></thead>
+      <tbody>${overallRows}</tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-hdr">By Workload</div>
+      <table>
+        <thead>
+          <tr><th style="padding:5px 7px;border-bottom:1px solid #e2e8f0"></th>${tenantColHdrs}</tr>
+          <tr><th style="padding:3px 7px;font-size:9px;border-bottom:2px solid #e2e8f0;color:#64748b">Workload</th>${tenantSubHdrs}</tr>
+        </thead>
+        <tbody>${wlRows || '<tr><td colspan="99" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr">By Source Tool</div>
+      <table>
+        <thead>
+          <tr><th style="padding:5px 7px;border-bottom:1px solid #e2e8f0"></th>${tenantColHdrs}</tr>
+          <tr><th style="padding:3px 7px;font-size:9px;border-bottom:2px solid #e2e8f0;color:#64748b">Tool</th>${tenantSubHdrs}</tr>
+        </thead>
+        <tbody>${toolRows || '<tr><td colspan="99" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>
+
+  ${riskSections ? `<div style="page-break-before:always;padding-top:8px">
+    <h2 style="font-size:17px;color:#0f172a;margin-bottom:12px">Accepted Risks by Tenant</h2>
+    ${riskSections}
+  </div>` : ''}
+
+  <div class="footer">M365 Security Posture Manager &middot; ${today}</div>
+  <scr`+`ipt>setTimeout(()=>{window.print();},500);<\/scr`+`ipt>
+  </body></html>`);
+  printWin.document.close();
+}
+
+async function _downloadSnapshotComparisonPDF(today) {
+  const {tenantName, tenantDisplay, data} = _cmpContext;
+  const labels = data.labels || ['Current', 'Snapshot'];
+  const curLabel = labels[0];
+  const snapLabel = labels[1];
+
+  // Fetch adjusted scores for current state only
+  const [adjScores, allActions] = await Promise.all([
+    api.get(`/api/tenants/${tenantName}/scores?exclude_na=1`),
+    api.get(`/api/tenants/${tenantName}/actions`),
+  ]);
+
+  const riskAccepted = allActions.filter(a => a.status === 'Risk Accepted');
+  const notApplicable = allActions.filter(a => a.status === 'Not Applicable');
+  const hasExcluded = riskAccepted.length + notApplicable.length > 0;
+  const raByWorkload = {};
+  riskAccepted.forEach(a => {
+    const wl = a.workload || 'General';
+    if (!raByWorkload[wl]) raByWorkload[wl] = [];
+    raByWorkload[wl].push(a);
+  });
+
+  const curFull = data.overall[curLabel] || {};
+  const snapFull = data.overall[snapLabel] || {};
+  const curAdj = adjScores;
+
+  function scoreColor(pct) {
+    if (pct >= 80) return '#16a34a'; if (pct >= 60) return '#84cc16';
+    if (pct >= 40) return '#f59e0b'; if (pct >= 20) return '#f97316'; return '#dc2626';
+  }
+
+  const delta = ((curFull.percentage||0) - (snapFull.percentage||0)).toFixed(1);
+  const deltaStr = delta > 0 ? `+${delta}%` : `${delta}%`;
+  const deltaClr = delta > 0 ? '#16a34a' : delta < 0 ? '#dc2626' : '#64748b';
+
+  // Workload comparison table
+  const allWl = [...new Set([
+    ...Object.keys(data.by_workload||{}),
+    ...Object.keys(adjScores.by_workload||{}),
+  ])].sort();
+  const wlRows = allWl.map(wl => {
+    const cf = (data.by_workload[wl]||{})[curLabel] || {};
+    const ca = (adjScores.by_workload||{})[wl] || {};
+    const sf = (data.by_workload[wl]||{})[snapLabel] || {};
+    return `<tr>
+      <td>${esc(wl)}</td>
+      <td style="font-weight:600;color:${scoreColor(cf.percentage||0)}">${(cf.percentage||0).toFixed(1)}%</td>
+      ${hasExcluded ? `<td style="color:#3b82f6">${(ca.percentage||0).toFixed(1)}%</td>` : ''}
+      <td style="color:#64748b">${(sf.percentage||0).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  // Tool comparison table
+  const allTools = [...new Set([
+    ...Object.keys(data.by_tool||{}),
+    ...Object.keys(adjScores.by_tool||{}),
+  ])].sort();
+  const toolRows = allTools.map(tool => {
+    const cf = (data.by_tool[tool]||{})[curLabel] || {};
+    const ca = (adjScores.by_tool||{})[tool] || {};
+    const sf = (data.by_tool[tool]||{})[snapLabel] || {};
+    return `<tr>
+      <td>${esc(tool)}</td>
+      <td style="font-weight:600;color:${scoreColor(cf.percentage||0)}">${(cf.percentage||0).toFixed(1)}%</td>
+      ${hasExcluded ? `<td style="color:#3b82f6">${(ca.percentage||0).toFixed(1)}%</td>` : ''}
+      <td style="color:#64748b">${(sf.percentage||0).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  const adjHdr = hasExcluded ? `<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#3b82f6">Current Adj.</th>` : '';
+
+  // Build risk register section using shared helper
+  const raByWlCopy = raByWorkload;
+  const riskSectionHtml = (() => {
+    if (!riskAccepted.length) return '';
+    function pBadge(priority) {
+      const m = {'Critical':'fee2e2;color:#991b1b','High':'ffedd5;color:#9a3412',
+        'Medium':'fef9c3;color:#854d0e','Low':'d1fae5;color:#065f46','Informational':'f1f5f9;color:#475569'};
+      const c = m[priority] || 'f1f5f9;color:#374151';
+      return `<span style="background:#${c};padding:2px 5px;border-radius:4px;font-size:10px;font-weight:600">${esc(priority)}</span>`;
+    }
+    const wlBlocks = Object.entries(raByWlCopy).sort(([a],[b])=>a.localeCompare(b)).map(([wl, acts]) => {
+      const rows = acts.map(a => `<tr>
+        <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
+        <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
+        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
+        <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
+      </tr>`).join('');
+      return `<h3 style="font-size:12px;color:#1e40af;margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid #bfdbfe">${esc(wl)} (${acts.length})</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
+          <thead><tr style="background:#eff6ff">
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:31%">Action</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:9%">Priority</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:35%">Justification</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:12%">Owner</th>
+            <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe;width:13%">Expiry</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }).join('');
+    return `<div style="page-break-before:always;padding-top:8px">
+      <h2 style="font-size:17px;color:#0f172a;margin-bottom:4px">Accepted Risks Register</h2>
+      <p style="color:#64748b;font-size:11px;margin-bottom:16px">${riskAccepted.length} accepted risk(s) in current state.</p>
+      ${wlBlocks}
+    </div>`;
+  })();
+
+  const printWin = window.open('', '_blank', 'width=1000,height=800');
+  printWin.document.write(`<!DOCTYPE html><html><head><title>Snapshot Comparison Report - ${esc(tenantDisplay)}</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; font-size:12px; }
+    h2 { font-size:13px; font-weight:600; color:#374151; margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid #e2e8f0; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; padding-bottom:12px; border-bottom:3px solid #3b82f6; }
+    .page-header h1 { font-size:19px; color:#0f172a; }
+    .page-header .sub { color:#64748b; font-size:11px; margin-top:3px; }
+    .score-block { display:flex; gap:10px; margin-bottom:14px; }
+    .score-card { flex:1; border:1px solid #e2e8f0; border-radius:8px; padding:12px; text-align:center; }
+    .score-card.adj { border-color:#3b82f6; background:#f0f7ff; }
+    .score-card.snap { background:#f8fafc; }
+    .score-card .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:5px; }
+    .score-card .val { font-size:34px; font-weight:800; line-height:1; }
+    .score-card .det { font-size:10px; color:#94a3b8; margin-top:4px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; break-inside:avoid; }
+    .card-hdr { font-size:11px; font-weight:600; color:#374151; margin-bottom:8px; text-transform:uppercase; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    th { text-align:left; padding:5px 7px; background:#f8fafc; border-bottom:2px solid #e2e8f0; font-size:10px; text-transform:uppercase; color:#64748b; }
+    td { padding:5px 7px; border-bottom:1px solid #f1f5f9; }
+    .footer { text-align:center; margin-top:20px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10px; }
+    @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body>
+  <div class="page-header">
+    <div>
+      <h1>Snapshot Comparison Report</h1>
+      <div class="sub">${esc(tenantDisplay)} &middot; ${today}</div>
+    </div>
+    <div style="font-size:11px;color:#64748b;text-align:right">
+      <div>Snapshot: <strong>${esc(snapLabel)}</strong></div>
+      <div>Score change: <strong style="color:${deltaClr}">${deltaStr}</strong></div>
+    </div>
+  </div>
+
+  <div class="score-block">
+    <div class="score-card">
+      <div class="lbl">Current — Full Score</div>
+      <div class="val" style="color:${scoreColor(curFull.percentage||0)}">${(curFull.percentage||0).toFixed(1)}%</div>
+      <div class="det">${curFull.completed_actions||0} / ${curFull.total_actions||0} actions completed</div>
+      ${hasExcluded ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px">Incl. N/A &amp; Risk Accepted</div>' : ''}
+    </div>
+    ${hasExcluded ? `
+    <div class="score-card adj">
+      <div class="lbl" style="color:#3b82f6">Current — Adjusted Score</div>
+      <div class="val" style="color:${scoreColor(curAdj.percentage||0)}">${(curAdj.percentage||0).toFixed(1)}%</div>
+      <div class="det">${curAdj.total_score||0} / ${curAdj.total_max||0} pts &middot; ${curAdj.total_actions||0} actions</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px">${notApplicable.length} N/A &amp; ${riskAccepted.length} RA excluded</div>
+    </div>` : ''}
+    <div class="score-card snap">
+      <div class="lbl">Snapshot — Full Score</div>
+      <div class="val" style="color:${scoreColor(snapFull.percentage||0)}">${(snapFull.percentage||0).toFixed(1)}%</div>
+      <div class="det">${snapFull.completed_actions||0} / ${snapFull.total_actions||0} actions completed</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px">${esc(snapLabel)}</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-hdr">By Workload</div>
+      <table>
+        <thead><tr>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Workload</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Current Full</th>
+          ${adjHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snapshot</th>
+        </tr></thead>
+        <tbody>${wlRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr">By Source Tool</div>
+      <table>
+        <thead><tr>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Tool</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Current Full</th>
+          ${adjHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Snapshot</th>
+        </tr></thead>
+        <tbody>${toolRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>
+
+  ${riskSectionHtml}
+
+  <div class="footer">M365 Security Posture Manager &middot; ${today}</div>
+  <scr`+`ipt>setTimeout(()=>{window.print();},500);<\/scr`+`ipt>
   </body></html>`);
   printWin.document.close();
 }
@@ -1409,59 +1753,260 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
 }
 
 // ── PDF Report Download ──
-function downloadDashboardPDF() {
+async function downloadDashboardPDF() {
+  if (!requireTenant()) return;
+  const t = state.activeTenant.name;
   const displayName = state.activeTenant?.display_name || state.activeTenant?.name || 'Unknown';
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
-  // Use print-specific styling to generate a clean PDF via browser print dialog
-  const reportEl = document.getElementById('dashboard-report');
-  if(!reportEl) { toast('Dashboard not loaded','error'); return; }
 
-  const printWin = window.open('','_blank','width=900,height=700');
-  printWin.document.write(`<!DOCTYPE html><html><head><title>Security Posture Report - ${displayName}</title>
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; padding:40px; }
-      .report-header { text-align:center; margin-bottom:32px; padding-bottom:24px; border-bottom:3px solid #3b82f6; }
-      .report-header h1 { font-size:28px; color:#0f172a; }
-      .report-header .subtitle { color:#64748b; font-size:14px; margin-top:8px; }
-      .report-header .score { font-size:56px; font-weight:800; color:#3b82f6; margin-top:16px; }
-      .card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px; break-inside:avoid; }
-      .card-header { font-size:14px; font-weight:600; margin-bottom:12px; }
-      .grid { display:grid; gap:12px; }
-      .grid-2 { grid-template-columns:1fr 1fr; }
-      .grid-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
-      .stat-card { text-align:center; padding:16px; }
-      .stat-card .value { font-size:28px; font-weight:700; color:#3b82f6; }
-      .stat-card .label { font-size:12px; color:#64748b; margin-top:4px; }
-      table { width:100%; border-collapse:collapse; font-size:12px; }
-      th { text-align:left; padding:8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; font-size:11px; text-transform:uppercase; }
-      td { padding:8px; border-bottom:1px solid #e2e8f0; }
-      .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
-      .badge-success { background:#d1fae5; color:#065f46; }
-      .badge-warning { background:#fef3c7; color:#92400e; }
-      .badge-danger { background:#fee2e2; color:#991b1b; }
-      .badge-info { background:#dbeafe; color:#1e40af; }
-      .badge-purple { background:#ede9fe; color:#5b21b6; }
-      .badge-gray { background:#f1f5f9; color:#475569; }
-      .progress { height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; }
-      .progress .bar { height:100%; border-radius:4px; }
-      .gauge svg { transform:rotate(-90deg); }
-      .gauge .track { fill:none; stroke:#e2e8f0; stroke-width:10; }
-      .gauge .fill { fill:none; stroke-width:10; stroke-linecap:round; }
-      .gauge { position:relative; width:100px; height:100px; display:inline-block; }
-      .gauge .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
-      .footer { text-align:center; margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; }
-      @media print { body { padding:20px; } .report-header { margin-bottom:20px; padding-bottom:16px; } }
-    </style></head><body>
-    <div class="report-header">
-      <h1>M365 Security Posture Report</h1>
-      <div class="subtitle">${displayName} &middot; ${today}</div>
-    </div>
-    ${reportEl.innerHTML}
-    <div class="footer">Generated by M365 Security Posture Manager &middot; ${today}</div>
-    <scr`+`ipt>setTimeout(()=>{window.print();},400);<\/scr`+`ipt>
-  </body></html>`);
+  toast('Building management report...', 'info');
+
+  const [fullScores, adjScores] = await Promise.all([
+    api.get(`/api/tenants/${t}/scores`),
+    api.get(`/api/tenants/${t}/scores?exclude_na=1`),
+  ]);
+  const allActions = (_dashData.allActions && _dashData.allActions.length)
+    ? _dashData.allActions
+    : await api.get(`/api/tenants/${t}/actions`);
+
+  const riskAccepted = allActions.filter(a => a.status === 'Risk Accepted');
+  const notApplicable = allActions.filter(a => a.status === 'Not Applicable');
+  const hasExcluded = riskAccepted.length + notApplicable.length > 0;
+
+  const raByWorkload = {};
+  for (const a of riskAccepted) {
+    const wl = a.workload || 'General';
+    if (!raByWorkload[wl]) raByWorkload[wl] = [];
+    raByWorkload[wl].push(a);
+  }
+
+  const printWin = window.open('', '_blank', 'width=1000,height=800');
+  printWin.document.write(_buildManagementReportHtml({
+    reportTitle: 'M365 Security Posture Report',
+    subtitle: `${esc(displayName)} · ${today}`,
+    today,
+    fullScores, adjScores, hasExcluded,
+    riskAccepted, notApplicable, raByWorkload,
+  }));
   printWin.document.close();
+}
+
+// Build a management-style PDF report HTML string (shared by dashboard + comparison PDF helpers)
+function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, adjScores, hasExcluded, riskAccepted, notApplicable, raByWorkload, extraSections}) {
+  function scoreColor(pct) {
+    if (pct >= 80) return '#16a34a';
+    if (pct >= 60) return '#84cc16';
+    if (pct >= 40) return '#f59e0b';
+    if (pct >= 20) return '#f97316';
+    return '#dc2626';
+  }
+  function sBadge(status) {
+    const m = {'Completed':'d1fae5;color:#065f46','In Progress':'dbeafe;color:#1e40af',
+      'In Planning':'ede9fe;color:#5b21b6','ToDo':'fee2e2;color:#991b1b',
+      'Risk Accepted':'fef3c7;color:#92400e','Not Applicable':'f1f5f9;color:#475569',
+      'Third Party':'cffafe;color:#0e7490'};
+    const c = m[status] || 'f1f5f9;color:#374151';
+    return `<span style="background:#${c};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">${esc(status)}</span>`;
+  }
+  function pBadge(priority) {
+    const m = {'Critical':'fee2e2;color:#991b1b','High':'ffedd5;color:#9a3412',
+      'Medium':'fef9c3;color:#854d0e','Low':'d1fae5;color:#065f46',
+      'Informational':'f1f5f9;color:#475569'};
+    const c = m[priority] || 'f1f5f9;color:#374151';
+    return `<span style="background:#${c};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">${esc(priority)}</span>`;
+  }
+
+  // Workload table rows
+  const allWorkloads = [...new Set([
+    ...Object.keys(fullScores.by_workload || {}),
+    ...Object.keys(adjScores.by_workload || {}),
+  ])].sort();
+  const wlRows = allWorkloads.map(wl => {
+    const f = fullScores.by_workload?.[wl] || {};
+    const a = adjScores.by_workload?.[wl] || {};
+    const fp = (f.percentage || 0).toFixed(1);
+    const ap = (a.percentage || 0).toFixed(1);
+    return `<tr>
+      <td>${esc(wl)}</td>
+      <td style="color:${scoreColor(f.percentage||0)};font-weight:600">${fp}%</td>
+      ${hasExcluded ? `<td style="color:${scoreColor(a.percentage||0)};font-weight:600">${ap}%</td>` : ''}
+      <td style="color:#64748b">${f.completed||0} / ${f.total||0}</td>
+    </tr>`;
+  }).join('');
+
+  // Tool table rows
+  const allTools = [...new Set([
+    ...Object.keys(fullScores.by_tool || {}),
+    ...Object.keys(adjScores.by_tool || {}),
+  ])].sort();
+  const toolRows = allTools.map(tool => {
+    const f = fullScores.by_tool?.[tool] || {};
+    const a = adjScores.by_tool?.[tool] || {};
+    const fp = (f.percentage || 0).toFixed(1);
+    const ap = (a.percentage || 0).toFixed(1);
+    return `<tr>
+      <td>${esc(tool)}</td>
+      <td style="color:${scoreColor(f.percentage||0)};font-weight:600">${fp}%</td>
+      ${hasExcluded ? `<td style="color:${scoreColor(a.percentage||0)};font-weight:600">${ap}%</td>` : ''}
+      <td style="color:#64748b">${f.completed||0} / ${f.total||0}</td>
+    </tr>`;
+  }).join('');
+
+  // Status distribution rows
+  const statusOrder = ['ToDo','In Progress','In Planning','Completed','Risk Accepted','Not Applicable','Third Party','Warning'];
+  const statusClr = {'Completed':'#16a34a','In Progress':'#3b82f6','In Planning':'#a855f7','ToDo':'#ef4444','Risk Accepted':'#f59e0b','Not Applicable':'#6b7280','Third Party':'#06b6d4','Warning':'#f97316'};
+  const byStatus = fullScores.by_status || {};
+  const totalFull = fullScores.total_actions || 1;
+  const statusRows = statusOrder.filter(s => byStatus[s]).map(s => {
+    const cnt = byStatus[s];
+    const pct = ((cnt / totalFull) * 100).toFixed(1);
+    const clr = statusClr[s] || '#6b7280';
+    return `<tr>
+      <td>${sBadge(s)}</td>
+      <td style="font-weight:600">${cnt}</td>
+      <td style="color:#64748b">${pct}%</td>
+      <td><div style="height:7px;background:#e2e8f0;border-radius:4px;width:100px"><div style="height:7px;background:${clr};border-radius:4px;width:${Math.min(pct,100)}%"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  // Risk accepted register section
+  let riskSection = '';
+  if (riskAccepted.length > 0) {
+    const wlSections = Object.entries(raByWorkload).sort(([a],[b]) => a.localeCompare(b)).map(([wl, acts]) => {
+      const rows = acts.map(a => `<tr>
+        <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
+        <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
+        <td style="vertical-align:top;color:#374151">${esc(a.risk_justification || a.risk_acceptance_justification || '—')}</td>
+        <td style="vertical-align:top;color:#374151">${esc(a.risk_owner||'—')}</td>
+        <td style="vertical-align:top;color:#374151;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
+      </tr>`).join('');
+      return `<h3 style="font-size:13px;color:#1e40af;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid #bfdbfe">${esc(wl)} <span style="font-weight:400;color:#64748b;font-size:11px">(${acts.length})</span></h3>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
+        <thead><tr style="background:#eff6ff">
+          <th style="padding:5px 7px;text-align:left;border-bottom:1px solid #bfdbfe;width:30%">Action</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:1px solid #bfdbfe;width:9%">Priority</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:1px solid #bfdbfe;width:36%">Justification</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:1px solid #bfdbfe;width:12%">Owner</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:1px solid #bfdbfe;width:13%">Expiry</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }).join('');
+    riskSection = `
+      <div style="page-break-before:always;padding-top:8px">
+        <h2 style="font-size:18px;color:#0f172a;margin-bottom:4px">Accepted Risks Register</h2>
+        <p style="color:#64748b;font-size:11px;margin-bottom:20px">${riskAccepted.length} risk acceptance(s) on record. These items are excluded from the Adjusted Score.</p>
+        ${wlSections}
+      </div>`;
+  }
+
+  const fullPct = (fullScores.percentage || 0).toFixed(1);
+  const adjPct = (adjScores.percentage || 0).toFixed(1);
+  const fullClr = scoreColor(fullScores.percentage || 0);
+  const adjClr = scoreColor(adjScores.percentage || 0);
+  const naRaCount = (notApplicable||[]).length + (riskAccepted||[]).length;
+
+  const adjHdr = hasExcluded ? '<th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#3b82f6">Adj. Score</th>' : '';
+
+  return `<!DOCTYPE html><html><head><title>${esc(reportTitle)}</title>
+  <style>
+    @page { size: A4; margin: 14mm 14mm 14mm 14mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; font-size:12px; }
+    h2 { font-size:13px; font-weight:600; color:#374151; margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid #e2e8f0; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; padding-bottom:14px; border-bottom:3px solid #3b82f6; }
+    .page-header h1 { font-size:20px; color:#0f172a; margin-bottom:3px; }
+    .page-header .sub { color:#64748b; font-size:11px; }
+    .score-block { display:flex; gap:12px; margin-bottom:14px; }
+    .score-card { flex:1; border:1px solid #e2e8f0; border-radius:8px; padding:14px; text-align:center; }
+    .score-card.adj { border-color:#3b82f6; background:#f0f7ff; }
+    .score-card .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+    .score-card .val { font-size:38px; font-weight:800; line-height:1; }
+    .score-card .det { font-size:10px; color:#94a3b8; margin-top:5px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; break-inside:avoid; }
+    .card-hdr { font-size:11px; font-weight:600; color:#374151; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    th { text-align:left; padding:5px 7px; background:#f8fafc; border-bottom:2px solid #e2e8f0; font-size:10px; text-transform:uppercase; color:#64748b; }
+    td { padding:5px 7px; border-bottom:1px solid #f1f5f9; }
+    .footer { text-align:center; margin-top:20px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10px; }
+    @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body>
+
+  <div class="page-header">
+    <div>
+      <h1>${esc(reportTitle)}</h1>
+      <div class="sub">${subtitle}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#64748b">
+      <div>Total Actions: <strong>${fullScores.total_actions||0}</strong></div>
+      <div>Completed: <strong>${fullScores.completed_actions||0}</strong></div>
+      ${hasExcluded ? `<div>N/A + Risk Accepted: <strong>${naRaCount}</strong></div>` : ''}
+    </div>
+  </div>
+
+  <div class="score-block">
+    <div class="score-card">
+      <div class="lbl">Overall Score</div>
+      <div class="val" style="color:${fullClr}">${fullPct}%</div>
+      <div class="det">${fullScores.total_score||0} / ${fullScores.total_max||0} pts &middot; ${fullScores.total_actions||0} actions</div>
+      ${hasExcluded ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px">Includes N/A &amp; Risk Accepted</div>' : ''}
+    </div>
+    ${hasExcluded ? `
+    <div class="score-card adj">
+      <div class="lbl" style="color:#3b82f6">Adjusted Score <span style="color:#94a3b8">(excl. N/A &amp; RA)</span></div>
+      <div class="val" style="color:${adjClr}">${adjPct}%</div>
+      <div class="det">${adjScores.total_score||0} / ${adjScores.total_max||0} pts &middot; ${adjScores.total_actions||0} actions</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px">${(notApplicable||[]).length} N/A &amp; ${(riskAccepted||[]).length} Risk Accepted excluded</div>
+    </div>` : ''}
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-hdr">Score by Workload</div>
+      <table>
+        <thead><tr>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Workload</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Full Score</th>
+          ${adjHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Completed</th>
+        </tr></thead>
+        <tbody>${wlRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr">Score by Source Tool</div>
+      <table>
+        <thead><tr>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Tool</th>
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Full Score</th>
+          ${adjHdr}
+          <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b">Completed</th>
+        </tr></thead>
+        <tbody>${toolRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr">Status Distribution</div>
+    <table>
+      <thead><tr>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Status</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Count</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0">Share</th>
+        <th style="padding:5px 7px;text-align:left;border-bottom:2px solid #e2e8f0"></th>
+      </tr></thead>
+      <tbody>${statusRows || '<tr><td colspan="4" style="color:#94a3b8;padding:8px">No data</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  ${extraSections || ''}
+  ${riskSection}
+
+  <div class="footer">M365 Security Posture Manager &middot; ${today}</div>
+  <scr`+`ipt>setTimeout(()=>{window.print();},500);<\/scr`+`ipt>
+  </body></html>`;
 }
 
 async function unpinDashAction(actionId) {
