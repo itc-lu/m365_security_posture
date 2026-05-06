@@ -2655,24 +2655,60 @@ async function loadActionPeers(actionId) {
   if(!banner) return;
   const peers = await api.get(`/api/actions/${actionId}/peers`);
   const differing = (peers||[]).filter(p => p.status_differs);
-  if(!differing.length) {
-    banner.innerHTML = '';
-    banner.style.display = 'none';
-    return;
-  }
-  const items = differing.map(p =>
-    `<div style="font-size:12px;padding:2px 0">
-       <span style="color:var(--text-light)">${esc(p.source_tool||'')}</span>
-       — ${esc(p.title||'')} ${statusBadge(p.status)}
-     </div>`
-  ).join('');
+  if(!differing.length) { banner.innerHTML=''; banner.style.display='none'; return; }
+
+  // Group by status
+  const byStatus = {};
+  differing.forEach(p => { (byStatus[p.status] = byStatus[p.status]||[]).push(p); });
+
+  // Correlation group name (take from first peer that has it)
+  const cgName = differing.find(p=>p.cg_name)?.cg_name;
+  const groupLabel = cgName ? `<span style="font-size:11px;color:#a16207;margin-left:6px">Control family: <em>${esc(cgName)}</em></span>` : '';
+
+  const uid = actionId.replace(/-/g,'');
+  const listId = `peers-list-${uid}`;
+
+  const groupedRows = Object.entries(byStatus).map(([status, items]) => `
+    <div style="margin-bottom:6px">
+      <div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:2px">${statusBadge(status)} (${items.length})</div>
+      ${items.map(p=>`<div style="font-size:12px;padding:1px 0 1px 8px;color:var(--text)">
+        <span style="color:var(--text-light);font-size:11px">${esc(p.source_tool||'')}</span>
+        — ${esc((p.title||'').substring(0,80))}
+      </div>`).join('')}
+    </div>`).join('');
+
   banner.style.display = 'block';
   banner.innerHTML = `
-    <div style="padding:10px 12px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px">
-      <strong style="color:#92400e">*</strong>
-      <span style="font-size:13px;color:#92400e">${differing.length} cross-tool peer${differing.length>1?'s':''} have a different status — review whether they should also change.</span>
-      <div style="margin-top:6px">${items}</div>
+    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer" onclick="document.getElementById('${listId}').style.display=document.getElementById('${listId}').style.display==='none'?'block':'none'">
+        <span style="font-weight:700;color:#92400e">&#9888;</span>
+        <span style="font-size:13px;color:#92400e;flex:1">
+          <strong>${differing.length}</strong> related action${differing.length>1?'s':''} from other tools have a different status
+        </span>
+        ${groupLabel}
+        <button class="btn btn-sm" style="background:#fbbf24;border:none;color:#1c1917;font-size:11px;padding:2px 8px;flex-shrink:0"
+          onclick="event.stopPropagation();_syncPeerStatus('${actionId}')"
+          title="Set the same status on all listed actions">Sync status to all</button>
+        <span style="font-size:11px;color:#a16207">&#9660;</span>
+      </div>
+      <div id="${listId}" style="display:none;padding:0 12px 10px">
+        <p style="font-size:11px;color:#a16207;margin:0 0 8px">These actions address the same control but currently have a different status. Use <strong>Sync status to all</strong> to apply this action's status to all of them.</p>
+        ${groupedRows}
+      </div>
     </div>`;
+}
+
+async function _syncPeerStatus(actionId) {
+  if(!confirm('Apply this action\'s current status to all differing peer actions?')) return;
+  try {
+    const r = await api.post(`/api/actions/${actionId}/peers/sync`, {});
+    toast(`Status synced to ${r.updated} peer${r.updated!==1?'s':''}`, 'success');
+    loadActionPeers(actionId);
+    // refresh peer disagreement stars in the table
+    _peerDisagreements = {};
+    const t = state.activeTenant?.name;
+    if(t) api.get(`/api/tenants/${t}/peer-disagreements`).then(d=>{ _peerDisagreements=d||{}; });
+  } catch(e) { toast('Sync failed','error'); }
 }
 
 async function loadActionLinks(actionId, uid) {
