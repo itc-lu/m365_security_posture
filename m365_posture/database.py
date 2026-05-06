@@ -2192,13 +2192,18 @@ class Database:
         status may need review when this action changes."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT tenant_name, status, correlation_group_id FROM actions WHERE id=?",
+                """SELECT a.tenant_name, a.status, a.correlation_group_id,
+                          cg.canonical_name as cg_name
+                     FROM actions a
+                     LEFT JOIN correlation_groups cg ON cg.id = a.correlation_group_id
+                    WHERE a.id=?""",
                 (action_id,),
             ).fetchone()
             if not row:
                 return []
             tenant_name = row["tenant_name"]
             cg_id = row["correlation_group_id"]
+            cg_name = row["cg_name"]
             self_status = row["status"]
             peers = {}
             if cg_id:
@@ -2208,7 +2213,7 @@ class Database:
                         WHERE tenant_name=? AND correlation_group_id=? AND id<>?""",
                     (tenant_name, cg_id, action_id),
                 ).fetchall():
-                    peers[r["id"]] = dict(r) | {"link_via": "correlation_group"}
+                    peers[r["id"]] = dict(r) | {"link_via": "correlation_group", "cg_name": cg_name}
             for r in conn.execute(
                 """SELECT a.id, a.title, a.source_tool, a.status, a.workload
                      FROM action_links al

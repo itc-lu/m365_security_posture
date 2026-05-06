@@ -363,6 +363,26 @@ def create_app(db_path: str = None) -> Flask:
         the UI can mark peers whose status disagrees."""
         return jsonify(db.get_action_peers(action_id))
 
+    @app.route("/api/actions/<action_id>/peers/sync", methods=["POST"])
+    def api_sync_peer_status(action_id):
+        """Copy the current action's status to all differing peers (or a subset
+        of peer IDs supplied in the request body as {peer_ids: [...]})."""
+        action = db.get_action(action_id)
+        if not action:
+            return _json_error("Action not found", 404)
+        data = request.get_json(silent=True) or {}
+        peer_ids = data.get("peer_ids")  # None => all differing peers
+        peers = db.get_action_peers(action_id)
+        targets = [p for p in peers if p["status_differs"]]
+        if peer_ids is not None:
+            peer_id_set = set(peer_ids)
+            targets = [p for p in targets if p["id"] in peer_id_set]
+        updated = 0
+        for p in targets:
+            db.update_action(p["id"], status=action.status)
+            updated += 1
+        return jsonify({"updated": updated, "status": action.status})
+
     @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
     def api_tenant_peer_disagreements(name):
         """Map of action_id -> count of correlated peers whose status differs.
