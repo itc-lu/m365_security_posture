@@ -186,6 +186,14 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .detail-panel .field { margin-bottom:8px; }
 .detail-panel .field-label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-light); }
 .detail-panel .field-value { font-size:14px; margin-top:2px; white-space:pre-line; }
+.detail-panel .field-value.html-content { white-space:normal; }
+.detail-panel .field-value.html-content p { margin:0 0 8px; }
+.detail-panel .field-value.html-content p:last-child { margin-bottom:0; }
+.detail-panel .field-value.html-content ul,.detail-panel .field-value.html-content ol { margin:4px 0 8px 20px; padding:0; }
+.detail-panel .field-value.html-content li { margin-bottom:2px; }
+.detail-panel .field-value.html-content h4 { font-size:13px; font-weight:600; margin:8px 0 4px; }
+.detail-panel .field-value.html-content a { color:var(--primary); }
+.detail-panel .field-value.html-content strong { font-weight:600; }
 .detail-panel pre { background:#1e293b; color:#e2e8f0; padding:12px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:pre-wrap; }
 
 /* Tenant switcher dropdown in sidebar */
@@ -2532,8 +2540,8 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value">${esc(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value">${esc(a.remediation_impact)}</div></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${a.remediation_impact}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
