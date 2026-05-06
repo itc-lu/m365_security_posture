@@ -253,6 +253,9 @@ thead th[style*="cursor"]:hover { background:var(--primary-light); }
 .risk-card { border-left:4px solid var(--warning); padding:16px; }
 .risk-card.expired { border-left-color:var(--danger); background:#fff5f5; }
 .risk-card.upcoming { border-left-color:var(--warning); background:#fffbeb; }
+tr.risk-row:hover td { background:var(--bg); }
+tr.risk-expired td { background:#fff5f5; }
+tr.risk-expired:hover td { background:#fee2e2; }
 
 /* Compliance family */
 .compliance-family { border:1px solid var(--border); border-radius:var(--radius); margin-bottom:12px; overflow:hidden; }
@@ -912,6 +915,7 @@ function requireTenant() {
 // Store dashboard data for source filter switching
 let _dashData = {};
 let _dashExcludeNA = false;
+let _dashExcludeRA = false;
 let _cmpContext = null;  // {type:'tenants',tenants,data} or {type:'snapshot',tenantName,tenantDisplay,data}
 
 async function renderDashboard(sourceFilter) {
@@ -931,8 +935,12 @@ async function renderDashboard(sourceFilter) {
 
   // Fetch data on first load or full refresh; reuse when just switching source filter
   const isFilterSwitch = (sourceFilter !== undefined) && Object.keys(_dashData).length > 0;
-  const excludeParam = _dashExcludeNA ? '?exclude_na=1' : '';
-  const needsRefresh = !isFilterSwitch || (_dashData.scores && _dashData.scores.exclude_na !== _dashExcludeNA);
+  const params = [];
+  if (_dashExcludeNA) params.push('exclude_na=1');
+  if (_dashExcludeRA) params.push('exclude_ra=1');
+  const excludeParam = params.length ? '?' + params.join('&') : '';
+  const needsRefresh = !isFilterSwitch
+    || (_dashData.scores && (_dashData.scores.exclude_na !== _dashExcludeNA || _dashData.scores.exclude_ra !== _dashExcludeRA));
   if(!isFilterSwitch || needsRefresh) {
     const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
       api.get(`/api/tenants/${t}/scores${excludeParam}`),
@@ -1078,11 +1086,18 @@ async function renderDashboard(sourceFilter) {
       <select id="dash-source-filter" onchange="renderDashboard(this.value)" style="max-width:280px">${sourceOpts}</select>
       ${sf?`<button class="btn btn-sm" onclick="renderDashboard('')">Show All</button>`:''}
       ${sf==='SCuBA (CISA)'?`<button class="btn btn-sm" onclick="navigate('scuba')" style="margin-left:4px">SCuBA Dashboard</button>`:''}
-      <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:auto;cursor:pointer" title="Exclude Not Applicable and Risk Accepted actions from score calculations">
-        <input type="checkbox" id="dash-exclude-na" ${_dashExcludeNA?'checked':''} onchange="_dashExcludeNA=this.checked;_dashData={};renderDashboard(document.getElementById('dash-source-filter')?.value||'')">
-        Exclude N/A &amp; Risk Accepted
-      </label>
-      ${scores.excluded_count?`<span style="font-size:11px;color:var(--text-light)">(${scores.excluded_count} excluded)</span>`:''}
+      <div style="display:flex;align-items:center;gap:14px;margin-left:auto">
+        <span style="font-size:12px;color:var(--text-light);font-weight:600">Exclude:</span>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin:0" title="Exclude actions with status 'Not Applicable' from score calculations">
+          <input type="checkbox" id="dash-exclude-na" ${_dashExcludeNA?'checked':''} onchange="_dashExcludeNA=this.checked;_dashData={};renderDashboard(document.getElementById('dash-source-filter')?.value||'')">
+          N/A
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin:0" title="Exclude actions with status 'Risk Accepted' from score calculations">
+          <input type="checkbox" id="dash-exclude-ra" ${_dashExcludeRA?'checked':''} onchange="_dashExcludeRA=this.checked;_dashData={};renderDashboard(document.getElementById('dash-source-filter')?.value||'')">
+          Risk Accepted
+        </label>
+        ${scores.excluded_count?`<span style="font-size:11px;color:var(--text-light)">(${scores.excluded_count} excluded)</span>`:''}
+      </div>
     </div>
     <div id="dashboard-report">
     <div class="grid grid-4 mb-16">
@@ -5008,51 +5023,336 @@ async function mapCompliance() {
 }
 
 // ── Risk Register Page ──
+let _riskState = {actions: [], filters: {search: '', workload: '', source: '', owner: '', view: 'all'}, sort: {col: 'risk_accepted_at', dir: -1}, expanded: null};
+
 async function renderRisks() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
-  document.getElementById('topbar-actions').innerHTML = '<button class="btn" onclick="expireRisks()">Check Expirations</button>';
 
-  const summary = await api.get(`/api/tenants/${t}/risk-summary`);
+  document.getElementById('topbar-actions').innerHTML = `
+    <button class="btn btn-sm" onclick="riskAddSelectedToPlan()" id="risk-plan-btn" disabled>Add Selected to Plan</button>
+    <button class="btn btn-sm" onclick="riskExportCsv()">Export CSV</button>
+    <button class="btn btn-sm btn-danger" onclick="expireRisks()" title="Auto-revert expired risk acceptances back to ToDo">Auto-expire</button>`;
 
-  let expiredCards = summary.expired.map(a => `
-    <div class="risk-card expired card mb-8">
-      <div class="flex justify-between items-center">
-        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Expired: ${a.risk_expiry_date}</div></div>
-        <button class="btn btn-sm btn-danger" onclick="showEditAction('${a.id}')">Review</button>
-      </div>
-    </div>`).join('');
+  // Fetch all Risk Accepted actions with full details
+  const [actions, summary] = await Promise.all([
+    api.get(`/api/tenants/${t}/actions?status=Risk%20Accepted`),
+    api.get(`/api/tenants/${t}/risk-summary`),
+  ]);
 
-  let upcomingCards = summary.upcoming_reviews.map(a => `
-    <div class="risk-card upcoming card mb-8">
-      <div class="flex justify-between items-center">
-        <div><strong>${esc((a.title||'').substring(0,50))}</strong><div style="font-size:12px;color:var(--text-light)">Owner: ${esc(a.risk_owner||'N/A')} | Review by: ${a.risk_review_date}</div></div>
-        <button class="btn btn-sm" onclick="showEditAction('${a.id}')">Review</button>
-      </div>
-    </div>`).join('');
+  _riskState.actions = actions || [];
+  _riskState.summary = summary;
+  _riskState.expanded = null;
 
-  let acceptedRows = summary.accepted.map(a => `<tr>
-    <td>${esc((a.title||'').substring(0,45))}</td>
-    <td>${esc(a.risk_owner||'N/A')}</td>
-    <td style="font-size:12px">${esc(a.risk_justification?.substring(0,60)||'N/A')}</td>
-    <td>${a.risk_accepted_at?.substring(0,10)||'N/A'}</td>
-    <td>${a.risk_expiry_date||'No expiry'}</td>
-    <td>${a.risk_review_date||'Not set'}</td>
-    <td><button class="btn btn-sm" onclick="showEditAction('${a.id}')">View</button></td>
-  </tr>`).join('');
+  // Build owner / workload / source dropdown options from data
+  const owners = [...new Set(_riskState.actions.map(a => a.risk_owner).filter(Boolean))].sort();
+  const workloads = [...new Set(_riskState.actions.map(a => a.workload).filter(Boolean))].sort();
+  const sources = [...new Set(_riskState.actions.map(a => a.source_tool).filter(Boolean))].sort();
+
+  // Compute risk-impact total: sum of max_score for all accepted risks (the "potential score" being ignored)
+  const totalImpact = _riskState.actions.reduce((s, a) => s + (a.max_score || 0), 0);
+  const totalActions = _riskState.actions.length;
+  const expiredCount = summary.expired.length;
+  const upcomingCount = summary.upcoming_reviews.length;
+  const noExpiry = _riskState.actions.filter(a => !a.risk_expiry_date).length;
+  const noOwner = _riskState.actions.filter(a => !a.risk_owner).length;
 
   document.getElementById('content').innerHTML = `
-    <div class="grid grid-3 mb-16">
-      <div class="card stat-card"><div class="value">${summary.total_accepted}</div><div class="label">Accepted Risks</div></div>
-      <div class="card stat-card"><div class="value" style="color:var(--danger)">${summary.expired.length}</div><div class="label">Expired</div></div>
-      <div class="card stat-card"><div class="value" style="color:var(--warning)">${summary.upcoming_reviews.length}</div><div class="label">Reviews Due (30d)</div></div>
+    <div class="grid grid-4 mb-16">
+      <div class="card stat-card" onclick="riskSetView('all')" style="cursor:pointer;${_riskState.filters.view==='all'?'border:2px solid var(--primary);':''}">
+        <div class="value">${totalActions}</div><div class="label">Accepted Risks</div></div>
+      <div class="card stat-card" onclick="riskSetView('expired')" style="cursor:pointer;${_riskState.filters.view==='expired'?'border:2px solid var(--danger);':''}">
+        <div class="value" style="color:var(--danger)">${expiredCount}</div><div class="label">Expired</div></div>
+      <div class="card stat-card" onclick="riskSetView('upcoming')" style="cursor:pointer;${_riskState.filters.view==='upcoming'?'border:2px solid var(--warning);':''}">
+        <div class="value" style="color:var(--warning)">${upcomingCount}</div><div class="label">Reviews Due (30d)</div></div>
+      <div class="card stat-card">
+        <div class="value">${totalImpact.toFixed(0)}</div><div class="label">Risk Impact (Σ max-score excluded)</div></div>
     </div>
-    ${summary.expired.length?`<div class="card mb-16"><div class="card-header" style="color:var(--danger)">Expired Risk Acceptances</div>${expiredCards}</div>`:''}
-    ${summary.upcoming_reviews.length?`<div class="card mb-16"><div class="card-header" style="color:var(--warning)">Upcoming Reviews</div>${upcomingCards}</div>`:''}
-    <div class="card"><div class="card-header">All Accepted Risks</div>
-      <div class="table-wrap"><table><thead><tr><th>Title</th><th>Owner</th><th>Justification</th><th>Accepted</th><th>Expiry</th><th>Review</th><th></th></tr></thead>
-      <tbody>${acceptedRows||'<tr><td colspan="7" class="text-center">No accepted risks</td></tr>'}</tbody></table></div>
+
+    ${(noExpiry || noOwner) ? `
+    <div class="drift-banner neutral mb-16" style="font-size:13px">
+      <span>&#9432;</span>
+      <div>
+        ${noOwner?`<strong>${noOwner}</strong> risk(s) have no owner assigned. `:''}
+        ${noExpiry?`<strong>${noExpiry}</strong> risk(s) have no expiry date set. `:''}
+        Consider reviewing them so accepted risks don't linger indefinitely.
+      </div>
+    </div>` : ''}
+
+    <div class="card mb-16" style="position:sticky;top:0;z-index:5;padding:12px 16px">
+      <div class="filter-bar" style="margin:0;flex-wrap:wrap;gap:8px">
+        <input type="text" id="risk-search" placeholder="Search title, justification, ID..." value="${esc(_riskState.filters.search)}" oninput="riskSetFilter('search',this.value)" style="min-width:240px;flex:1">
+        <select id="risk-workload" onchange="riskSetFilter('workload',this.value)">
+          <option value="">All Workloads</option>
+          ${workloads.map(w => `<option value="${esc(w)}" ${_riskState.filters.workload===w?'selected':''}>${esc(w)}</option>`).join('')}
+        </select>
+        <select id="risk-source" onchange="riskSetFilter('source',this.value)">
+          <option value="">All Sources</option>
+          ${sources.map(s => `<option value="${esc(s)}" ${_riskState.filters.source===s?'selected':''}>${esc(s)}</option>`).join('')}
+        </select>
+        <select id="risk-owner" onchange="riskSetFilter('owner',this.value)">
+          <option value="">All Owners</option>
+          <option value="__none__" ${_riskState.filters.owner==='__none__'?'selected':''}>(no owner)</option>
+          ${owners.map(o => `<option value="${esc(o)}" ${_riskState.filters.owner===o?'selected':''}>${esc(o)}</option>`).join('')}
+        </select>
+        <select id="risk-view" onchange="riskSetFilter('view',this.value)">
+          <option value="all" ${_riskState.filters.view==='all'?'selected':''}>All risks</option>
+          <option value="expired" ${_riskState.filters.view==='expired'?'selected':''}>Expired only</option>
+          <option value="upcoming" ${_riskState.filters.view==='upcoming'?'selected':''}>Reviews due (30d)</option>
+          <option value="active" ${_riskState.filters.view==='active'?'selected':''}>Active (not expired)</option>
+          <option value="no-expiry" ${_riskState.filters.view==='no-expiry'?'selected':''}>No expiry set</option>
+          <option value="no-owner" ${_riskState.filters.view==='no-owner'?'selected':''}>No owner</option>
+        </select>
+        <button class="btn btn-sm" onclick="riskResetFilters()">Reset</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Risk Register <span id="risk-count" style="color:var(--text-light);font-weight:400;font-size:13px">— ${totalActions} total</span></span>
+        <span style="font-size:12px;color:var(--text-light)">Click a row to expand details</span>
+      </div>
+      <div class="table-wrap">
+        <table id="risk-table">
+          <thead><tr>
+            <th style="width:32px"><input type="checkbox" id="risk-cb-all" onchange="riskToggleSelectAll(this.checked)"></th>
+            <th onclick="riskSetSort('title')" style="cursor:pointer">Title</th>
+            <th onclick="riskSetSort('workload')" style="cursor:pointer">Workload</th>
+            <th onclick="riskSetSort('source_tool')" style="cursor:pointer">Source</th>
+            <th onclick="riskSetSort('priority')" style="cursor:pointer">Priority</th>
+            <th onclick="riskSetSort('risk_owner')" style="cursor:pointer">Owner</th>
+            <th onclick="riskSetSort('risk_accepted_at')" style="cursor:pointer">Accepted</th>
+            <th onclick="riskSetSort('risk_review_date')" style="cursor:pointer">Review</th>
+            <th onclick="riskSetSort('risk_expiry_date')" style="cursor:pointer">Expiry</th>
+            <th>Impact</th>
+          </tr></thead>
+          <tbody id="risk-tbody"></tbody>
+        </table>
+      </div>
     </div>`;
+
+  riskRenderRows();
+}
+
+function riskSetView(view) { _riskState.filters.view = view; renderRisks(); }
+function riskSetFilter(key, value) { _riskState.filters[key] = value; riskRenderRows(); }
+function riskResetFilters() {
+  _riskState.filters = {search: '', workload: '', source: '', owner: '', view: 'all'};
+  renderRisks();
+}
+function riskSetSort(col) {
+  if (_riskState.sort.col === col) _riskState.sort.dir = -_riskState.sort.dir;
+  else { _riskState.sort.col = col; _riskState.sort.dir = 1; }
+  riskRenderRows();
+}
+
+function riskFilteredActions() {
+  const f = _riskState.filters;
+  const today = new Date().toISOString().substring(0,10);
+  const in30 = new Date(Date.now() + 30*86400000).toISOString().substring(0,10);
+  return _riskState.actions.filter(a => {
+    if (f.workload && a.workload !== f.workload) return false;
+    if (f.source && a.source_tool !== f.source) return false;
+    if (f.owner === '__none__') { if (a.risk_owner) return false; }
+    else if (f.owner && a.risk_owner !== f.owner) return false;
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      const blob = `${a.title||''} ${a.risk_justification||''} ${a.source_id||''} ${a.id||''}`.toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    if (f.view === 'expired') {
+      if (!a.risk_expiry_date || a.risk_expiry_date >= today) return false;
+    } else if (f.view === 'upcoming') {
+      const due = a.risk_review_date || a.risk_expiry_date;
+      if (!due || due < today || due > in30) return false;
+    } else if (f.view === 'active') {
+      if (a.risk_expiry_date && a.risk_expiry_date < today) return false;
+    } else if (f.view === 'no-expiry') {
+      if (a.risk_expiry_date) return false;
+    } else if (f.view === 'no-owner') {
+      if (a.risk_owner) return false;
+    }
+    return true;
+  });
+}
+
+function riskRenderRows() {
+  const tbody = document.getElementById('risk-tbody');
+  if (!tbody) return;
+  const today = new Date().toISOString().substring(0,10);
+  const in30 = new Date(Date.now() + 30*86400000).toISOString().substring(0,10);
+
+  let actions = riskFilteredActions();
+  const col = _riskState.sort.col;
+  const dir = _riskState.sort.dir;
+  actions.sort((a, b) => {
+    let va = a[col], vb = b[col];
+    va = va == null ? '' : va; vb = vb == null ? '' : vb;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+
+  document.getElementById('risk-count').textContent =
+    `— ${actions.length} of ${_riskState.actions.length} shown`;
+
+  if (!actions.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:24px;color:var(--text-light)">No risks match the current filters.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = actions.map(a => {
+    const expired = a.risk_expiry_date && a.risk_expiry_date < today;
+    const reviewDue = (a.risk_review_date && a.risk_review_date >= today && a.risk_review_date <= in30);
+    const expirySoon = (a.risk_expiry_date && a.risk_expiry_date >= today && a.risk_expiry_date <= in30);
+
+    const expiryHtml = a.risk_expiry_date
+      ? (expired ? `<span class="badge badge-danger">EXPIRED</span> ${esc(a.risk_expiry_date)}`
+                 : (expirySoon ? `<span class="badge badge-warning">Soon</span> ${esc(a.risk_expiry_date)}`
+                               : esc(a.risk_expiry_date)))
+      : '<span style="color:var(--text-light);font-style:italic">none</span>';
+
+    const reviewHtml = a.risk_review_date
+      ? (reviewDue ? `<span class="badge badge-warning">Due</span> ${esc(a.risk_review_date)}` : esc(a.risk_review_date))
+      : '<span style="color:var(--text-light);font-style:italic">none</span>';
+
+    const ownerHtml = a.risk_owner
+      ? esc(a.risk_owner)
+      : '<span class="badge badge-warning">unassigned</span>';
+
+    const impact = a.max_score != null ? a.max_score.toFixed(1) : '—';
+
+    const isExpanded = _riskState.expanded === a.id;
+
+    return `<tr class="risk-row${expired?' risk-expired':''}" data-id="${a.id}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="risk-cb" value="${a.id}" onchange="riskUpdatePlanBtn()"></td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer"><strong>${esc((a.title||'').substring(0,80))}</strong>
+        ${a.risk_justification?`<div style="font-size:11px;color:var(--text-light);margin-top:2px">${esc(a.risk_justification.substring(0,90))}${a.risk_justification.length>90?'…':''}</div>`:''}
+      </td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${esc(a.workload||'—')}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${esc(a.source_tool||'—')}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${priorityBadge(a.priority||'')}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${ownerHtml}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${a.risk_accepted_at?esc(a.risk_accepted_at.substring(0,10)):'—'}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${reviewHtml}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${expiryHtml}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;text-align:right;font-variant-numeric:tabular-nums">${impact}</td>
+    </tr>
+    <tr id="risk-detail-${a.id}" class="${isExpanded?'':'hidden'}">
+      <td colspan="10" style="padding:0;background:var(--bg)">
+        <div id="risk-detail-content-${a.id}" style="padding:16px"></div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Re-render expanded detail if applicable
+  if (_riskState.expanded) riskLoadDetail(_riskState.expanded);
+}
+
+async function riskToggleRow(id) {
+  const row = document.getElementById(`risk-detail-${id}`);
+  if (!row) return;
+  if (_riskState.expanded === id) {
+    row.classList.add('hidden');
+    _riskState.expanded = null;
+    return;
+  }
+  // Collapse previous
+  if (_riskState.expanded) {
+    document.getElementById(`risk-detail-${_riskState.expanded}`)?.classList.add('hidden');
+  }
+  _riskState.expanded = id;
+  row.classList.remove('hidden');
+  await riskLoadDetail(id);
+}
+
+async function riskLoadDetail(id) {
+  const el = document.getElementById(`risk-detail-content-${id}`);
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-light)">Loading…</div>';
+  const a = await api.get(`/api/actions/${id}`);
+
+  el.innerHTML = `
+    <div class="flex gap-8 mb-16" style="flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary" onclick="showEditAction('${a.id}')">Edit Action</button>
+      <button class="btn btn-sm" onclick="showAddToPlan(['${a.id}'])">Add to Plan</button>
+      <button class="btn btn-sm" onclick="riskRevoke('${a.id}')" title="Revert this risk acceptance back to ToDo">Revoke Acceptance</button>
+      <button class="btn btn-sm" onclick="riskExtend('${a.id}')" title="Update review/expiry dates">Update Review/Expiry</button>
+    </div>
+    ${actionDetailHtml(a)}`;
+}
+
+function riskToggleSelectAll(checked) {
+  document.querySelectorAll('.risk-cb').forEach(cb => cb.checked = checked);
+  riskUpdatePlanBtn();
+}
+
+function riskUpdatePlanBtn() {
+  const n = document.querySelectorAll('.risk-cb:checked').length;
+  const btn = document.getElementById('risk-plan-btn');
+  if (!btn) return;
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `Add ${n} Selected to Plan` : 'Add Selected to Plan';
+}
+
+function riskAddSelectedToPlan() {
+  const ids = [...document.querySelectorAll('.risk-cb:checked')].map(cb => cb.value);
+  if (!ids.length) return toast('Select at least one risk', 'error');
+  showAddToPlan(ids);
+}
+
+async function riskRevoke(actionId) {
+  if (!confirm('Revoke this risk acceptance? The action will revert to ToDo and start counting toward the score again.')) return;
+  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null});
+  toast('Risk acceptance revoked', 'success');
+  renderRisks();
+}
+
+function riskExtend(actionId) {
+  const a = _riskState.actions.find(x => x.id === actionId);
+  if (!a) return;
+  openModal('Update Review / Expiry', `
+    <div class="form-row">
+      <div class="form-group"><label>Review Date</label><input id="rx-review" type="date" value="${a.risk_review_date||''}"></div>
+      <div class="form-group"><label>Expiry Date</label><input id="rx-expiry" type="date" value="${a.risk_expiry_date||''}"></div>
+    </div>
+    <div class="form-group"><label>Owner</label>${userSelectHtml('rx-owner', a.risk_owner||'')}</div>
+    <div class="form-group"><label>Justification</label><textarea id="rx-just" rows="3">${esc(a.risk_justification||'')}</textarea></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="riskExtendSave('${actionId}')">Save</button>`);
+  populateUserSelect('rx-owner', a.risk_owner||'');
+}
+
+async function riskExtendSave(actionId) {
+  const payload = {
+    risk_review_date: document.getElementById('rx-review').value || null,
+    risk_expiry_date: document.getElementById('rx-expiry').value || null,
+    risk_owner: document.getElementById('rx-owner').value || '',
+    risk_justification: document.getElementById('rx-just').value || '',
+  };
+  await api.put(`/api/actions/${actionId}`, payload);
+  closeModal();
+  toast('Risk acceptance updated', 'success');
+  renderRisks();
+}
+
+function riskExportCsv() {
+  const actions = riskFilteredActions();
+  if (!actions.length) return toast('Nothing to export with current filters', 'error');
+  const header = ['ID','Title','Workload','Source','Priority','Owner','AcceptedAt','ReviewDate','ExpiryDate','Justification','MaxScore'];
+  const csvCell = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const rows = actions.map(a => [
+    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.risk_accepted_at||'', a.risk_review_date||'', a.risk_expiry_date||'',
+    a.risk_justification||'', a.max_score||0,
+  ].map(csvCell).join(','));
+  const csv = [header.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `risk-register-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 async function expireRisks() {

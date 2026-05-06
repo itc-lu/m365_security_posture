@@ -1678,7 +1678,7 @@ class Database:
     def take_score_snapshot(self, tenant_name: str, trigger: str = "import") -> dict:
         """Capture current scores as a point-in-time snapshot, including adjusted scores."""
         scores = self.get_scores(tenant_name)
-        adj = self.get_scores(tenant_name, exclude_na=True)
+        adj = self.get_scores(tenant_name, exclude_na=True, exclude_ra=True)
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
             conn.execute(
@@ -2268,16 +2268,16 @@ class Database:
 
     # ── Scoring helpers ──
 
-    def get_scores(self, tenant_name: str, exclude_na: bool = False) -> dict:
+    def get_scores(self, tenant_name: str, exclude_na: bool = False, exclude_ra: bool = False) -> dict:
         """Calculate live scores from action data.
 
         Uses authoritative Graph API overall scores when available (stored
         by store_graph_scores). Falls back to summing per-action scores.
         Per-workload/tool breakdowns always use per-action data.
 
-        If exclude_na is True, actions with status 'Not Applicable' or
-        'Risk Accepted' are excluded from scoring (they don't count toward
-        totals or percentages).
+        exclude_na: drop actions with status 'Not Applicable' from scoring.
+        exclude_ra: drop actions with status 'Risk Accepted' from scoring.
+        Either flag (or both) can be set independently.
         """
         actions = self.get_actions(tenant_name)
         if not actions:
@@ -2287,7 +2287,9 @@ class Database:
 
         excluded_statuses = set()
         if exclude_na:
-            excluded_statuses = {ActionStatus.NOT_APPLICABLE.value, ActionStatus.RISK_ACCEPTED.value}
+            excluded_statuses.add(ActionStatus.NOT_APPLICABLE.value)
+        if exclude_ra:
+            excluded_statuses.add(ActionStatus.RISK_ACCEPTED.value)
 
         scored_actions = [a for a in actions if a["status"] not in excluded_statuses] if excluded_statuses else actions
         excluded_count = len(actions) - len(scored_actions)
@@ -2368,6 +2370,7 @@ class Database:
             "by_priority": by_priority,
             "excluded_count": excluded_count,
             "exclude_na": exclude_na,
+            "exclude_ra": exclude_ra,
         }
 
     # ── Global Actions (Control Plane) ──

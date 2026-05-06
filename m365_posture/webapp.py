@@ -678,7 +678,8 @@ def create_app(db_path: str = None) -> Flask:
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         exclude_na = request.args.get("exclude_na", "").lower() in ("1", "true", "yes")
-        return jsonify(db.get_scores(name, exclude_na=exclude_na))
+        exclude_ra = request.args.get("exclude_ra", "").lower() in ("1", "true", "yes")
+        return jsonify(db.get_scores(name, exclude_na=exclude_na, exclude_ra=exclude_ra))
 
     # ── Essential Eight endpoint ──
 
@@ -1150,7 +1151,7 @@ def create_app(db_path: str = None) -> Flask:
 
         # Get current scores (full and adjusted)
         current = db.get_scores(name)
-        current_adj = db.get_scores(name, exclude_na=True)
+        current_adj = db.get_scores(name, exclude_na=True, exclude_ra=True)
         snap_label = "Snapshot (" + snapshot["timestamp"][:10] + ")"
         cur_label = "Current"
 
