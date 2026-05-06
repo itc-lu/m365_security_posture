@@ -643,6 +643,21 @@ class Database:
             except Exception as e:
                 print(f"[WARNING] Completed-score backfill skipped: {e}", flush=True)
 
+            # Add adjusted score columns to score_snapshots (exclude N/A + Risk Accepted)
+            for col, coltype, default in [
+                ("adj_percentage", "REAL", "NULL"),
+                ("adj_total_score", "REAL", "NULL"),
+                ("adj_total_max", "REAL", "NULL"),
+                ("adj_total_actions", "INTEGER", "NULL"),
+                ("adj_completed_actions", "INTEGER", "NULL"),
+                ("adj_by_tool", "TEXT", "NULL"),
+                ("adj_by_workload", "TEXT", "NULL"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE score_snapshots ADD COLUMN {col} {coltype} DEFAULT {default}")
+                except Exception:
+                    pass  # Column already exists
+
     # ── Zero Trust Reports ──
 
     def store_zt_report(self, tenant_name: str, report_data: dict) -> str:
@@ -1661,15 +1676,18 @@ class Database:
     # ── Score Snapshots ──
 
     def take_score_snapshot(self, tenant_name: str, trigger: str = "import") -> dict:
-        """Capture current scores as a point-in-time snapshot."""
+        """Capture current scores as a point-in-time snapshot, including adjusted scores."""
         scores = self.get_scores(tenant_name)
+        adj = self.get_scores(tenant_name, exclude_na=True, exclude_ra=True)
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO score_snapshots (tenant_name, timestamp, trigger,
                    total_score, total_max, percentage, total_actions, completed_actions,
-                   by_tool, by_workload, by_status, by_priority)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   by_tool, by_workload, by_status, by_priority,
+                   adj_percentage, adj_total_score, adj_total_max,
+                   adj_total_actions, adj_completed_actions, adj_by_tool, adj_by_workload)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (tenant_name, now, trigger,
                  scores.get("total_score", 0), scores.get("total_max", 0),
                  scores.get("percentage", 0), scores.get("total_actions", 0),
@@ -1677,7 +1695,11 @@ class Database:
                  json.dumps(scores.get("by_tool", {})),
                  json.dumps(scores.get("by_workload", {})),
                  json.dumps(scores.get("by_status", {})),
-                 json.dumps(scores.get("by_priority", {}))),
+                 json.dumps(scores.get("by_priority", {})),
+                 adj.get("percentage", 0), adj.get("total_score", 0), adj.get("total_max", 0),
+                 adj.get("total_actions", 0), adj.get("completed_actions", 0),
+                 json.dumps(adj.get("by_tool", {})),
+                 json.dumps(adj.get("by_workload", {}))),
             )
             snapshot_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": snapshot_id, "timestamp": now, **scores}
@@ -1697,6 +1719,8 @@ class Database:
                 d["by_workload"] = json.loads(d.get("by_workload") or "{}")
                 d["by_status"] = json.loads(d.get("by_status") or "{}")
                 d["by_priority"] = json.loads(d.get("by_priority") or "{}")
+                d["adj_by_tool"] = json.loads(d.get("adj_by_tool") or "{}")
+                d["adj_by_workload"] = json.loads(d.get("adj_by_workload") or "{}")
                 result.append(d)
             return result
 
@@ -2244,16 +2268,16 @@ class Database:
 
     # ── Scoring helpers ──
 
-    def get_scores(self, tenant_name: str, exclude_na: bool = False) -> dict:
+    def get_scores(self, tenant_name: str, exclude_na: bool = False, exclude_ra: bool = False) -> dict:
         """Calculate live scores from action data.
 
         Uses authoritative Graph API overall scores when available (stored
         by store_graph_scores). Falls back to summing per-action scores.
         Per-workload/tool breakdowns always use per-action data.
 
-        If exclude_na is True, actions with status 'Not Applicable' or
-        'Risk Accepted' are excluded from scoring (they don't count toward
-        totals or percentages).
+        exclude_na: drop actions with status 'Not Applicable' from scoring.
+        exclude_ra: drop actions with status 'Risk Accepted' from scoring.
+        Either flag (or both) can be set independently.
         """
         actions = self.get_actions(tenant_name)
         if not actions:
@@ -2263,7 +2287,9 @@ class Database:
 
         excluded_statuses = set()
         if exclude_na:
-            excluded_statuses = {ActionStatus.NOT_APPLICABLE.value, ActionStatus.RISK_ACCEPTED.value}
+            excluded_statuses.add(ActionStatus.NOT_APPLICABLE.value)
+        if exclude_ra:
+            excluded_statuses.add(ActionStatus.RISK_ACCEPTED.value)
 
         scored_actions = [a for a in actions if a["status"] not in excluded_statuses] if excluded_statuses else actions
         excluded_count = len(actions) - len(scored_actions)
@@ -2344,6 +2370,7 @@ class Database:
             "by_priority": by_priority,
             "excluded_count": excluded_count,
             "exclude_na": exclude_na,
+            "exclude_ra": exclude_ra,
         }
 
     # ── Global Actions (Control Plane) ──
