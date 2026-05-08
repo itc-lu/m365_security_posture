@@ -2363,10 +2363,12 @@ class Database:
                 m = data["max_score"]
                 data["percentage"] = round((data["score"] / m) * 100, 2) if m > 0 else 0
 
+        from .scoring import combined_percentage
+
         return {
             "total_score": round(total_score, 2),
             "total_max": round(total_max, 2),
-            "percentage": round((total_score / total_max) * 100, 2) if total_max > 0 else 0,
+            "percentage": combined_percentage(by_tool),
             "total_actions": len(scored_actions),
             "completed_actions": completed,
             "by_tool": by_tool,

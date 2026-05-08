@@ -592,16 +592,20 @@ function sortTable(table, colIdx, th) {
   const tbody = table.querySelector('tbody');
   if(!tbody) return;
   const allRows = Array.from(tbody.querySelectorAll('tr'));
-  // Collapse all expanded detail rows before sorting
+  // Detail rows are expand/collapse panels: a single TD with colspan covering the table
+  const isDetailRow = r => r.children.length === 1 && r.children[0].tagName === 'TD' && r.children[0].hasAttribute('colspan');
+  // Pair each detail row with the nearest preceding main row in original DOM order
+  const detailFor = new Map();
+  let lastMain = null;
   allRows.forEach(r => {
-    if(r.id && r.id.startsWith('detail-')) r.classList.add('hidden');
+    if (isDetailRow(r)) {
+      r.classList.add('hidden');
+      if (lastMain) detailFor.set(lastMain, r);
+    } else {
+      lastMain = r;
+    }
   });
-  // Only sort main rows (skip detail rows entirely)
-  const mainRows = allRows.filter(r => !r.id || !r.id.startsWith('detail-'));
-  const detailMap = {};
-  allRows.filter(r => r.id && r.id.startsWith('detail-')).forEach(r => {
-    detailMap[r.id.replace('detail-','')] = r;
-  });
+  const mainRows = allRows.filter(r => !isDetailRow(r));
   mainRows.sort((a, b) => {
     let aVal = (a.children[colIdx]?.textContent || '').trim();
     let bVal = (b.children[colIdx]?.textContent || '').trim();
@@ -614,8 +618,8 @@ function sortTable(table, colIdx, th) {
   });
   mainRows.forEach(r => {
     tbody.appendChild(r);
-    const key = (r.id||'').replace('row-','');
-    if(detailMap[key]) tbody.appendChild(detailMap[key]);
+    const det = detailFor.get(r);
+    if (det) tbody.appendChild(det);
   });
 }
 // Auto-apply to all tables after any render
@@ -1074,7 +1078,13 @@ async function renderDashboard(sourceFilter) {
 
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const scoreLabel = sf ? sf : 'Overall Security Score';
-  const pointsLabel = dispScore != null && dispMax ? `${dispScore}/${dispMax} points` : scoreLabel;
+  // When showing all sources, the overall percentage is the average of each
+  // tool's percentage (so SCuBA's 133 binary checks aren't drowned out by
+  // Secure Score's 1278-point pool). The raw point sum across tools would be
+  // misleading in that case, so only show points when filtered to one tool.
+  const pointsLabel = sf && dispScore != null && dispMax
+    ? `${dispScore}/${dispMax} points`
+    : (sf ? scoreLabel : 'Average across source tools');
 
   c.innerHTML = `${riskAlert}
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
