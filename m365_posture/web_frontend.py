@@ -1078,7 +1078,13 @@ async function renderDashboard(sourceFilter) {
 
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const scoreLabel = sf ? sf : 'Overall Security Score';
-  const pointsLabel = dispScore != null && dispMax ? `${dispScore}/${dispMax} points` : scoreLabel;
+  // When showing all sources, the overall percentage is the average of each
+  // tool's percentage (so SCuBA's 133 binary checks aren't drowned out by
+  // Secure Score's 1278-point pool). The raw point sum across tools would be
+  // misleading in that case, so only show points when filtered to one tool.
+  const pointsLabel = sf && dispScore != null && dispMax
+    ? `${dispScore}/${dispMax} points`
+    : (sf ? scoreLabel : 'Average across source tools');
 
   c.innerHTML = `${riskAlert}
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
