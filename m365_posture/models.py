@@ -266,6 +266,7 @@ class TenantConfig:
     client_id: str = ""
     client_secret: str = ""
     certificate_path: str = ""
+    certificate_thumbprint: str = ""
     use_interactive: bool = False
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())

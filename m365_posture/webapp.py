@@ -38,6 +38,7 @@ from .drift import detect_drift
 from .graph_api import (
     start_device_code_flow, poll_for_token, fetch_secure_scores,
     fetch_control_profiles, client_credentials_token,
+    client_credentials_token_cert,
     start_interactive_auth, exchange_auth_code,
 )
 from .web_frontend import get_spa_html
@@ -209,6 +210,7 @@ def create_app(db_path: str = None) -> Flask:
             client_id=data.get("client_id", ""),
             client_secret=data.get("client_secret", ""),
             certificate_path=data.get("certificate_path", ""),
+            certificate_thumbprint=data.get("certificate_thumbprint", ""),
             use_interactive=data.get("use_interactive", False),
             notes=data.get("notes", ""),
         )
@@ -231,6 +233,15 @@ def create_app(db_path: str = None) -> Flask:
         if "client_secret" in data and session.get("role") != "admin":
             return _json_error("Admin role required to update client_secret", 403)
         tenant = db.update_tenant(name, **data)
+        # Invalidate any cached Graph auth tokens for this tenant when the
+        # credentials they were obtained against may have changed -- otherwise
+        # a subsequent import would silently reuse a token tied to the old
+        # tenant_id / client_id.
+        cred_keys = {"tenant_id", "client_id", "client_secret",
+                     "certificate_path", "certificate_thumbprint"}
+        if cred_keys & set(data.keys()):
+            _device_flows.pop(name, None)
+            _interactive_flows.pop(name, None)
         return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["DELETE"])
@@ -1927,6 +1938,44 @@ def create_app(db_path: str = None) -> Flask:
             })
         except Exception as e:
             return _json_error(f"Client credentials auth failed: {str(e)}")
+
+    @app.route("/api/tenants/<name>/graph/cert-auth", methods=["POST"])
+    def api_graph_cert_auth(name):
+        """Authenticate using client credentials with a certificate.
+
+        Uses the tenant's ``certificate_path`` (PEM file containing the
+        private key and certificate). The ``certificate_thumbprint`` is
+        optional -- it is derived from the certificate when blank.
+        Requires the ``msal`` library.
+        """
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+
+        tenant_id = tenant.get("tenant_id", "")
+        client_id = tenant.get("client_id", "")
+        cert_path = tenant.get("certificate_path", "")
+        thumbprint = tenant.get("certificate_thumbprint", "")
+
+        if not tenant_id or not client_id or not cert_path:
+            return _json_error(
+                "Tenant must have tenant_id, client_id and certificate_path configured."
+            )
+
+        try:
+            result = client_credentials_token_cert(
+                tenant_id, client_id, cert_path, thumbprint)
+            expires_in = result.get("expires_in", 3600)
+            _device_flows[name] = {
+                "access_token": result["access_token"],
+                "expires_at": datetime.utcnow().timestamp() + expires_in,
+            }
+            return jsonify({
+                "status": "authenticated",
+                "expires_in": expires_in,
+            })
+        except Exception as e:
+            return _json_error(f"Certificate auth failed: {str(e)}")
 
     # ── Interactive Browser Auth ──
 

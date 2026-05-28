@@ -555,6 +555,7 @@ class Database:
                 ("graph_licensed_user_count", "INTEGER", "0"),
                 ("graph_enabled_services", "TEXT", "''"),
                 ("graph_comparative_scores", "TEXT", "''"),
+                ("certificate_thumbprint", "TEXT", "''"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -949,10 +950,12 @@ class Database:
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO tenants (name, tenant_id, display_name, client_id,
-                   client_secret, certificate_path, use_interactive, notes, created_at, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                   client_secret, certificate_path, certificate_thumbprint,
+                   use_interactive, notes, created_at, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (name, config.tenant_id, config.display_name or name,
                  config.client_id, config.client_secret, config.certificate_path,
+                 config.certificate_thumbprint,
                  1 if config.use_interactive else 0, config.notes,
                  datetime.utcnow().isoformat()),
             )
@@ -978,7 +981,8 @@ class Database:
 
     def update_tenant(self, name: str, **kwargs) -> Optional[dict]:
         allowed = {"tenant_id", "display_name", "client_id", "client_secret",
-                    "certificate_path", "use_interactive", "notes"}
+                    "certificate_path", "certificate_thumbprint",
+                    "use_interactive", "notes"}
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             return self.get_tenant(name)
