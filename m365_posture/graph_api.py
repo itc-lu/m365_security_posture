@@ -90,6 +90,82 @@ def poll_for_token(tenant_id: str, client_id: str, device_code: str) -> dict:
             return {"error": "unknown", "error_description": body}
 
 
+def client_credentials_token_cert(tenant_id: str, client_id: str,
+                                   certificate_path: str,
+                                   thumbprint: str = "") -> dict:
+    """Acquire an access token using a certificate (app-only) flow.
+
+    Requires the ``msal`` library and a PEM file containing the private key
+    (and ideally the certificate too). If ``thumbprint`` is empty the SHA-1
+    thumbprint is computed from the certificate in the PEM file.
+
+    Returns the full token response dict including ``access_token``.
+    """
+    try:
+        import msal  # type: ignore
+    except ImportError as e:
+        raise RuntimeError(
+            "Certificate-based authentication requires the 'msal' library. "
+            "Install it with: pip install msal"
+        ) from e
+
+    if not certificate_path or not os.path.isfile(certificate_path):
+        raise RuntimeError(
+            f"Certificate file not found: {certificate_path or '(empty)'}"
+        )
+
+    with open(certificate_path, "rb") as f:
+        pem_bytes = f.read()
+    pem_text = pem_bytes.decode("utf-8", errors="ignore")
+
+    # Derive thumbprint from the certificate when not provided
+    if not thumbprint:
+        thumbprint = _thumbprint_from_pem(pem_bytes)
+        if not thumbprint:
+            raise RuntimeError(
+                "Could not derive a certificate thumbprint from the PEM file. "
+                "Provide the thumbprint explicitly on the tenant configuration."
+            )
+
+    # Normalise thumbprint (uppercase hex, no separators)
+    thumbprint = thumbprint.replace(":", "").replace(" ", "").strip().upper()
+
+    credential = {
+        "private_key": pem_text,
+        "thumbprint": thumbprint,
+        "public_certificate": pem_text,
+    }
+
+    app = msal.ConfidentialClientApplication(
+        client_id,
+        authority=f"https://login.microsoftonline.com/{tenant_id}",
+        client_credential=credential,
+    )
+    result = app.acquire_token_for_client(
+        scopes=["https://graph.microsoft.com/.default"]
+    )
+    if "access_token" not in result:
+        raise RuntimeError(
+            result.get("error_description")
+            or result.get("error")
+            or "Certificate authentication failed"
+        )
+    return result
+
+
+def _thumbprint_from_pem(pem_bytes: bytes) -> str:
+    """Compute the SHA-1 thumbprint of the first certificate in a PEM bundle."""
+    marker_begin = b"-----BEGIN CERTIFICATE-----"
+    marker_end = b"-----END CERTIFICATE-----"
+    start = pem_bytes.find(marker_begin)
+    end = pem_bytes.find(marker_end, start + 1)
+    if start == -1 or end == -1:
+        return ""
+    b64 = pem_bytes[start + len(marker_begin):end].decode("ascii", "ignore")
+    der = base64.b64decode("".join(b64.split()))
+    return hashlib.sha1(der).hexdigest().upper()
+
+
 def client_credentials_token(tenant_id: str, client_id: str, client_secret: str) -> dict:
     """Acquire an access token using the client credentials (app-only) flow.
 

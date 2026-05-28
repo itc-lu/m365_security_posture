@@ -2978,13 +2978,18 @@ async function renderImport() {
       </div>`;
   } else {
     const hasSecret = !!(state.activeTenant.client_secret);
+    const hasCert = !!(state.activeTenant.certificate_path);
+    const appOnlyButtons = `
+      ${hasSecret ? `<button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>` : ''}
+      ${hasCert ? `<button class="btn ${hasSecret?'':'btn-primary'}" id="graph-cert-auth-btn" onclick="startCertAuth()">Sign in with Certificate</button>` : ''}
+    `;
     graphSection = `
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
-        ${hasSecret ? `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Client secret detected. Use app-only auth (requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent), or sign in interactively.</p>
+        ${(hasSecret || hasCert) ? `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">App-only credentials detected. Requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent, or sign in interactively.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>
+          ${appOnlyButtons}
           <button class="btn" onclick="startInteractiveAuth()">Sign in with Browser</button>
           <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
         </div>
@@ -3115,6 +3120,24 @@ async function startClientAuth() {
   }
 
   toast('Authenticated with client credentials!', 'success');
+  renderImport();
+}
+
+async function startCertAuth() {
+  const t = state.activeTenant.name;
+  const btn = document.getElementById('graph-cert-auth-btn');
+  btn.disabled = true;
+  btn.textContent = 'Authenticating...';
+
+  const r = await api.post(`/api/tenants/${t}/graph/cert-auth`);
+  if(r.error) {
+    btn.disabled = false;
+    btn.textContent = 'Sign in with Certificate';
+    toast(r.error, 'error');
+    return;
+  }
+
+  toast('Authenticated with certificate!', 'success');
   renderImport();
 }
 
@@ -6138,6 +6161,10 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
         <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>Certificate Path (PEM)</label><input id="cpt-certpath" value="${esc(tenant.certificate_path||'')}" placeholder="/path/to/cert.pem"></div>
+        <div class="form-group"><label>Certificate Thumbprint</label><input id="cpt-certtp" value="${esc(tenant.certificate_thumbprint||'')}" placeholder="Optional - derived from PEM if blank"></div>
+      </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
       <div style="margin-top:12px;display:flex;gap:8px">
         <button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button>
@@ -6182,6 +6209,8 @@ async function saveTenantConfigCp(tenantName) {
     display_name: document.getElementById('cpt-display').value,
     tenant_id: document.getElementById('cpt-tid').value,
     client_id: document.getElementById('cpt-cid').value,
+    certificate_path: document.getElementById('cpt-certpath').value,
+    certificate_thumbprint: document.getElementById('cpt-certtp').value,
     notes: document.getElementById('cpt-notes').value,
   };
   const secret = document.getElementById('cpt-secret').value;
@@ -6216,6 +6245,10 @@ function showCreateTenantCp() {
       <div class="form-group"><label>Client ID (optional)</label><input id="nt-cid"></div>
       <div class="form-group"><label>Client Secret (optional)</label><input id="nt-secret" type="password"></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Certificate Path (optional)</label><input id="nt-certpath" placeholder="/path/to/cert.pem"></div>
+      <div class="form-group"><label>Certificate Thumbprint (optional)</label><input id="nt-certtp" placeholder="Derived from PEM if blank"></div>
+    </div>
     <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2"></textarea></div>`,
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateTenantCp()">Create</button>`);
 }
@@ -6228,6 +6261,8 @@ async function submitCreateTenantCp() {
     tenant_id: document.getElementById('nt-tid').value,
     client_id: document.getElementById('nt-cid').value,
     client_secret: document.getElementById('nt-secret').value,
+    certificate_path: document.getElementById('nt-certpath').value,
+    certificate_thumbprint: document.getElementById('nt-certtp').value,
     notes: document.getElementById('nt-notes').value,
   });
   if(r.error) return toast(r.error,'error');
