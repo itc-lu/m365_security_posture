@@ -435,6 +435,42 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_gasa_ga ON global_action_source_aliases(global_action_id);
 
+                -- ── Automation: scheduled tool runs & imports ──
+
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    task_type TEXT NOT NULL,          -- secure_score | scuba | zero_trust
+                    frequency TEXT NOT NULL DEFAULT 'manual',  -- manual|daily|weekly|monthly
+                    enabled INTEGER DEFAULT 0,
+                    last_run_at TEXT,
+                    last_status TEXT DEFAULT '',
+                    next_run_at TEXT,
+                    UNIQUE(tenant_name, task_type)
+                );
+                CREATE INDEX IF NOT EXISTS idx_schedules_tenant ON schedules(tenant_name);
+
+                CREATE TABLE IF NOT EXISTS tool_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    task_type TEXT NOT NULL,
+                    trigger TEXT DEFAULT 'manual',    -- manual|schedule
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    status TEXT DEFAULT 'running',    -- running|success|error
+                    detail TEXT DEFAULT '',
+                    report_id TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_tool_runs_tenant ON tool_runs(tenant_name, started_at);
+
+                CREATE TABLE IF NOT EXISTS tool_configs (
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    tool TEXT NOT NULL,               -- scuba | zero_trust | powershell
+                    config TEXT DEFAULT '{}',
+                    updated_at TEXT,
+                    PRIMARY KEY (tenant_name, tool)
+                );
+
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -1827,6 +1863,37 @@ class Database:
             "blocks": [dict(r) for r in blocked_by_me],
         }
 
+    def get_blocked_actions(self, tenant_name: str) -> list[dict]:
+        """Open actions whose dependencies are not yet done — the blocking
+        points a manager needs to see. Returns one row per blocked action
+        with the list of blocking action titles."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT a.id, a.title, a.status, a.priority, a.workload,
+                          dep_a.id as blocking_id, dep_a.title as blocking_title,
+                          dep_a.status as blocking_status
+                   FROM actions a
+                   JOIN action_dependencies ad ON a.id = ad.action_id
+                   JOIN actions dep_a ON ad.depends_on_id = dep_a.id
+                   WHERE a.tenant_name=?
+                   AND a.status NOT IN ('Completed', 'Not Applicable', 'Risk Accepted')
+                   AND dep_a.status NOT IN ('Completed', 'Risk Accepted', 'Not Applicable')""",
+                (tenant_name,),
+            ).fetchall()
+        by_action: dict = {}
+        for r in rows:
+            d = dict(r)
+            entry = by_action.setdefault(d["id"], {
+                "id": d["id"], "title": d["title"], "status": d["status"],
+                "priority": d["priority"], "workload": d["workload"],
+                "blocked_by": [],
+            })
+            entry["blocked_by"].append({
+                "id": d["blocking_id"], "title": d["blocking_title"],
+                "status": d["blocking_status"],
+            })
+        return list(by_action.values())
+
     def _would_create_cycle(self, action_id: str, depends_on_id: str) -> bool:
         """Check if adding action_id -> depends_on_id creates a cycle."""
         visited = set()
@@ -2938,6 +3005,125 @@ class Database:
         result = self.create_global_action(ga)
         self.link_action_to_global(action_id, result["id"])
         return result
+
+    # ── Automation: schedules, tool runs, tool configs ──
+
+    SCHEDULE_TASK_TYPES = ("secure_score", "scuba", "zero_trust")
+    SCHEDULE_FREQUENCIES = ("manual", "daily", "weekly", "monthly")
+    _FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
+
+    def get_schedules(self, tenant_name: str) -> list[dict]:
+        """All schedules for a tenant, one row per task type (defaults filled in)."""
+        with self._conn() as conn:
+            rows = {r["task_type"]: dict(r) for r in conn.execute(
+                "SELECT * FROM schedules WHERE tenant_name=?", (tenant_name,)
+            ).fetchall()}
+        result = []
+        for task in self.SCHEDULE_TASK_TYPES:
+            result.append(rows.get(task) or {
+                "tenant_name": tenant_name, "task_type": task,
+                "frequency": "manual", "enabled": 0,
+                "last_run_at": None, "last_status": "", "next_run_at": None,
+            })
+        return result
+
+    def set_schedule(self, tenant_name: str, task_type: str,
+                     frequency: str, enabled: bool) -> dict:
+        if task_type not in self.SCHEDULE_TASK_TYPES:
+            raise ValueError(f"Unknown task type: {task_type}")
+        if frequency not in self.SCHEDULE_FREQUENCIES:
+            raise ValueError(f"Unknown frequency: {frequency}")
+        if frequency == "manual":
+            enabled = False
+        next_run = None
+        if enabled:
+            # First run is due immediately; subsequent runs are spaced by frequency.
+            next_run = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO schedules (tenant_name, task_type, frequency, enabled, next_run_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(tenant_name, task_type) DO UPDATE SET
+                       frequency=excluded.frequency,
+                       enabled=excluded.enabled,
+                       next_run_at=excluded.next_run_at""",
+                (tenant_name, task_type, frequency, 1 if enabled else 0, next_run),
+            )
+        return [s for s in self.get_schedules(tenant_name) if s["task_type"] == task_type][0]
+
+    def get_due_schedules(self) -> list[dict]:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM schedules
+                    WHERE enabled=1 AND frequency != 'manual'
+                      AND (next_run_at IS NULL OR next_run_at <= ?)""",
+                (now,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def mark_schedule_run(self, tenant_name: str, task_type: str, status: str):
+        """Record a schedule execution and compute the next due time."""
+        from datetime import timedelta
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT frequency FROM schedules WHERE tenant_name=? AND task_type=?",
+                (tenant_name, task_type),
+            ).fetchone()
+            days = self._FREQUENCY_DAYS.get(row["frequency"] if row else "", 1)
+            now = datetime.utcnow()
+            conn.execute(
+                """UPDATE schedules SET last_run_at=?, last_status=?, next_run_at=?
+                    WHERE tenant_name=? AND task_type=?""",
+                (now.isoformat(), status,
+                 (now + timedelta(days=days)).isoformat(),
+                 tenant_name, task_type),
+            )
+
+    def start_tool_run(self, tenant_name: str, task_type: str, trigger: str = "manual") -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO tool_runs (tenant_name, task_type, trigger, started_at, status)
+                   VALUES (?,?,?,?,'running')""",
+                (tenant_name, task_type, trigger, datetime.utcnow().isoformat()),
+            )
+            return cur.lastrowid
+
+    def finish_tool_run(self, run_id: int, status: str, detail: str = "", report_id: str = ""):
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE tool_runs SET finished_at=?, status=?, detail=?, report_id=?
+                    WHERE id=?""",
+                (datetime.utcnow().isoformat(), status, detail[:8000], report_id, run_id),
+            )
+
+    def get_tool_runs(self, tenant_name: str, limit: int = 30) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tool_runs WHERE tenant_name=? ORDER BY started_at DESC LIMIT ?",
+                (tenant_name, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_tool_config(self, tenant_name: str, tool: str) -> dict:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT config FROM tool_configs WHERE tenant_name=? AND tool=?",
+                (tenant_name, tool),
+            ).fetchone()
+        return json.loads(row["config"]) if row else {}
+
+    def set_tool_config(self, tenant_name: str, tool: str, config: dict) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO tool_configs (tenant_name, tool, config, updated_at)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(tenant_name, tool) DO UPDATE SET
+                       config=excluded.config, updated_at=excluded.updated_at""",
+                (tenant_name, tool, json.dumps(config or {}),
+                 datetime.utcnow().isoformat()),
+            )
+        return self.get_tool_config(tenant_name, tool)
 
     def audit(self, action: str, actor: str = None, entity_type: str = None,
               entity_id: str = None, detail: str = None):

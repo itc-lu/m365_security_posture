@@ -117,7 +117,7 @@ def client_credentials_token_cert(tenant_id: str, client_id: str,
 
     # Derive thumbprint from the certificate when not provided
     if not thumbprint:
-        thumbprint = _thumbprint_from_pem(pem_bytes)
+        thumbprint = thumbprint_from_pem(pem_bytes)
         if not thumbprint:
             raise RuntimeError(
                 "Could not derive a certificate thumbprint from the PEM file. "
@@ -150,7 +150,7 @@ def client_credentials_token_cert(tenant_id: str, client_id: str,
     return result
 
 
-def _thumbprint_from_pem(pem_bytes: bytes) -> str:
+def thumbprint_from_pem(pem_bytes: bytes) -> str:
     """Compute the SHA-1 thumbprint of the first certificate in a PEM bundle."""
     marker_begin = b"-----BEGIN CERTIFICATE-----"
     marker_end = b"-----END CERTIFICATE-----"

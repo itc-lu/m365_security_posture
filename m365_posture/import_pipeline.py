@@ -1,0 +1,285 @@
+"""Shared import pipeline.
+
+Turns a report file (or a Graph API token) into merged tenant actions plus
+all post-import processing: E8 mapping, reference-control enrichment,
+global-action auto-linking, report storage, correlation, compliance mapping,
+score snapshot, risk-acceptance expiry and drift detection.
+
+Used by both the web API (manual uploads / interactive Graph imports) and
+the automation runner (scheduled runs).
+"""
+
+from __future__ import annotations
+
+import shutil
+import uuid
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+
+from .models import SourceTool
+from .parsers import (
+    SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
+    SCTParser, M365AssessParser,
+    enrich_actions_from_controls, parse_graph_control_profiles,
+)
+from .essential_eight import apply_e8_mapping
+from .correlation import auto_correlate
+from .compliance import auto_map_compliance
+from .drift import detect_drift
+
+PARSER_MAP = {
+    "secure-score": (SecureScoreParser, SourceTool.SECURE_SCORE.value),
+    "scuba": (ScubaParser, SourceTool.SCUBA.value),
+    "zero-trust": (ZeroTrustParser, SourceTool.ZERO_TRUST.value),
+    "zero-trust-report": (ZeroTrustReportParser, SourceTool.ZERO_TRUST_REPORT.value),
+    "sct": (SCTParser, SourceTool.SCT.value),
+    "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
+}
+
+
+def store_zt_report(db, tenant_name: str, filename: str, tmp_path: str,
+                    parser, actions) -> str:
+    """Store ZT report HTML and data files, save metadata to DB."""
+    reports_dir = Path(db.db_path).parent / "zt_reports" / tenant_name
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    report_id = str(uuid.uuid4())[:8]
+    report_dir = reports_dir / report_id
+    report_dir.mkdir(exist_ok=True)
+
+    html_path = ""
+    data_dir = ""
+
+    if Path(tmp_path).suffix.lower() == ".zip":
+        # Move extracted files to permanent storage
+        extract_dir = getattr(parser, "_extract_dir", None)
+        if extract_dir and Path(extract_dir).exists():
+            for item in Path(extract_dir).iterdir():
+                dest = report_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
+                else:
+                    shutil.copy2(str(item), str(dest))
+            shutil.rmtree(extract_dir, ignore_errors=True)
+
+        for html_file in report_dir.rglob("*.html"):
+            html_path = str(html_file)
+            break
+        for candidate in report_dir.rglob("zt-export"):
+            if candidate.is_dir():
+                data_dir = str(candidate)
+                break
+    else:
+        shutil.copy2(tmp_path, str(report_dir / filename))
+
+    status_counts = Counter(a.status for a in actions)
+    metadata = getattr(parser, "report_metadata", {}) or {}
+    report_data = {
+        "id": report_id,
+        "imported_at": datetime.utcnow().isoformat(),
+        "executed_at": metadata.get("executed_at", ""),
+        "report_tenant_id": metadata.get("tenant_id", ""),
+        "report_tenant_name": metadata.get("tenant_name", ""),
+        "report_domain": metadata.get("domain", ""),
+        "report_account": metadata.get("account", ""),
+        "tool_version": metadata.get("tool_version", ""),
+        "test_result_summary": getattr(parser, "test_result_summary", {}),
+        "tenant_info": getattr(parser, "tenant_info", {}),
+        "html_path": html_path,
+        "data_dir": data_dir,
+        "total_tests": len(actions),
+        "passed_tests": status_counts.get("Completed", 0),
+        "failed_tests": status_counts.get("ToDo", 0),
+        "source_file": filename,
+    }
+    return db.store_zt_report(tenant_name, report_data)
+
+
+def store_scuba_report(db, tenant_name: str, filename: str, tmp_path: str,
+                       parser, actions) -> str:
+    """Store SCuBA report HTML and data files, save metadata to DB."""
+    reports_dir = Path(db.db_path).parent / "scuba_reports" / tenant_name
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    report_id = str(uuid.uuid4())[:8]
+    report_dir = reports_dir / report_id
+    report_dir.mkdir(exist_ok=True)
+
+    html_path = ""
+
+    if Path(tmp_path).suffix.lower() == ".zip":
+        extract_dir = getattr(parser, "_extract_dir", None)
+        if extract_dir and Path(extract_dir).exists():
+            for item in Path(extract_dir).iterdir():
+                dest = report_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
+                else:
+                    shutil.copy2(str(item), str(dest))
+            shutil.rmtree(extract_dir, ignore_errors=True)
+
+        for html_file in report_dir.rglob("BaselineReports.html"):
+            html_path = str(html_file)
+            break
+        if not html_path:
+            for html_file in report_dir.rglob("*.html"):
+                html_path = str(html_file)
+                break
+    else:
+        shutil.copy2(tmp_path, str(report_dir / filename))
+
+    status_counts = Counter(a.status for a in actions)
+    metadata = getattr(parser, "report_metadata", {}) or {}
+    product_summary = getattr(parser, "product_summary", {}) or {}
+
+    report_data = {
+        "id": report_id,
+        "imported_at": datetime.utcnow().isoformat(),
+        "executed_at": metadata.get("timestamp", ""),
+        "report_tenant_id": metadata.get("tenant_id", ""),
+        "report_tenant_name": metadata.get("tenant_name", ""),
+        "report_domain": metadata.get("domain", ""),
+        "tool_version": metadata.get("tool_version", ""),
+        "report_uuid": metadata.get("report_uuid", ""),
+        "products_assessed": metadata.get("products_assessed", []),
+        "product_summary": product_summary,
+        "total_controls": len(actions),
+        "passed_controls": status_counts.get("Completed", 0),
+        "failed_controls": status_counts.get("ToDo", 0),
+        "warning_controls": status_counts.get("In Planning", 0),
+        "manual_controls": status_counts.get("Not Applicable", 0),
+        "source_file": filename,
+        "html_path": html_path,
+    }
+    return db.store_scuba_report(tenant_name, report_data)
+
+
+def process_file_import(db, tenant_name: str, source: str,
+                        file_path: str, filename: str) -> dict:
+    """Parse and merge a report file for a tenant, then run all post-import
+    processing. Returns the import result dict. Raises on parse errors."""
+    parser_cls, source_tool = PARSER_MAP[source]
+    parser = parser_cls()
+    actions = parser.parse_file(file_path)
+    actions = apply_e8_mapping(actions)
+    actions = enrich_actions_from_controls(db, actions)
+
+    new_count, updated_count, updated_details, imported_ids = db.merge_actions(
+        tenant_name, actions, source_tool, filename)
+
+    link_result = db.bulk_auto_link_imported(imported_ids)
+
+    zt_report_id = None
+    if source == "zero-trust-report":
+        zt_report_id = store_zt_report(db, tenant_name, filename, file_path, parser, actions)
+
+    scuba_report_id = None
+    if source == "scuba":
+        scuba_report_id = store_scuba_report(db, tenant_name, filename, file_path, parser, actions)
+
+    corr = auto_correlate(db, tenant_name)
+    compliance = auto_map_compliance(db, tenant_name)
+    snapshot = db.take_score_snapshot(tenant_name, trigger=f"import:{source}")
+    expired = db.expire_risk_acceptances(tenant_name)
+    drift = detect_drift(db, tenant_name, source_tool)
+
+    protected_actions = [d for d in updated_details if d.get("status_protected")]
+
+    # Stale actions: same source_tool but not touched by this import
+    all_tenant_actions = db.get_actions(tenant_name)
+    import_ts = datetime.utcnow().isoformat()
+    stale_actions = []
+    for a in all_tenant_actions:
+        if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
+            if a["last_seen_in_report"] < import_ts[:10]:
+                stale_actions.append({
+                    "id": a["id"], "title": a["title"],
+                    "status": a["status"],
+                    "last_seen": a["last_seen_in_report"],
+                })
+
+    result = {
+        "success": True,
+        "source": source,
+        "file": filename,
+        "total_parsed": len(actions),
+        "new_actions": new_count,
+        "updated_actions": updated_count,
+        "updated_details": updated_details,
+        "protected_actions": protected_actions,
+        "stale_actions": stale_actions,
+        "correlation": corr,
+        "compliance": compliance,
+        "drift": drift,
+        "expired_risk_acceptances": len(expired),
+        "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
+        "unlinked_actions": link_result["unlinked"],
+    }
+    if zt_report_id:
+        result["zt_report_id"] = zt_report_id
+    if scuba_report_id:
+        result["scuba_report_id"] = scuba_report_id
+    return result
+
+
+def import_secure_scores_with_token(db, tenant_name: str, access_token: str) -> dict:
+    """Import Secure Score data from the Graph API with an existing token.
+
+    Fetches scores and control profiles, merges actions, updates the
+    reference control table and runs the full post-import processing.
+    """
+    from .graph_api import fetch_secure_scores, fetch_control_profiles
+
+    scores_data = fetch_secure_scores(access_token)
+    try:
+        profiles_data = fetch_control_profiles(access_token)
+    except Exception:
+        profiles_data = None
+
+    if profiles_data:
+        try:
+            controls = parse_graph_control_profiles(profiles_data)
+            db.seed_controls(controls)
+        except Exception:
+            pass  # Reference data update is best-effort
+
+    parser = SecureScoreParser()
+    actions, overall_scores = parser.parse_graph_response(scores_data, profiles_data)
+    actions = apply_e8_mapping(actions)
+    actions = enrich_actions_from_controls(db, actions)
+
+    source_tool = SourceTool.SECURE_SCORE.value
+    new_count, updated_count, updated_details, imported_ids = db.merge_actions(
+        tenant_name, actions, source_tool, "graph_api")
+    db.bulk_auto_link_imported(imported_ids)
+
+    dedup = db.deduplicate_actions(tenant_name, source_tool)
+
+    if overall_scores.get("maxScore", 0) > 0:
+        db.store_graph_scores(tenant_name, overall_scores)
+
+    corr = auto_correlate(db, tenant_name)
+    compliance = auto_map_compliance(db, tenant_name)
+    snapshot = db.take_score_snapshot(tenant_name, trigger="import:graph-api")
+    expired = db.expire_risk_acceptances(tenant_name)
+    drift = detect_drift(db, tenant_name, source_tool)
+
+    protected_actions = [d for d in updated_details if d.get("status_protected")]
+
+    return {
+        "success": True,
+        "source": "Microsoft Graph API",
+        "total_parsed": len(actions),
+        "new_actions": new_count,
+        "updated_actions": updated_count,
+        "protected_actions": protected_actions,
+        "correlation": corr,
+        "compliance": compliance,
+        "drift": drift,
+        "expired_risk_acceptances": len(expired),
+        "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
+        "profiles_loaded": getattr(parser, "_profile_count", 0),
+        "unmatched_controls": getattr(parser, "_unmatched_controls", []),
+        "duplicates_removed": dedup.get("removed", 0),
+    }

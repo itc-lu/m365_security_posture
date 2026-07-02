@@ -305,6 +305,10 @@ body.unauth { background:#0f172a; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Import
     </a>
+    <a href="#automation" data-page="automation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Automation
+    </a>
     <a href="#plans" data-page="plans">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Plans
@@ -645,13 +649,14 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',automation:'Automation & Scheduling',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
     dashboard:renderDashboard,actions:renderActions,import:renderImport,
+    automation:renderAutomation,
     plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
     compliance:renderCompliance,risks:renderRisks,trending:renderTrending,export:renderExport,
     history:renderHistory,
@@ -953,17 +958,18 @@ async function renderDashboard(sourceFilter) {
   const needsRefresh = !isFilterSwitch
     || (_dashData.scores && (_dashData.scores.exclude_na !== _dashExcludeNA || _dashData.scores.exclude_ra !== _dashExcludeRA));
   if(!isFilterSwitch || needsRefresh) {
-    const [scores, prioritized, snapshots, riskSummary, allActions] = await Promise.all([
+    const [scores, prioritized, snapshots, riskSummary, allActions, blocked] = await Promise.all([
       api.get(`/api/tenants/${t}/scores${excludeParam}`),
       api.get(`/api/tenants/${t}/prioritized?limit=10`),
-      api.get(`/api/tenants/${t}/snapshots?limit=20`),
+      api.get(`/api/tenants/${t}/snapshots?limit=50`),
       api.get(`/api/tenants/${t}/risk-summary`),
       api.get(`/api/tenants/${t}/actions`),
+      api.get(`/api/tenants/${t}/blocked-actions`),
     ]);
-    _dashData = {scores, prioritized, snapshots, riskSummary, allActions};
+    _dashData = {scores, prioritized, snapshots, riskSummary, allActions, blocked};
   }
 
-  const {scores, prioritized, snapshots, riskSummary, allActions} = _dashData;
+  const {scores, prioritized, snapshots, riskSummary, allActions, blocked} = _dashData;
   const sf = sourceFilter || '';
 
   // Filter actions by source if selected
@@ -1055,15 +1061,44 @@ async function renderDashboard(sourceFilter) {
   <tr id="detail-dash-${a.id}" class="hidden"><td colspan="5" style="padding:0">${actionDetailHtml(full)}</td></tr>`;
   }).join('');
 
-  // Mini trend sparkline
+  // Mini trend sparkline + 30-day progress
   let trendHtml = '';
   if(snapshots.length >= 2) {
     const pts = snapshots.slice().reverse();
     const delta = pts[pts.length-1].percentage - pts[pts.length-2].percentage;
     const cls = delta > 0 ? 'drift-positive' : delta < 0 ? 'drift-negative' : 'drift-neutral';
-    trendHtml = `<div class="card stat-card"><div class="value ${cls}">${delta>=0?'+':''}${delta.toFixed(2)}%</div><div class="label">Last Change</div><div style="margin-top:8px">${miniSparkline(pts.map(p=>p.percentage))}</div></div>`;
+    // 30-day progress: latest score vs the snapshot closest to 30 days ago
+    const cutoff = new Date(Date.now() - 30*86400000).toISOString();
+    const older = snapshots.filter(s => s.timestamp <= cutoff);
+    const baseline = older.length ? older[0] : snapshots[snapshots.length-1];
+    const d30 = pts[pts.length-1].percentage - baseline.percentage;
+    const cls30 = d30 > 0.005 ? 'drift-positive' : d30 < -0.005 ? 'drift-negative' : 'drift-neutral';
+    const sinceLabel = older.length ? '30-Day Progress' : `Progress since ${baseline.timestamp?.substring(0,10)}`;
+    trendHtml = `<div class="card stat-card" style="cursor:pointer" onclick="navigate('trending')" title="Open Trending">
+      <div class="value ${cls30}">${d30>=0?'+':''}${d30.toFixed(2)}%</div><div class="label">${sinceLabel}</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:2px"><span class="${cls}">${delta>=0?'+':''}${delta.toFixed(2)}%</span> since last import</div>
+      <div style="margin-top:6px">${miniSparkline(pts.map(p=>p.percentage))}</div>
+    </div>`;
   } else {
-    trendHtml = `<div class="card stat-card"><div class="value drift-neutral">--</div><div class="label">Last Change</div><div style="font-size:12px;color:var(--text-light);margin-top:8px">Import data twice to see trends</div></div>`;
+    trendHtml = `<div class="card stat-card"><div class="value drift-neutral">--</div><div class="label">Progress</div><div style="font-size:12px;color:var(--text-light);margin-top:8px">Import data twice to see trends</div></div>`;
+  }
+
+  // Blocked actions (dependencies not done) — the blocking points
+  let blockedHtml = '';
+  if((blocked||[]).length) {
+    const rows = blocked.slice(0,8).map(b => `
+      <tr onclick="toggleActionDetail('dashblk-${b.id}')" style="cursor:pointer">
+        <td>${esc((b.title||'').substring(0,60))}</td>
+        <td>${priorityBadge(b.priority)}</td>
+        <td>${statusBadge(b.status)}</td>
+        <td style="font-size:12px">${b.blocked_by.map(x=>`<span class="dep-tag blocked" title="${esc(x.status)}">&#128274; ${esc((x.title||'').substring(0,40))}</span>`).join(' ')}</td>
+      </tr>
+      <tr id="detail-dashblk-${b.id}" class="hidden"><td colspan="4" style="padding:0">${actionDetailHtml(_allActionsMap[b.id]||b)}</td></tr>`).join('');
+    blockedHtml = `<div class="card mb-16">
+      <div class="card-header">&#128274; Blocked Actions (${blocked.length}) <span style="font-size:11px;font-weight:400;color:var(--text-light)">waiting on incomplete dependencies</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Action</th><th>Priority</th><th>Status</th><th>Blocked By</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${blocked.length>8?`<div style="font-size:11px;color:var(--text-light);padding:6px">… and ${blocked.length-8} more</div>`:''}
+    </div>`;
   }
 
   // Risk summary alert
@@ -1128,6 +1163,7 @@ async function renderDashboard(sourceFilter) {
       <div class="card"><div class="card-header">Score by Workload${sf?' ('+sf+')':''}</div>${wlBars||'<div style="color:var(--text-light);padding:8px">No workload data</div>'}</div>
     </div>
     <div class="card mb-16"><div class="card-header">Status Distribution${sf?' ('+sf+')':''}</div><div style="padding:8px">${statusPills||'No data'}</div></div>
+    ${blockedHtml}
     <div class="card"><div class="card-header">Top Priority Actions (by ROI) <button class="btn btn-sm" onclick="showPinActionModal()" style="font-size:11px">+ Add</button></div>
       <div class="table-wrap"><table><thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>ROI</th><th style="width:40px"></th></tr></thead><tbody>${topActions||'<tr><td colspan="5" class="text-center">No pending actions</td></tr>'}</tbody></table></div>
     </div>
@@ -1206,6 +1242,10 @@ async function doSnapshotCompare() {
   const snapshotId = parseInt(document.getElementById('snap-cmp-id')?.value);
   if(!tenantName || !snapshotId) return toast('Select a tenant and snapshot','error');
   closeModal();
+  await openSnapshotComparison(tenantName, snapshotId);
+}
+
+async function openSnapshotComparison(tenantName, snapshotId) {
   document.getElementById('topbar-actions').innerHTML = '';
 
   const r = await api.post(`/api/tenants/${tenantName}/compare-snapshot`, {snapshot_id: snapshotId});
@@ -1320,36 +1360,39 @@ async function doDashboardCompare() {
     api.post('/api/compare', {tenants}),
     api.post('/api/compare-actions', {tenants})
   ]);
-  _cmpContext = {type: 'tenants', tenants, data: r};
+  _cmpContext = {type: 'tenants', tenants, data: r, actionCmp};
   const c = document.getElementById('content');
 
   let rows = tenants.map(t => {
     const d = r.overall[t]||{};
-    return `<tr><td><strong>${esc(t)}</strong></td><td>${gauge(d.percentage||0,80)}</td><td>${d.total_actions||0}</td><td>${d.completed_actions||0}</td></tr>`;
+    const disp = state.tenants.find(x=>x.name===t)?.display_name || t;
+    return `<tr><td><strong>${esc(disp)}</strong><br><span style="font-size:11px;color:var(--text-light)">${esc(t)}</span></td>
+      <td>${gauge(d.percentage||0,80)}</td>
+      <td>${d.total_actions||0}</td>
+      <td style="color:var(--success);font-weight:600">${d.completed_actions||0}</td>
+      <td>${d.total_actions?((d.completed_actions||0)/d.total_actions*100).toFixed(0):0}%</td>
+    </tr>`;
   }).join('');
 
   let toolRows = Object.entries(r.by_tool||{}).map(([tool, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
+    let cells = tenants.map(t => {
+      const d = data[t];
+      if(!d || !d.total) return '<td style="color:var(--text-light)">—</td>';
+      return `<td>${(d.percentage||0).toFixed(2)}%<div style="font-size:10px;color:var(--text-light)">${d.completed||0}/${d.total||0} done</div></td>`;
+    }).join('');
     return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
   let wlRows = Object.entries(r.by_workload||{}).map(([wl, data]) => {
-    let cells = tenants.map(t => `<td>${(data[t]?.percentage||0).toFixed(2)}%</td>`).join('');
+    let cells = tenants.map(t => {
+      const d = data[t];
+      if(!d || !d.total) return '<td style="color:var(--text-light)">—</td>';
+      return `<td>${(d.percentage||0).toFixed(2)}%<div style="font-size:10px;color:var(--text-light)">${d.completed||0}/${d.total||0} done</div></td>`;
+    }).join('');
     return `<tr><td>${esc(wl)}</td>${cells}</tr>`;
   }).join('');
 
-  // Action-level comparison
-  const diffActions = (actionCmp.actions||[]).filter(a => a.differs);
   const sameActions = (actionCmp.actions||[]).filter(a => !a.differs);
-  let actionDiffRows = diffActions.slice(0,100).map((a, idx) => {
-    let cells = tenants.map(t => {
-      const d = a.tenants[t];
-      if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
-      return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Click to view details for ${t}">${statusBadge(d.status)}</a></td>`;
-    }).join('');
-    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>${cells}</tr>
-      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+1}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
-  }).join('');
 
   c.innerHTML = `
     <div class="flex justify-between items-center mb-16">
@@ -1361,23 +1404,76 @@ async function doDashboardCompare() {
     </div>
     <div id="comparison-report">
     <div class="card mb-16"><div class="card-header">Overall</div>
-      <table><thead><tr><th>Tenant</th><th>Score</th><th>Total</th><th>Completed</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <table><thead><tr><th>Tenant</th><th>Score</th><th>Total Actions</th><th>Completed</th><th>Completion</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="grid grid-2 mb-16">
       <div class="card"><div class="card-header">By Source Tool</div>
-        <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Tool</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead><tbody>${toolRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
       <div class="card"><div class="card-header">By Workload</div>
-        <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
+        <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
       <div class="card-header">Action Differences <span class="badge badge-danger">${actionCmp.differing||0} differ</span> <span class="badge badge-success">${sameActions.length} same</span></div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or action exists in one but not the other.</div>
-      ${actionDiffRows ? `
-        <div class="table-wrap" style="max-height:500px;overflow-y:auto">
-          <table><thead><tr><th>Action</th>${tenants.map(t=>`<th>${t}</th>`).join('')}</tr></thead>
-          <tbody>${actionDiffRows}</tbody></table>
-        </div>` : '<div style="padding:20px;text-align:center;color:var(--text-light)">No differences found - all actions have the same status across tenants.</div>'}
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or an action exists in one tenant but not another. Click a status to see the tenant-specific details inline.</div>
+      <div class="filter-bar" style="margin-bottom:8px">
+        <input type="text" id="cmpdiff-search" placeholder="Search action..." oninput="renderCompareDiffRows()">
+        <select id="cmpdiff-workload" onchange="renderCompareDiffRows()"><option value="">All Workloads</option></select>
+        <select id="cmpdiff-mode" onchange="renderCompareDiffRows()">
+          <option value="differ">Differing only</option>
+          <option value="missing">Missing in a tenant</option>
+          <option value="all">All actions</option>
+        </select>
+      </div>
+      <div id="cmpdiff-table"></div>
     </div>
     </div>`;
+  renderCompareDiffRows();
+}
+
+function renderCompareDiffRows() {
+  const ctx = _cmpContext;
+  if(!ctx || ctx.type !== 'tenants' || !ctx.actionCmp) return;
+  const tenants = ctx.tenants;
+  const el = document.getElementById('cmpdiff-table');
+  if(!el) return;
+  const q = (document.getElementById('cmpdiff-search')?.value||'').toLowerCase();
+  const wl = document.getElementById('cmpdiff-workload')?.value||'';
+  const mode = document.getElementById('cmpdiff-mode')?.value||'differ';
+
+  // Populate workload filter options once
+  const wlSel = document.getElementById('cmpdiff-workload');
+  if(wlSel && wlSel.options.length <= 1) {
+    const wls = [...new Set((ctx.actionCmp.actions||[]).flatMap(a =>
+      Object.values(a.tenants).filter(Boolean).map(d=>d.workload).filter(Boolean)))].sort();
+    wlSel.innerHTML = '<option value="">All Workloads</option>' + wls.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join('');
+  }
+
+  let rows = (ctx.actionCmp.actions||[]);
+  if(mode === 'differ') rows = rows.filter(a => a.differs);
+  else if(mode === 'missing') rows = rows.filter(a => tenants.some(t => !a.tenants[t]));
+  if(q) rows = rows.filter(a => (a.title||'').toLowerCase().includes(q) || (a.source_id||'').toLowerCase().includes(q));
+  if(wl) rows = rows.filter(a => Object.values(a.tenants).some(d => d && d.workload === wl));
+
+  const shown = rows.slice(0, 300);
+  const body = shown.map((a, idx) => {
+    const anyD = Object.values(a.tenants).find(Boolean) || {};
+    let cells = tenants.map(t => {
+      const d = a.tenants[t];
+      if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
+      return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Details for ${esc(t)} — score ${d.score??'—'}/${d.max_score??'—'}">${statusBadge(d.status)}</a></td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>
+      <td style="font-size:11px;color:var(--text-light)">${esc(anyD.workload||'')}</td>
+      ${cells}</tr>
+      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+2}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+  }).join('');
+
+  el.innerHTML = body ? `
+    <div class="table-wrap" style="max-height:520px;overflow-y:auto">
+      <table><thead><tr><th>Action</th><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead>
+      <tbody>${body}</tbody></table>
+    </div>
+    <div style="font-size:12px;color:var(--text-light);padding:6px">${shown.length}${rows.length>shown.length?` of ${rows.length}`:''} action(s) shown</div>`
+    : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions match the current filters.</div>';
 }
 
 async function downloadComparisonPDF() {
@@ -3003,7 +3099,10 @@ async function renderImport() {
       <div class="card mb-16">
         <div class="card-header flex justify-between items-center">
           <span>Import from Microsoft Graph API</span>
-          <span class="badge badge-success">Authenticated (${mins}m remaining)</span>
+          <span>
+            <span class="badge badge-success">Authenticated (${mins}m remaining)</span>
+            <button class="btn btn-sm" style="margin-left:8px" onclick="signOutGraphFromImport()" title="Discard the cached Graph token for this tenant">Sign out</button>
+          </span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary" onclick="graphImportScores()">Import Secure Scores</button>
@@ -3064,6 +3163,14 @@ async function renderImport() {
 
 // ── Graph API Auth ──
 let graphPollTimer = null;
+
+async function signOutGraphFromImport() {
+  const t = state.activeTenant.name;
+  const r = await api.post(`/api/tenants/${t}/graph/logout`, {});
+  if(r.error) return toast(r.error, 'error');
+  toast('Graph session signed out', 'success');
+  renderImport();
+}
 
 async function startInteractiveAuth() {
   const t = state.activeTenant.name;
@@ -3481,6 +3588,181 @@ async function showZtReportDetail(reportId) {
     ${overviewHtml ? '<div class="field-label" style="margin-top:16px">Tenant Overview</div>' + overviewHtml : ''}
     <div style="margin-top:16px">${htmlBtn}</div>`,
     `<button class="btn" onclick="closeModal()">Close</button>`);
+}
+
+// ── Automation & Scheduling ──
+let _autoRunPollTimer = null;
+
+async function renderAutomation() {
+  if(!requireTenant()) return;
+  if(_autoRunPollTimer) { clearInterval(_autoRunPollTimer); _autoRunPollTimer = null; }
+  const t = state.activeTenant.name;
+  const ov = await api.get(`/api/tenants/${t}/automation`);
+  if(ov.error) return toast(ov.error, 'error');
+  const env = ov.environment || {};
+  const cfgs = ov.tool_configs || {};
+  const schedMap = {};
+  (ov.schedules||[]).forEach(s => schedMap[s.task_type] = s);
+
+  const taskMeta = {
+    secure_score: {name:'Secure Score Import', desc:'Imports Microsoft Secure Score via the Graph API using the tenant’s app-only credentials (certificate or client secret). Fully unattended.', needs: env.app_credentials ? '' : 'Requires app-only credentials — configure a certificate or client secret in Tenant Config.'},
+    scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s configuration and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ScubaGear module on this machine.'},
+    zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module on this machine.'},
+  };
+  const freqOpts = f => ['manual','daily','weekly','monthly'].map(v=>`<option value="${v}" ${v===f?'selected':''}>${v==='manual'?'Manual only':v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join('');
+
+  const taskCards = ['secure_score','scuba','zero_trust'].map(task => {
+    const m = taskMeta[task];
+    const s = schedMap[task] || {frequency:'manual', enabled:0};
+    const lastBadge = s.last_status
+      ? `<span class="badge badge-${s.last_status==='success'?'success':'danger'}">${esc(s.last_status)}</span> <span style="font-size:11px;color:var(--text-light)">${esc((s.last_run_at||'').substring(0,16).replace('T',' '))}</span>`
+      : '<span style="font-size:12px;color:var(--text-light)">Never run</span>';
+    const nextTxt = s.enabled && s.next_run_at
+      ? `<span style="font-size:11px;color:var(--text-light)">Next: ${esc(s.next_run_at.substring(0,16).replace('T',' '))} UTC</span>` : '';
+    return `<div class="card">
+      <div class="card-header" style="margin-bottom:4px">${m.name}</div>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">${m.desc}</p>
+      ${m.needs?`<div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:6px;padding:6px 10px;margin-bottom:10px">&#9888; ${m.needs}</div>`:''}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <select id="sched-freq-${task}" style="max-width:150px;font-size:13px">${freqOpts(s.frequency)}</select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;margin:0;cursor:pointer">
+          <input type="checkbox" id="sched-en-${task}" ${s.enabled?'checked':''}> Enabled
+        </label>
+        <button class="btn btn-sm" onclick="saveSchedule('${task}')">Save Schedule</button>
+        <button class="btn btn-sm btn-primary" id="run-btn-${task}" onclick="runTaskNow('${task}')">&#9654; Run now</button>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">Last run: ${lastBadge} ${nextTxt}</div>
+    </div>`;
+  }).join('');
+
+  const scuba = cfgs.scuba || {};
+  const zt = cfgs.zero_trust || {};
+  const ps = cfgs.powershell || {};
+  const scubaProducts = ['aad','defender','exo','sharepoint','teams','powerplatform'];
+  const prodChecks = scubaProducts.map(p =>
+    `<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 12px 2px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="scuba-prod" value="${p}" ${(scuba.products||['aad','exo','teams']).includes(p)?'checked':''}> ${p}
+    </label>`).join('');
+
+  const runRows = (ov.runs||[]).map(r => {
+    const dur = r.finished_at ? Math.max(1, Math.round((new Date(r.finished_at)-new Date(r.started_at))/1000))+'s' : '—';
+    const st = r.status==='success' ? '<span class="badge badge-success">success</span>'
+             : r.status==='error' ? '<span class="badge badge-danger">error</span>'
+             : '<span class="badge badge-info">running…</span>';
+    return `<tr>
+      <td style="font-size:12px"><code>${esc((r.started_at||'').substring(0,19).replace('T',' '))}</code></td>
+      <td>${esc(taskMeta[r.task_type]?.name||r.task_type)}</td>
+      <td><span class="badge badge-gray" style="font-size:10px">${esc(r.trigger||'')}</span></td>
+      <td>${st}</td>
+      <td>${dur}</td>
+      <td style="font-size:12px;max-width:420px;white-space:pre-wrap">${esc(r.detail||'')}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="drift-banner ${env.pwsh_found?'positive':'neutral'} mb-16" style="font-size:13px">
+      <span>${env.pwsh_found?'&#10003;':'&#9432;'}</span>
+      <div>
+        <strong>PowerShell:</strong> ${env.pwsh_found?`found at <code>${esc(env.pwsh_path)}</code>`:'not found — SCuBA and Zero Trust runs need PowerShell 7 (pwsh) with the ScubaGear / ZeroTrustAssessment modules installed'}
+        &nbsp;&middot;&nbsp; <strong>App-only credentials:</strong> ${env.app_credentials?'configured':'not configured (needed for scheduled Secure Score imports and unattended SCuBA runs)'}
+      </div>
+    </div>
+
+    <div class="grid grid-3 mb-16">${taskCards}</div>
+
+    <div class="grid grid-2 mb-16">
+      <div class="card">
+        <div class="card-header">SCuBA Configuration</div>
+        <div class="form-group"><label>Products</label><div>${prodChecks}</div></div>
+        <div class="form-group"><label>Organization (initial domain, e.g. contoso.onmicrosoft.com — required for unattended certificate auth)</label>
+          <input id="scuba-org" value="${esc(scuba.organization||'')}" placeholder="contoso.onmicrosoft.com"></div>
+        <div class="form-group"><label>ScubaGear config file (YAML, optional — overrides products/auth above)</label>
+          <textarea id="scuba-yaml" rows="5" style="font-family:monospace;font-size:12px" placeholder="ProductNames: [aad, exo]&#10;Organization: contoso.onmicrosoft.com&#10;...">${esc(scuba.config_yaml||'')}</textarea></div>
+        <div class="form-group"><label>Extra Invoke-SCuBA arguments (optional)</label>
+          <input id="scuba-extra" value="${esc(scuba.extra_args||'')}" placeholder="-M365Environment gcc"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveToolConfig('scuba')">Save SCuBA Config</button>
+      </div>
+      <div>
+        <div class="card mb-16">
+          <div class="card-header">Zero Trust Assessment Configuration</div>
+          <div class="form-group"><label>Extra Invoke-ZTAssessment arguments (optional)</label>
+            <input id="zt-extra" value="${esc(zt.extra_args||'')}" placeholder="-Days 30"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveToolConfig('zero_trust')">Save ZT Config</button>
+        </div>
+        <div class="card">
+          <div class="card-header">PowerShell</div>
+          <div class="form-group"><label>Path to pwsh (optional — auto-detected when empty)</label>
+            <input id="ps-path" value="${esc(ps.pwsh_path||'')}" placeholder="/usr/bin/pwsh or C:\\Program Files\\PowerShell\\7\\pwsh.exe"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveToolConfig('powershell')">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Run History</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Started</th><th>Task</th><th>Trigger</th><th>Status</th><th>Duration</th><th>Detail</th></tr></thead>
+        <tbody>${runRows||'<tr><td colspan="6" class="text-center" style="padding:24px;color:var(--text-light)">No runs yet. Use "Run now" or enable a schedule.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+
+  // While a run is active, refresh the page periodically to show progress
+  if((ov.runs||[]).some(r => r.status==='running')) {
+    _autoRunPollTimer = setInterval(async () => {
+      if(state.currentPage !== 'automation') { clearInterval(_autoRunPollTimer); _autoRunPollTimer=null; return; }
+      const runs = await api.get(`/api/tenants/${t}/runs?limit=5`);
+      if(!(runs||[]).some(r => r.status==='running')) {
+        clearInterval(_autoRunPollTimer); _autoRunPollTimer=null;
+        renderAutomation();
+      }
+    }, 3000);
+  }
+}
+
+async function saveSchedule(task) {
+  const t = state.activeTenant.name;
+  const frequency = document.getElementById(`sched-freq-${task}`).value;
+  const enabled = document.getElementById(`sched-en-${task}`).checked;
+  if(enabled && frequency === 'manual') {
+    return toast('Pick a frequency (daily/weekly/monthly) to enable the schedule', 'error');
+  }
+  const r = await api.put(`/api/tenants/${t}/schedules/${task}`, {frequency, enabled});
+  if(r.error) return toast(r.error, 'error');
+  toast(enabled ? `Scheduled ${frequency}; first run is due within a minute` : 'Schedule disabled', 'success');
+  renderAutomation();
+}
+
+async function runTaskNow(task) {
+  const t = state.activeTenant.name;
+  const btn = document.getElementById(`run-btn-${task}`);
+  if(btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  const r = await api.post(`/api/tenants/${t}/run/${task}`, {});
+  if(r.error) {
+    if(btn) { btn.disabled = false; btn.innerHTML = '&#9654; Run now'; }
+    return toast(r.error, 'error');
+  }
+  toast('Run started — progress appears in Run History', 'success');
+  renderAutomation();
+}
+
+async function saveToolConfig(tool) {
+  const t = state.activeTenant.name;
+  let config = {};
+  if(tool === 'scuba') {
+    config = {
+      products: [...document.querySelectorAll('.scuba-prod:checked')].map(c=>c.value),
+      organization: document.getElementById('scuba-org').value.trim(),
+      config_yaml: document.getElementById('scuba-yaml').value,
+      extra_args: document.getElementById('scuba-extra').value.trim(),
+    };
+  } else if(tool === 'zero_trust') {
+    config = {extra_args: document.getElementById('zt-extra').value.trim()};
+  } else if(tool === 'powershell') {
+    config = {pwsh_path: document.getElementById('ps-path').value.trim()};
+  }
+  const r = await api.put(`/api/tenants/${t}/tool-config/${tool}`, {config});
+  if(r.error) return toast(r.error, 'error');
+  toast('Configuration saved', 'success');
 }
 
 // ── Plans ──
@@ -4752,19 +5034,54 @@ async function renderExport() {
     return;
   }
 
+  const statusChecks = (state.enums.statuses||[]).map(s =>
+    `<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 12px 2px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="exp-status-cb" value="${esc(s)}"> ${esc(s)}
+    </label>`).join('');
+  const srcOpts = ['<option value="">All Sources</option>'].concat((state.enums.source_tools||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join('');
+  const wlOpts = ['<option value="">All Workloads</option>'].concat((state.enums.workloads||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join('');
+  const dStatusOpts = ['<option value="">All Statuses</option>'].concat((state.enums.statuses||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join('');
+
   document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16">
+      <div class="card-header">Data Export (CSV / JSON)</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Full action data with all tracked fields — for Excel, Power BI, or your own scripts.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="csv">CSV (Excel)</option><option value="json">JSON</option></select></div>
+        <div class="form-group"><label>Status</label><select id="dexp-status">${dStatusOpts}</select></div>
+        <div class="form-group"><label>Source Tool</label><select id="dexp-source">${srcOpts}</select></div>
+        <div class="form-group"><label>Workload</label><select id="dexp-workload">${wlOpts}</select></div>
+      </div>
+      <button class="btn btn-primary" onclick="doDataExport()">Download Data Export</button>
+    </div>
     <div class="card">
       <div class="card-header">Quick Export to GitLab</div>
-      <div class="form-row">
-        <div class="form-group"><label>Format</label><select id="exp-fmt"><option value="csv">CSV (Bulk Import)</option><option value="json">JSON (API)</option><option value="script">Shell Script (glab CLI)</option></select></div>
-        <div class="form-group"><label>Filter Status (optional)</label><input id="exp-status" placeholder="ToDo,In Progress"></div>
-      </div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Issue-shaped export for bulk-creating GitLab issues. For custom issue layouts use the GitLab Templates tab.</p>
+      <div class="form-group"><label>Format</label><select id="exp-fmt" style="max-width:280px"><option value="csv">CSV (Bulk Import)</option><option value="json">JSON (API)</option><option value="script">Shell Script (glab CLI)</option></select></div>
+      <div class="form-group"><label>Include only these statuses (none selected = all)</label><div>${statusChecks}</div></div>
       <div class="form-row">
         <div class="form-group"><label>Project ID (JSON only)</label><input id="exp-pid" type="number"></div>
         <div class="form-group"><label>Project Path (Script only)</label><input id="exp-path" placeholder="GROUP/PROJECT"></div>
       </div>
-      <button class="btn btn-primary" onclick="doExport()">Download Export</button>
+      <button class="btn btn-primary" onclick="doExport()">Download GitLab Export</button>
     </div>`;
+}
+
+async function doDataExport() {
+  const t = state.activeTenant.name;
+  const params = new URLSearchParams({format: document.getElementById('dexp-fmt').value});
+  const st = document.getElementById('dexp-status').value; if(st) params.set('status', st);
+  const src = document.getElementById('dexp-source').value; if(src) params.set('source_tool', src);
+  const wl = document.getElementById('dexp-workload').value; if(wl) params.set('workload', wl);
+  const r = await fetch(`/api/tenants/${t}/export-actions?${params}`);
+  if(!r.ok) { toast('Export failed','error'); return; }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = r.headers.get('content-disposition')?.split('filename=')[1] || 'actions.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast('Data export downloaded','success');
 }
 
 async function renderGitlabTemplates(tabBar) {
@@ -4931,7 +5248,8 @@ async function doExportPlanGitlab() {
 }
 
 async function doExport() {
-  const data = {format:document.getElementById('exp-fmt').value, status_filter:document.getElementById('exp-status').value||null, project_id:parseInt(document.getElementById('exp-pid').value)||null, project_path:document.getElementById('exp-path').value||null};
+  const statuses = [...document.querySelectorAll('.exp-status-cb:checked')].map(c=>c.value);
+  const data = {format:document.getElementById('exp-fmt').value, status_filter:statuses.length?statuses.join(','):null, project_id:parseInt(document.getElementById('exp-pid').value)||null, project_path:document.getElementById('exp-path').value||null};
   const r = await api.download(`/api/tenants/${state.activeTenant.name}/export`, data);
   if(!r.ok) { toast('Export failed','error'); return; }
   const blob = await r.blob();
@@ -4941,24 +5259,80 @@ async function doExport() {
 }
 
 // ── History ──
+let _histChangelog = [];
+let _histLimit = 100;
+
 async function renderHistory() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
-  const [imports, changelog] = await Promise.all([api.get(`/api/tenants/${t}/history`), api.get(`/api/tenants/${t}/changelog?limit=50`)]);
+  _histLimit = 100;
+  const [imports, changelog] = await Promise.all([
+    api.get(`/api/tenants/${t}/history`),
+    api.get(`/api/tenants/${t}/changelog?limit=${_histLimit}`),
+  ]);
+  _histChangelog = changelog || [];
 
-  let impRows = imports.map(h => `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(h.file_path?.split('/').pop()?.split('\\\\').pop()||'')}</td><td>${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
+  let impRows = imports.map(h => `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(h.file_path?.split('/').pop()?.split('\\\\').pop()||'')}</td><td>${h.action_count}</td><td style="color:var(--success);font-weight:600">${h.new_actions}</td><td>${h.updated_actions}</td></tr>`).join('');
 
-  let clRows = changelog.map(h => {
+  const clSources = [...new Set(_histChangelog.map(h=>h.source_tool).filter(Boolean))].sort();
+  const clUsers = [...new Set(_histChangelog.map(h=>h.changed_by).filter(Boolean))].sort();
+
+  document.getElementById('content').innerHTML = `
+    <div class="tabs"><div class="tab active" onclick="showHistTab(this,'imp-tab')">Imports (${imports.length})</div><div class="tab" onclick="showHistTab(this,'cl-tab')">Change Log</div></div>
+    <div id="imp-tab" class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>File</th><th>Parsed</th><th>New</th><th>Updated</th></tr></thead><tbody>${impRows||'<tr><td colspan="6" class="text-center">No imports yet</td></tr>'}</tbody></table></div></div>
+    <div id="cl-tab" class="card hidden">
+      <div class="filter-bar" style="margin-bottom:12px">
+        <input type="text" id="cl-search" placeholder="Search action title..." oninput="renderChangelogRows()">
+        <select id="cl-source" onchange="renderChangelogRows()"><option value="">All Sources</option>${clSources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+        <select id="cl-by" onchange="renderChangelogRows()"><option value="">All Users</option><option value="__import__">Imports only</option>${clUsers.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('')}</select>
+        <select id="cl-type" onchange="renderChangelogRows()"><option value="">All Changes</option><option value="status">Status changes</option><option value="score">Score changes</option></select>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Source</th><th>Change</th><th>By</th></tr></thead><tbody id="cl-tbody"></tbody></table></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <span id="cl-count" style="font-size:12px;color:var(--text-light)"></span>
+        <button class="btn btn-sm" id="cl-more" onclick="loadMoreChangelog()">Load more</button>
+      </div>
+    </div>`;
+  renderChangelogRows();
+}
+
+function renderChangelogRows() {
+  const tbody = document.getElementById('cl-tbody');
+  if(!tbody) return;
+  const q = (document.getElementById('cl-search')?.value||'').toLowerCase();
+  const src = document.getElementById('cl-source')?.value||'';
+  const by = document.getElementById('cl-by')?.value||'';
+  const type = document.getElementById('cl-type')?.value||'';
+
+  let rows = _histChangelog.filter(h => {
+    if(q && !(h.action_title||'').toLowerCase().includes(q)) return false;
+    if(src && h.source_tool !== src) return false;
+    if(by === '__import__') { if(h.changed_by) return false; }
+    else if(by && h.changed_by !== by) return false;
+    if(type === 'status' && !h.old_status) return false;
+    if(type === 'score' && h.old_score == null) return false;
+    return true;
+  });
+
+  tbody.innerHTML = rows.map(h => {
     let desc = [];
     if(h.old_status) desc.push(`${h.old_status} → ${h.new_status}`);
     if(h.old_score!=null) desc.push(`Score: ${h.old_score} → ${h.new_score}`);
-    return `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.action_title||'')}</td><td>${esc(h.source_tool||'')}</td><td>${esc(desc.join('; '))}</td><td>${esc(h.changed_by||'')}</td></tr>`;
-  }).join('');
+    const byLabel = h.changed_by || (h.source_report ? 'import' : '');
+    return `<tr><td>${esc(h.timestamp?.substring(0,19)||'')}</td><td>${esc(h.action_title||'')}</td><td style="font-size:12px">${esc(h.source_tool||'')}</td><td>${esc(desc.join('; '))}${h.notes?`<div style="font-size:11px;color:var(--text-light)">${esc(h.notes)}</div>`:''}</td><td style="font-size:12px">${esc(byLabel)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-light)">No changes match the filters</td></tr>';
 
-  document.getElementById('content').innerHTML = `
-    <div class="tabs"><div class="tab active" onclick="showHistTab(this,'imp-tab')">Imports</div><div class="tab" onclick="showHistTab(this,'cl-tab')">Change Log</div></div>
-    <div id="imp-tab" class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>File</th><th>New</th><th>Updated</th></tr></thead><tbody>${impRows||'<tr><td colspan="5" class="text-center">No imports yet</td></tr>'}</tbody></table></div></div>
-    <div id="cl-tab" class="card hidden"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Source</th><th>Change</th><th>By</th></tr></thead><tbody>${clRows||'<tr><td colspan="5" class="text-center">No changes yet</td></tr>'}</tbody></table></div></div>`;
+  const cnt = document.getElementById('cl-count');
+  if(cnt) cnt.textContent = `${rows.length} of ${_histChangelog.length} loaded entries shown`;
+  const more = document.getElementById('cl-more');
+  if(more) more.style.display = _histChangelog.length >= _histLimit ? '' : 'none';
+}
+
+async function loadMoreChangelog() {
+  const t = state.activeTenant.name;
+  _histLimit += 400;
+  _histChangelog = await api.get(`/api/tenants/${t}/changelog?limit=${_histLimit}`) || [];
+  renderChangelogRows();
 }
 
 function showHistTab(el, tabId) {
@@ -4985,16 +5359,42 @@ function miniSparkline(values, w=200, h=40) {
   </svg>`;
 }
 
-// ── Full Trend Chart ──
-function trendChart(snapshots, w=800, h=250) {
-  if(snapshots.length < 2) return '<div class="text-center" style="padding:40px;color:var(--text-light)">Need at least 2 snapshots to show trend</div>';
-  const pts = snapshots.slice().reverse();
-  const pcts = pts.map(p=>p.percentage);
-  const min = Math.max(0, Math.min(...pcts) - 5);
-  const max = Math.min(100, Math.max(...pcts) + 5);
+// ── Full Trend Chart (multi-series) ──
+let _trendSnapshots = [];
+let _trendHidden = new Set();
+
+function _buildTrendSeries(snapshots) {
+  const pts = snapshots.slice().reverse();  // oldest → newest
+  const series = [];
+  series.push({name:'Overall', color:'#3b82f6',
+    values: pts.map(p=>({ts:p.timestamp, trigger:p.trigger, v:p.percentage}))});
+  if(pts.some(p=>p.adj_percentage != null)) {
+    series.push({name:'Adjusted', color:'#8b5cf6',
+      values: pts.map(p=>({ts:p.timestamp, trigger:p.trigger, v:p.adj_percentage}))});
+  }
+  const tools = new Set();
+  pts.forEach(p=>Object.keys(p.by_tool||{}).forEach(t=>tools.add(t)));
+  const palette = ['#10b981','#f59e0b','#06b6d4','#ef4444','#84cc16','#ec4899'];
+  [...tools].sort().forEach((tool,i)=>{
+    series.push({name:tool, color:palette[i%palette.length],
+      values: pts.map(p=>({ts:p.timestamp, trigger:p.trigger,
+        v:(p.by_tool||{})[tool] ? (p.by_tool[tool].percentage ?? null) : null}))});
+  });
+  return series;
+}
+
+function trendChartMulti(series, w=800, h=280) {
+  const visible = series.filter(s => !_trendHidden.has(s.name));
+  const allVals = visible.flatMap(s => s.values.map(p=>p.v).filter(v=>v!=null));
+  if(allVals.length < 2) return '<div class="text-center" style="padding:40px;color:var(--text-light)">Need at least 2 snapshots to show a trend. Snapshots are taken automatically on every import.</div>';
+  const nPts = Math.max(...visible.map(s=>s.values.length));
+  const min = Math.max(0, Math.min(...allVals) - 5);
+  const max = Math.min(100, Math.max(...allVals) + 5);
   const range = max - min || 1;
   const pad = {t:20, r:20, b:40, l:50};
   const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+  const X = i => pad.l + (i/(nPts-1||1))*cw;
+  const Y = v => pad.t + ((max-v)/range)*ch;
 
   let gridLines = '';
   for(let i=0; i<=4; i++) {
@@ -5004,31 +5404,47 @@ function trendChart(snapshots, w=800, h=250) {
     gridLines += `<text x="${pad.l-8}" y="${y+4}" text-anchor="end" class="axis-label">${val.toFixed(0)}%</text>`;
   }
 
-  const coords = pts.map((p,i) => {
-    const x = pad.l + (i/(pts.length-1||1))*cw;
-    const y = pad.t + ((max-p.percentage)/range)*ch;
-    return {x, y, p};
-  });
-
-  const line = coords.map(c=>`${c.x.toFixed(2)},${c.y.toFixed(2)}`).join(' ');
-  const area = line + ` ${coords[coords.length-1].x.toFixed(2)},${pad.t+ch} ${coords[0].x.toFixed(2)},${pad.t+ch}`;
-  const dots = coords.map(c=>`<circle cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" class="dot"><title>${c.p.timestamp?.substring(0,16)}: ${c.p.percentage.toFixed(2)}% (${c.p.trigger||''})</title></circle>`).join('');
-
-  // X-axis labels (show max 8)
   let xLabels = '';
-  const step = Math.max(1, Math.floor(pts.length/8));
-  for(let i=0; i<pts.length; i+=step) {
-    const x = pad.l + (i/(pts.length-1||1))*cw;
-    const label = pts[i].timestamp?.substring(5,10)||'';
-    xLabels += `<text x="${x}" y="${h-8}" text-anchor="middle" class="axis-label">${label}</text>`;
+  const base = visible[0].values;
+  const step = Math.max(1, Math.floor(base.length/8));
+  for(let i=0; i<base.length; i+=step) {
+    xLabels += `<text x="${X(i)}" y="${h-8}" text-anchor="middle" class="axis-label">${base[i].ts?.substring(5,10)||''}</text>`;
   }
 
-  return `<div class="trend-chart"><svg viewBox="0 0 ${w} ${h}">
-    ${gridLines}${xLabels}
-    <polygon points="${area}" class="area"/>
-    <polyline points="${line}" class="line"/>
-    ${dots}
-  </svg></div>`;
+  let paths = '';
+  for(const s of visible) {
+    // Break the line at null gaps (tool not present in some snapshots)
+    let segs = [], cur = [];
+    s.values.forEach((p,i) => {
+      if(p.v == null) { if(cur.length) segs.push(cur); cur = []; return; }
+      cur.push({x:X(i), y:Y(p.v), p});
+    });
+    if(cur.length) segs.push(cur);
+    for(const seg of segs) {
+      if(seg.length > 1) {
+        paths += `<polyline points="${seg.map(c=>c.x.toFixed(2)+','+c.y.toFixed(2)).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2"/>`;
+      }
+      paths += seg.map(c=>`<circle cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" r="3.5" fill="${s.color}" style="cursor:pointer"><title>${s.name} — ${c.p.ts?.substring(0,16).replace('T',' ')}: ${c.p.v.toFixed(2)}% (${c.p.trigger||''})</title></circle>`).join('');
+    }
+  }
+
+  return `<div class="trend-chart" style="height:${h}px"><svg viewBox="0 0 ${w} ${h}">${gridLines}${xLabels}${paths}</svg></div>`;
+}
+
+function _trendLegendHtml(series) {
+  return `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">` + series.map(s => `
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin:0;${_trendHidden.has(s.name)?'opacity:.45':''}">
+      <input type="checkbox" ${_trendHidden.has(s.name)?'':'checked'} onchange="toggleTrendSeries('${s.name.replace(/'/g,"\\'")}')">
+      <span style="display:inline-block;width:14px;height:3px;background:${s.color};border-radius:2px"></span>
+      ${esc(s.name)}
+    </label>`).join('') + `</div>`;
+}
+
+function toggleTrendSeries(name) {
+  if(_trendHidden.has(name)) _trendHidden.delete(name); else _trendHidden.add(name);
+  const series = _buildTrendSeries(_trendSnapshots);
+  const wrap = document.getElementById('trend-chart-wrap');
+  if(wrap) wrap.innerHTML = _trendLegendHtml(series) + trendChartMulti(series);
 }
 
 // ── Score Trending Page ──
@@ -5041,19 +5457,30 @@ async function renderTrending() {
     api.get(`/api/tenants/${t}/snapshots?limit=50`),
     api.get(`/api/tenants/${t}/drift?limit=10`),
   ]);
+  _trendSnapshots = snapshots;
+  const series = _buildTrendSeries(snapshots);
+  const chart = _trendLegendHtml(series) + trendChartMulti(series);
 
-  let chart = trendChart(snapshots);
-
-  // Snapshot table
-  let snapRows = snapshots.map(s => {
-    const tools = Object.entries(s.by_tool||{}).map(([tool,d])=>`${tool}: ${d.percentage?.toFixed(2)||0}%`).join(', ');
+  // Snapshot table: delta vs the previous (older) snapshot + adjusted score + compare
+  let snapRows = snapshots.map((s, i) => {
+    const prev = snapshots[i+1];  // list is newest-first
+    let deltaHtml = '<span style="color:var(--text-light)">—</span>';
+    if(prev && prev.percentage != null && s.percentage != null) {
+      const d = s.percentage - prev.percentage;
+      const cls = d > 0.005 ? 'drift-positive' : d < -0.005 ? 'drift-negative' : 'drift-neutral';
+      deltaHtml = `<span class="${cls}">${d>=0?'+':''}${d.toFixed(2)}%</span>`;
+    }
+    const tools = Object.entries(s.by_tool||{}).map(([tool,d])=>`${esc(tool)}: ${d.percentage?.toFixed(2)||0}%`).join(', ');
     return `<tr>
       <td><code>${s.timestamp?.substring(0,16)}</code></td>
-      <td>${s.trigger||''}</td>
+      <td>${esc(s.trigger||'')}</td>
       <td><strong>${s.percentage?.toFixed(2)}%</strong></td>
+      <td>${deltaHtml}</td>
+      <td style="color:var(--purple)">${s.adj_percentage!=null?s.adj_percentage.toFixed(2)+'%':'—'}</td>
       <td>${s.total_actions}</td>
       <td>${s.completed_actions}</td>
       <td style="font-size:12px">${tools||'-'}</td>
+      <td><button class="btn btn-sm" onclick="openSnapshotComparison('${t}',${s.id})" title="Compare current state against this snapshot">Compare</button></td>
     </tr>`;
   }).join('');
 
@@ -5074,15 +5501,15 @@ async function renderTrending() {
   document.getElementById('content').innerHTML = `
     <div class="card mb-16">
       <div class="card-header">Score Trend Over Time</div>
-      ${chart}
+      <div id="trend-chart-wrap">${chart}</div>
     </div>
     <div class="tabs">
       <div class="tab active" onclick="showTrendTab(this,'snap-tab')">Snapshots (${snapshots.length})</div>
       <div class="tab" onclick="showTrendTab(this,'drift-tab')">Drift Reports (${driftReports.length})</div>
     </div>
     <div id="snap-tab" class="card">
-      <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Trigger</th><th>Score</th><th>Actions</th><th>Completed</th><th>By Tool</th></tr></thead>
-      <tbody>${snapRows||'<tr><td colspan="6" class="text-center">No snapshots yet. Import data to create snapshots automatically.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Trigger</th><th>Score</th><th>Δ vs prev.</th><th style="color:var(--purple)">Adjusted</th><th>Actions</th><th>Completed</th><th>By Tool</th><th></th></tr></thead>
+      <tbody>${snapRows||'<tr><td colspan="9" class="text-center">No snapshots yet. Import data to create snapshots automatically.</td></tr>'}</tbody></table></div>
     </div>
     <div id="drift-tab" class="card hidden">
       <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Source</th><th>Delta</th><th>Score</th><th>Regressions</th><th>Improvements</th><th>Summary</th></tr></thead>
@@ -5641,12 +6068,12 @@ async function removeDep(actionId, dependsOnId) {
 
 
 // ── Control Plane: Global Actions ──
-let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:''};
+let _cpGaFilter = {source_tool:'', workload:'', review_status:'', search:'', unmapped:false, no_impl:false};
 
 async function renderCpGlobalActions() {
   const t = state.activeTenant;
-  const params = new URLSearchParams(Object.fromEntries(Object.entries(_cpGaFilter).filter(([,v])=>v)));
-  const actions = await api.get('/api/control-plane/global-actions?' + params.toString());
+  const params = new URLSearchParams(Object.fromEntries(Object.entries(_cpGaFilter).filter(([k,v])=>v && k!=='unmapped' && k!=='no_impl')));
+  let actions = await api.get('/api/control-plane/global-actions?' + params.toString());
   const summary = await api.get('/api/control-plane/compliance-summary');
   const tools = [...new Set(actions.map(a=>a.source_tool))].sort();
   const workloads = [...new Set(actions.map(a=>a.workload))].sort();
@@ -5655,13 +6082,17 @@ async function renderCpGlobalActions() {
   const rvOpts = ['','To Review','Reviewed'].map(v=>`<option value="${v}" ${v===_cpGaFilter.review_status?'selected':''}>${v||'All Status'}</option>`).join('');
   const totalActions = summary._total_actions || 0;
 
+  // Compliance-expert filters (computed on the enriched list)
+  if(_cpGaFilter.unmapped) actions = actions.filter(a => !(a.compliance_mapping_count > 0));
+  if(_cpGaFilter.no_impl) actions = actions.filter(a => !(a.implementation_steps||'').trim());
+
   const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
-    <td><strong>${esc((a.title||'').substring(0,60))}</strong></td>
+    <td><strong>${esc((a.title||'').substring(0,60))}</strong>${(a.implementation_steps||'').trim()?'':' <span title="No implementation steps yet" style="color:var(--warning);cursor:help">&#9998;</span>'}</td>
     <td><span class="badge badge-info">${esc(a.source_tool||'')}</span></td>
     <td>${esc(a.workload||'')}</td>
     <td>${priorityBadge(a.priority)}</td>
-    <td><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}">${esc(a.review_status||'To Review')}</span></td>
-    <td style="text-align:center">${a.compliance_mapping_count||0}</td>
+    <td onclick="event.stopPropagation()"><span class="cp-status-badge ${a.review_status==='Reviewed'?'cp-status-reviewed':'cp-status-to-review'}" style="cursor:pointer" title="Click to toggle review status" onclick="toggleGaReview('${a.id}','${a.review_status==='Reviewed'?'To Review':'Reviewed'}')">${esc(a.review_status||'To Review')}</span></td>
+    <td style="text-align:center">${a.compliance_mapping_count||0}${!(a.compliance_mapping_count>0)?' <span title="Not mapped to any framework" style="color:var(--warning);cursor:help">&#9888;</span>':''}</td>
     <td style="text-align:center">${a.tenant_action_count||0}</td>
     <td onclick="event.stopPropagation()" style="white-space:nowrap">
       <button class="btn btn-sm" onclick="showCpGlobalActionDetail('${a.id}')">Edit</button>
@@ -5684,18 +6115,31 @@ async function renderCpGlobalActions() {
           <button class="btn btn-sm" onclick="runCpMigration()">&#8635; Migrate from Tenants</button>
         </div>
       </div>
-      <div class="flex gap-8 mb-12 flex-wrap">
+      <div class="flex gap-8 mb-12 flex-wrap items-center">
         <select style="width:160px" onchange="_cpGaFilter.source_tool=this.value;renderCpGlobalActions()">${toolOpts}</select>
         <select style="width:160px" onchange="_cpGaFilter.workload=this.value;renderCpGlobalActions()">${wlOpts}</select>
         <select style="width:140px" onchange="_cpGaFilter.review_status=this.value;renderCpGlobalActions()">${rvOpts}</select>
         <input placeholder="Search..." style="width:200px" value="${_cpGaFilter.search}" oninput="_cpGaFilter.search=this.value" onkeydown="if(event.key==='Enter')renderCpGlobalActions()">
         <button class="btn btn-sm" onclick="renderCpGlobalActions()">Search</button>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:0;cursor:pointer" title="Only actions without any compliance framework mapping">
+          <input type="checkbox" ${_cpGaFilter.unmapped?'checked':''} onchange="_cpGaFilter.unmapped=this.checked;renderCpGlobalActions()"> Unmapped only
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:0;cursor:pointer" title="Only actions without implementation steps">
+          <input type="checkbox" ${_cpGaFilter.no_impl?'checked':''} onchange="_cpGaFilter.no_impl=this.checked;renderCpGlobalActions()"> Missing implementation
+        </label>
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Title</th><th>Source Tool</th><th>Workload</th><th>Priority</th><th>Review Status</th><th>Frameworks</th><th>Tenants</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:32px">No global actions found. Use "Migrate from Tenants" to import existing actions.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+}
+
+async function toggleGaReview(gaId, newStatus) {
+  const r = await api.put(`/api/control-plane/global-actions/${gaId}`, {review_status: newStatus});
+  if(r.error) return toast(r.error,'error');
+  toast(`Marked as ${newStatus}`,'success');
+  renderCpGlobalActions();
 }
 
 async function runCpMigration() {
@@ -6241,13 +6685,39 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
         <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>Certificate Path (PEM)</label><input id="cpt-certpath" value="${esc(tenant.certificate_path||'')}" placeholder="/path/to/cert.pem"></div>
-        <div class="form-group"><label>Certificate Thumbprint</label><input id="cpt-certtp" value="${esc(tenant.certificate_thumbprint||'')}" placeholder="Optional - derived from PEM if blank"></div>
+      <div class="ga-detail-section" style="margin-top:4px">
+        <h4 style="margin-bottom:8px">Certificate (app-only auth)</h4>
+        ${tenant.certificate_path ? `
+          <div style="font-size:13px;margin-bottom:8px">
+            <span class="badge badge-success">Configured</span>
+            <span style="font-family:monospace;font-size:11px;margin-left:6px">${esc(tenant.certificate_thumbprint||'')}</span>
+            <div style="font-size:11px;color:var(--text-light);margin-top:4px;word-break:break-all">${esc(tenant.certificate_path)}</div>
+          </div>
+          <div class="flex gap-8" style="flex-wrap:wrap">
+            <button class="btn btn-sm btn-danger" onclick="deleteTenantCert('${tenantName}')">Remove Certificate</button>
+          </div>
+        ` : `
+          <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+            Upload a PEM file containing the <strong>private key and certificate</strong>. The thumbprint is derived
+            automatically and the file is stored for this tenant. Upload the certificate's public part to the
+            Entra ID app registration under <em>Certificates &amp; secrets</em>.
+          </p>
+          <div style="font-size:11px;color:var(--text-light);background:var(--bg);border-radius:6px;padding:8px;margin-bottom:8px;font-family:monospace">
+            openssl req -x509 -newkey rsa:2048 -keyout key.pem -out crt.pem -days 365 -nodes -subj "/CN=m365-posture"<br>
+            cat key.pem crt.pem &gt; ${esc(tenantName)}.pem &nbsp;# upload this file; register crt.pem in Entra ID
+          </div>
+        `}
+        <div class="flex gap-8 items-center" style="margin-top:8px;flex-wrap:wrap">
+          <input type="file" id="cpt-cert-file" accept=".pem,.crt,.key,.txt" style="max-width:260px;font-size:12px">
+          <button class="btn btn-sm btn-primary" onclick="uploadTenantCert('${tenantName}')">${tenant.certificate_path?'Replace':'Upload'} Certificate</button>
+          <button class="btn btn-sm" onclick="testTenantGraph('${tenantName}')" title="Verify the app-only credentials work against Microsoft Graph">Test Connection</button>
+        </div>
+        <div id="cpt-cert-result" style="margin-top:8px;font-size:13px"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
-      <div style="margin-top:12px;display:flex;gap:8px">
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveTenantConfigCp('${tenantName}')">Save Changes</button>
+        <button class="btn" onclick="signOutTenantGraph('${tenantName}')" title="Discard any cached Graph API tokens for this tenant">Sign out Graph session</button>
         ${!tenant.is_active?`<button class="btn" onclick="activateTenantCp('${tenantName}');closeModal()">Activate Tenant</button>`:'<span class="badge badge-info" style="align-self:center">Currently Active</span>'}
       </div>
     </div>
@@ -6289,8 +6759,6 @@ async function saveTenantConfigCp(tenantName) {
     display_name: document.getElementById('cpt-display').value,
     tenant_id: document.getElementById('cpt-tid').value,
     client_id: document.getElementById('cpt-cid').value,
-    certificate_path: document.getElementById('cpt-certpath').value,
-    certificate_thumbprint: document.getElementById('cpt-certtp').value,
     notes: document.getElementById('cpt-notes').value,
   };
   const secret = document.getElementById('cpt-secret').value;
@@ -6298,6 +6766,49 @@ async function saveTenantConfigCp(tenantName) {
   const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
   toast('Tenant updated','success');
+}
+
+async function uploadTenantCert(tenantName) {
+  const input = document.getElementById('cpt-cert-file');
+  const file = input?.files?.[0];
+  if(!file) return toast('Choose a PEM file first','error');
+  const fd = new FormData();
+  fd.append('file', file);
+  const el = document.getElementById('cpt-cert-result');
+  if(el) el.innerHTML = '<span style="color:var(--text-light)">Uploading…</span>';
+  const r = await api.upload(`/api/tenants/${tenantName}/certificate`, fd);
+  if(r.error) {
+    if(el) el.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span>`;
+    return;
+  }
+  toast('Certificate stored — thumbprint '+r.thumbprint.substring(0,12)+'…','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function deleteTenantCert(tenantName) {
+  if(!await showConfirm('Remove Certificate','Remove the stored certificate from this tenant? Certificate-based Graph auth and unattended runs will stop working until a new one is uploaded.')) return;
+  const r = await api.del(`/api/tenants/${tenantName}/certificate`);
+  if(r.error) return toast(r.error,'error');
+  toast('Certificate removed','success');
+  showCpTenantDetail(tenantName);
+}
+
+async function testTenantGraph(tenantName) {
+  const el = document.getElementById('cpt-cert-result');
+  if(el) el.innerHTML = '<span style="color:var(--text-light)">Testing app-only authentication against Microsoft Graph…</span>';
+  const r = await api.post(`/api/tenants/${tenantName}/graph/test`, {});
+  if(!el) return;
+  if(r.ok) {
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Authentication succeeded using ${r.method === 'certificate' ? 'the certificate' : 'the client secret'}.</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--danger)">&#10007; ${esc(r.error||'Authentication failed')}</span>`;
+  }
+}
+
+async function signOutTenantGraph(tenantName) {
+  const r = await api.post(`/api/tenants/${tenantName}/graph/logout`, {});
+  if(r.error) return toast(r.error,'error');
+  toast(r.logged_out ? 'Graph session for this tenant signed out' : 'No active Graph session for this tenant', 'success');
 }
 
 async function grantTenantUser(tenantName) {
