@@ -2087,7 +2087,9 @@ async function unpinDashAction(actionId) {
 async function showPinActionModal() {
   const t = state.activeTenant.name;
   const actions = await api.get(`/api/tenants/${t}/actions`);
-  const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && !a.pinned_priority);
+  // Offer anything not already pinned — including actions previously hidden
+  // from the list (pinned_priority = -1), so they can be brought back.
+  const pending = actions.filter(a => !['Completed','Not Applicable','Third Party'].includes(a.status) && (a.pinned_priority||0) !== 1);
   let rows = pending.slice(0,50).map(a => `<tr>
     <td><input type="checkbox" value="${a.id}" class="pin-cb"></td>
     <td>${esc((a.title||'').substring(0,50))}</td><td>${priorityBadge(a.priority)}</td><td>${statusBadge(a.status)}</td>
@@ -2511,8 +2513,8 @@ function actionDetailHtml(a) {
     importConflictHtml = `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px;font-size:13px">
       <span style="color:#92400e">&#9888; Last import reported ${statusBadge(a.import_suggested_status)} but the status here is ${statusBadge(a.status)}.</span>
       <span id="${cid}" style="margin-left:auto;white-space:nowrap">
-        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','use_import','${cid}');event.stopPropagation()">Use imported</button>
-        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','keep_mine','${cid}');event.stopPropagation()">Keep mine</button>
+        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','use_import','${cid}','${esc(a.tenant_name||'')}');event.stopPropagation()">Use imported</button>
+        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','keep_mine','${cid}','${esc(a.tenant_name||'')}');event.stopPropagation()">Keep mine</button>
       </span>
     </div>`;
   }
@@ -3318,8 +3320,8 @@ async function doImport() {
 
 // ── Import status conflict resolution ──
 
-async function resolveImportConflict(actionId, resolution, cellId) {
-  const t = state.activeTenant.name;
+async function resolveImportConflict(actionId, resolution, cellId, tenantName) {
+  const t = tenantName || state.activeTenant.name;
   const r = await api.post(`/api/tenants/${t}/import-status-conflicts/resolve`, {resolution, action_ids: [actionId]});
   if(r.error) return toast(r.error, 'error');
   const cell = document.getElementById(cellId);
