@@ -715,6 +715,26 @@ def create_app(db_path: str = None) -> Flask:
         result = auto_correlate(db, name)
         return jsonify(result)
 
+    @app.route("/api/tenants/<name>/suggested-links", methods=["GET"])
+    def api_suggested_links(name):
+        """Cross-tool action pairs that likely represent the same control
+        (title similarity), so linking them lets one fix validate all tools."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .correlation import suggest_action_links
+        return jsonify(suggest_action_links(db, name))
+
+    @app.route("/api/tenants/<name>/suggested-links/dismiss", methods=["POST"])
+    def api_dismiss_suggested_link(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        a, b = data.get("action_a_id"), data.get("action_b_id")
+        if not a or not b:
+            return _json_error("action_a_id and action_b_id required")
+        db.dismiss_link_suggestion(name, a, b)
+        return jsonify({"dismissed": True})
+
     @app.route("/api/correlation-groups", methods=["GET"])
     def api_correlation_groups():
         return jsonify(db.list_correlation_groups())
@@ -1306,7 +1326,30 @@ def create_app(db_path: str = None) -> Flask:
             "issues": issues,
         })
 
-    # ── Data export (raw actions as CSV / JSON) ──
+    # ── Generic table → Excel export ──
+
+    @app.route("/api/export-xlsx", methods=["POST"])
+    def api_export_xlsx():
+        """Turn posted table data into an Excel file.
+
+        Body: {"filename": "...", "sheet": "...", "headers": [...], "rows": [[...], ...]}
+        Used by the 'Export Excel' buttons throughout the UI.
+        """
+        from .xlsx import make_xlsx
+        data = request.get_json() or {}
+        headers = data.get("headers") or []
+        rows = data.get("rows") or []
+        if not headers:
+            return _json_error("headers required")
+        if len(rows) > 50000:
+            return _json_error("Too many rows (max 50000)")
+        fname = re.sub(r"[^A-Za-z0-9._-]", "_", data.get("filename") or "export")[:80]
+        content = make_xlsx(headers, rows, data.get("sheet") or "Export")
+        resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp.headers["Content-Disposition"] = f"attachment; filename={fname}.xlsx"
+        return resp
+
+    # ── Data export (raw actions as CSV / JSON / Excel) ──
 
     _EXPORT_COLUMNS = [
         "id", "title", "status", "priority", "risk_level", "user_impact",
@@ -1359,7 +1402,16 @@ def create_app(db_path: str = None) -> Flask:
                 f"attachment; filename=actions_{name}_{stamp}.csv"
             return resp
 
-        return _json_error("format must be 'csv' or 'json'")
+        if fmt == "xlsx":
+            from .xlsx import make_xlsx
+            rows = [[a.get(k) for k in _EXPORT_COLUMNS] for a in actions]
+            content = make_xlsx(_EXPORT_COLUMNS, rows, "Actions")
+            resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.xlsx"
+            return resp
+
+        return _json_error("format must be 'csv', 'json' or 'xlsx'")
 
     # ── Export endpoint ──
 

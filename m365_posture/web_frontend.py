@@ -877,6 +877,33 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ── Excel export helper (posts table data, downloads .xlsx) ──
+async function exportTableExcel(filename, sheet, headers, rows) {
+  if(!rows.length) return toast('Nothing to export', 'error');
+  const r = await fetch('/api/export-xlsx', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'},
+    body: JSON.stringify({filename, sheet, headers, rows}),
+  });
+  if(!r.ok) { toast('Export failed','error'); return; }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename + '.xlsx';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast(`${rows.length} row(s) exported to Excel`, 'success');
+}
+
+// ── Quick-view: full action details in a modal (for tables without inline expansion) ──
+async function openActionQuickView(actionId) {
+  const a = await api.get(`/api/actions/${actionId}`);
+  if(!a || a.error) return toast(a?.error || 'Action not found', 'error');
+  openModal((a.title||'Action').substring(0,70), actionDetailHtml(a),
+    '<button class="btn" onclick="closeModal()">Close</button>');
+  loadActionDeps(a.id);
+  loadActionPeers(a.id);
+}
+
 // ── Init ──
 async function init() {
   await checkAuth();
@@ -1103,8 +1130,12 @@ async function renderDashboard(sourceFilter) {
 
   // Risk summary alert
   let riskAlert = '';
+  const regressed = (allActions||[]).filter(a => a.regressed_at);
+  if(regressed.length > 0) {
+    riskAlert += `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#8595;</span><div><strong>${regressed.length} action(s) regressed</strong> — previously compliant, now failing again. <a href="#actions" onclick="setTimeout(()=>{const f=document.getElementById('f-freshness');if(f){f.value='regressed';filterActions();}},300)" style="text-decoration:underline">Review regressions</a></div></div>`;
+  }
   if(riskSummary.expired?.length > 0) {
-    riskAlert = `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${riskSummary.expired.length} expired risk acceptance(s)</strong> require review. <a href="#risks" style="text-decoration:underline">View Risk Register</a></div></div>`;
+    riskAlert += `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${riskSummary.expired.length} expired risk acceptance(s)</strong> require review. <a href="#risks" style="text-decoration:underline">View Risk Register</a></div></div>`;
   }
   if(riskSummary.upcoming_reviews?.length > 0) {
     riskAlert += `<div class="drift-banner neutral mb-16"><span style="font-size:20px">&#128197;</span><div><strong>${riskSummary.upcoming_reviews.length} risk review(s)</strong> due within 30 days. <a href="#risks" style="text-decoration:underline">View</a></div></div>`;
@@ -1422,6 +1453,7 @@ async function doDashboardCompare() {
           <option value="missing">Missing in a tenant</option>
           <option value="all">All actions</option>
         </select>
+        <button class="btn btn-sm" onclick="exportCompareDiffExcel()">Export Excel</button>
       </div>
       <div id="cmpdiff-table"></div>
     </div>
@@ -1447,11 +1479,7 @@ function renderCompareDiffRows() {
     wlSel.innerHTML = '<option value="">All Workloads</option>' + wls.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join('');
   }
 
-  let rows = (ctx.actionCmp.actions||[]);
-  if(mode === 'differ') rows = rows.filter(a => a.differs);
-  else if(mode === 'missing') rows = rows.filter(a => tenants.some(t => !a.tenants[t]));
-  if(q) rows = rows.filter(a => (a.title||'').toLowerCase().includes(q) || (a.source_id||'').toLowerCase().includes(q));
-  if(wl) rows = rows.filter(a => Object.values(a.tenants).some(d => d && d.workload === wl));
+  let rows = _filteredCompareDiff(q, wl, mode);
 
   const shown = rows.slice(0, 300);
   const body = shown.map((a, idx) => {
@@ -1474,6 +1502,33 @@ function renderCompareDiffRows() {
     </div>
     <div style="font-size:12px;color:var(--text-light);padding:6px">${shown.length}${rows.length>shown.length?` of ${rows.length}`:''} action(s) shown</div>`
     : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions match the current filters.</div>';
+}
+
+function _filteredCompareDiff(q, wl, mode) {
+  const ctx = _cmpContext;
+  const tenants = ctx.tenants;
+  let rows = (ctx.actionCmp.actions||[]);
+  if(mode === 'differ') rows = rows.filter(a => a.differs);
+  else if(mode === 'missing') rows = rows.filter(a => tenants.some(t => !a.tenants[t]));
+  if(q) rows = rows.filter(a => (a.title||'').toLowerCase().includes(q) || (a.source_id||'').toLowerCase().includes(q));
+  if(wl) rows = rows.filter(a => Object.values(a.tenants).some(d => d && d.workload === wl));
+  return rows;
+}
+
+function exportCompareDiffExcel() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionCmp) return;
+  const tenants = ctx.tenants;
+  const q = (document.getElementById('cmpdiff-search')?.value||'').toLowerCase();
+  const wl = document.getElementById('cmpdiff-workload')?.value||'';
+  const mode = document.getElementById('cmpdiff-mode')?.value||'differ';
+  const rows = _filteredCompareDiff(q, wl, mode).map(a => {
+    const anyD = Object.values(a.tenants).find(Boolean) || {};
+    return [a.title||'', anyD.workload||'', a.source_id||'',
+            ...tenants.map(t => a.tenants[t] ? a.tenants[t].status : 'Missing')];
+  });
+  exportTableExcel(`comparison_${tenants.join('_')}`.substring(0,60), 'Comparison',
+    ['Action','Workload','Source ID', ...tenants], rows);
 }
 
 async function downloadComparisonPDF() {
@@ -1545,11 +1600,22 @@ async function _downloadTenantComparisonPDF(today) {
     return `<tr><td>${esc(tool)}</td>${cells}</tr>`;
   }).join('');
 
-  // Accepted risks per tenant
+  // Accepted risks + blocked actions per tenant
   const allActions = {};
+  const blockedMap = {};
   await Promise.all(tenants.map(async t => {
-    allActions[t] = await api.get(`/api/tenants/${t}/actions`);
+    [allActions[t], blockedMap[t]] = await Promise.all([
+      api.get(`/api/tenants/${t}/actions`),
+      api.get(`/api/tenants/${t}/blocked-actions`),
+    ]);
   }));
+
+  let blockedSections = '';
+  for (const t of tenants) {
+    const blocked = blockedMap[t] || [];
+    if (!blocked.length) continue;
+    blockedSections += `<h3 style="font-size:14px;color:#0f172a;margin:16px 0 6px;padding-bottom:4px;border-bottom:2px solid #dc2626">${esc(t)} — Blocked Actions (${blocked.length})</h3>${_blockedPdfTable(blocked)}`;
+  }
 
   let riskSections = '';
   for (const t of tenants) {
@@ -1653,8 +1719,15 @@ async function _downloadTenantComparisonPDF(today) {
     </div>
   </div>
 
+  ${blockedSections ? `<div style="page-break-before:always;padding-top:8px">
+    <h2 style="font-size:17px;color:#0f172a;margin-bottom:4px">Blocked Actions by Tenant</h2>
+    <p style="color:#64748b;font-size:11px;margin-bottom:12px">Open actions stuck behind unfinished prerequisites — unresolved bottlenecks, distinct from the consciously accepted risks below.</p>
+    ${blockedSections}
+  </div>` : ''}
+
   ${riskSections ? `<div style="page-break-before:always;padding-top:8px">
-    <h2 style="font-size:17px;color:#0f172a;margin-bottom:12px">Accepted Risks by Tenant</h2>
+    <h2 style="font-size:17px;color:#0f172a;margin-bottom:4px">Accepted Risks by Tenant</h2>
+    <p style="color:#64748b;font-size:11px;margin-bottom:12px">Documented, signed-off risk decisions with owner and expiry — excluded from the Adjusted Score.</p>
     ${riskSections}
   </div>` : ''}
 
@@ -1671,7 +1744,10 @@ async function _downloadSnapshotComparisonPDF(today) {
   const snapLabel = labels[1];
   const snapHasAdj = data.snap_has_adj;
 
-  const allActions = await api.get(`/api/tenants/${tenantName}/actions`);
+  const [allActions, blockedActions] = await Promise.all([
+    api.get(`/api/tenants/${tenantName}/actions`),
+    api.get(`/api/tenants/${tenantName}/blocked-actions`),
+  ]);
   const riskAccepted = allActions.filter(a => a.status === 'Risk Accepted');
   const notApplicable = allActions.filter(a => a.status === 'Not Applicable');
   const hasExcluded = riskAccepted.length + notApplicable.length > 0;
@@ -1868,6 +1944,7 @@ async function _downloadSnapshotComparisonPDF(today) {
     </div>
   </div>
 
+  ${_blockedPdfSection(blockedActions)}
   ${riskSectionHtml}
 
   <div class="footer">M365 Security Posture Manager &middot; ${today}</div>
@@ -1917,6 +1994,42 @@ async function toggleCompareActionDetail(tenantName, actionId, rowId) {
 }
 
 // ── PDF Report Download ──
+
+// Blocked actions differ from accepted risks: nobody signed them off — they
+// are open items stuck behind an unfinished prerequisite. Reports show them
+// as their own section so management sees the bottlenecks, not just the
+// consciously accepted exposure.
+function _blockedPdfTable(blocked) {
+  const rows = (blocked||[]).map(b => `<tr>
+    <td style="vertical-align:top"><strong>${esc(b.title||'')}</strong></td>
+    <td style="vertical-align:top;font-size:10px">${esc(b.priority||'')}</td>
+    <td style="vertical-align:top;font-size:10px">${esc(b.status||'')}</td>
+    <td style="vertical-align:top;font-size:10px">${esc(b.workload||'')}</td>
+    <td style="vertical-align:top">${(b.blocked_by||[]).map(x=>`&#128274; ${esc(x.title||'')} <span style="color:#64748b;font-size:10px">(${esc(x.status||'')})</span>`).join('<br>')}</td>
+  </tr>`).join('');
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
+    <thead><tr style="background:#fef2f2">
+      <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #fecaca;width:30%">Blocked Action</th>
+      <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #fecaca;width:9%">Priority</th>
+      <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #fecaca;width:11%">Status</th>
+      <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #fecaca;width:12%">Workload</th>
+      <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #fecaca;width:38%">Blocked By (prerequisite &middot; status)</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function _blockedPdfSection(blocked) {
+  if(!(blocked||[]).length) return '';
+  return `<div style="page-break-before:always;padding-top:8px">
+    <h2 style="font-size:18px;color:#0f172a;margin-bottom:4px;border:none">Blocked Actions</h2>
+    <p style="color:#64748b;font-size:11px;margin-bottom:16px">
+      ${blocked.length} open action(s) cannot proceed because a prerequisite is not done.
+      Unlike <em>Accepted Risks</em> (a documented, signed-off decision), these are unresolved
+      bottlenecks — completing the blocking items below is the fastest way to restore progress.
+    </p>
+    ${_blockedPdfTable(blocked)}
+  </div>`;
+}
+
 async function downloadDashboardPDF() {
   if (!requireTenant()) return;
   const t = state.activeTenant.name;
@@ -1925,9 +2038,12 @@ async function downloadDashboardPDF() {
 
   toast('Building management report...', 'info');
 
-  const [fullScores, adjScores] = await Promise.all([
+  const [fullScores, adjScores, blockedActions] = await Promise.all([
     api.get(`/api/tenants/${t}/scores`),
     api.get(`/api/tenants/${t}/scores?exclude_na=1`),
+    (_dashData.blocked && _dashData.blocked.length !== undefined)
+      ? Promise.resolve(_dashData.blocked)
+      : api.get(`/api/tenants/${t}/blocked-actions`),
   ]);
   const allActions = (_dashData.allActions && _dashData.allActions.length)
     ? _dashData.allActions
@@ -1951,12 +2067,13 @@ async function downloadDashboardPDF() {
     today,
     fullScores, adjScores, hasExcluded,
     riskAccepted, notApplicable, raByWorkload,
+    blockedActions,
   }));
   printWin.document.close();
 }
 
 // Build a management-style PDF report HTML string (shared by dashboard + comparison PDF helpers)
-function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, adjScores, hasExcluded, riskAccepted, notApplicable, raByWorkload, extraSections}) {
+function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, adjScores, hasExcluded, riskAccepted, notApplicable, raByWorkload, blockedActions, extraSections}) {
   function scoreColor(pct) {
     if (pct >= 80) return '#16a34a';
     if (pct >= 60) return '#84cc16';
@@ -2106,6 +2223,7 @@ function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, a
       <div>Total Actions: <strong>${fullScores.total_actions||0}</strong></div>
       <div>Completed: <strong>${fullScores.completed_actions||0}</strong></div>
       ${hasExcluded ? `<div>N/A + Risk Accepted: <strong>${naRaCount}</strong></div>` : ''}
+      ${(blockedActions||[]).length ? `<div style="color:#dc2626">Blocked: <strong>${blockedActions.length}</strong></div>` : ''}
     </div>
   </div>
 
@@ -2166,6 +2284,7 @@ function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, a
   </div>
 
   ${extraSections || ''}
+  ${_blockedPdfSection(blockedActions)}
   ${riskSection}
 
   <div class="footer">M365 Security Posture Manager &middot; ${today}</div>
@@ -2215,7 +2334,9 @@ let expandedAction = null;
 async function renderActions() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
-  document.getElementById('topbar-actions').innerHTML = '<button class="btn btn-primary" onclick="showAddAction()">+ Add Action</button>';
+  document.getElementById('topbar-actions').innerHTML = `
+    <button class="btn btn-sm" onclick="exportActionsExcel()" title="Export the currently filtered actions to Excel">Export Excel</button>
+    <button class="btn btn-primary" onclick="showAddAction()">+ Add Action</button>`;
 
   const c = document.getElementById('content');
   c.innerHTML = `
@@ -2225,7 +2346,7 @@ async function renderActions() {
       <select id="f-workload" onchange="filterActions()"><option value="">All Workloads</option>${selectOptions(state.enums.workloads)}</select>
       <select id="f-source" onchange="filterActions()"><option value="">All Sources</option>${selectOptions(state.enums.source_tools)}</select>
       <select id="f-priority" onchange="filterActions()"><option value="">All Priorities</option>${selectOptions(state.enums.priorities)}</select>
-      <select id="f-freshness" onchange="filterActions()"><option value="">All Items</option><option value="new-7d">New (last 7 days)</option><option value="new-30d">New (last 30 days)</option><option value="stale-30d">Stale (not seen 30d+)</option><option value="stale-90d">Stale (not seen 90d+)</option><option value="never-imported">Never in a report</option></select>
+      <select id="f-freshness" onchange="filterActions()"><option value="">All Items</option><option value="regressed">&#9888; Regressed (was compliant)</option><option value="new-7d">New (last 7 days)</option><option value="new-30d">New (last 30 days)</option><option value="stale-30d">Stale (not seen 30d+)</option><option value="stale-90d">Stale (not seen 90d+)</option><option value="never-imported">Never in a report</option></select>
     </div>
     <div class="filter-bar" id="zt-filters" style="display:none;margin-top:-8px;padding-top:0">
       <select id="f-pillar" onchange="applyZtFilters()"><option value="">All Pillars</option><option value="Identity">Identity</option><option value="Devices">Devices</option></select>
@@ -2319,6 +2440,8 @@ function applyZtFilters() {
       actions = actions.filter(a => a.last_seen_in_report && a.last_seen_in_report < cutoff);
     } else if(freshness === 'never-imported') {
       actions = actions.filter(a => !a.last_seen_in_report);
+    } else if(freshness === 'regressed') {
+      actions = actions.filter(a => a.regressed_at);
     }
   }
 
@@ -2380,12 +2503,13 @@ function _renderActionsTableSorted() {
     const planBadge = plans.length ? `<span class="badge badge-info" title="${esc(plans.map(p=>p.plan_name).join(', '))}" style="font-size:10px;cursor:help">&#128203; ${plans.length}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
     const peerCount = _peerDisagreements[a.id] || 0;
     const peerStar = peerCount ? `<span title="${peerCount} cross-tool peer${peerCount>1?'s':''} with a different status — review whether they should also change" style="color:var(--warning);font-weight:700;cursor:help;margin-left:4px">*</span>` : '';
+    const regressMark = a.regressed_at ? `<span class="badge badge-danger" title="Was compliant, regressed on ${esc(a.regressed_at.substring(0,10))}" style="font-size:9px;margin-left:4px;cursor:help">&#8595; REGRESSED</span>` : '';
     return `
     <tr onclick="toggleActionDetail('${a.id}')" style="cursor:pointer" id="row-${a.id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="action-cb" value="${a.id}"></td>
       <td><code style="font-size:11px">${a.id}</code></td>
       <td style="font-size:12px"><code>${esc(a.reference_id||'-')}</code></td>
-      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${peerStar}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
+      <td style="max-width:300px">${esc((a.title||'').substring(0,70))}${peerStar}${regressMark}${a.correlation_group_id?'<span class="corr-badge" title="Correlated">&#128279;</span>':''}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${esc(a.workload||'')}</td>
@@ -2415,6 +2539,18 @@ function _renderActionsTableSorted() {
 
   // Wire up checkbox change listeners
   el.querySelectorAll('.action-cb').forEach(cb => cb.addEventListener('change', updateBatchBar));
+}
+
+function exportActionsExcel() {
+  const rows = (_actionsData||[]).map(a => [
+    a.id, a.reference_id||'', a.title||'', a.status||'', a.priority||'',
+    a.risk_level||'', a.workload||'', a.source_tool||'', a.score, a.max_score,
+    a.responsible||'', a.planned_date||'', a.compliant_since?.substring(0,10)||'',
+    a.regressed_at?.substring(0,10)||'', a.last_seen_in_report?.substring(0,10)||'',
+    a.notes||'',
+  ]);
+  exportTableExcel(`actions_${state.activeTenant.name}_${new Date().toISOString().substring(0,10)}`, 'Actions',
+    ['ID','Reference','Title','Status','Priority','Risk Level','Workload','Source','Score','Max Score','Responsible','Planned Date','Compliant Since','Regressed At','Last Seen','Notes'], rows);
 }
 
 function toggleSelectAllActions(master) {
@@ -2711,6 +2847,8 @@ function actionDetailHtml(a) {
             `}
             ${!isZTR && !isSCuBA ? `<div class="sidebar-field"><div class="field-label">Category</div><div class="field-value">${esc(a.category||'N/A')}</div></div>
             <div class="sidebar-field"><div class="field-label">Product</div><div class="field-value">${esc(a.subcategory||'N/A')}</div></div>` : ''}
+            ${a.compliant_since?`<div class="sidebar-field"><div class="field-label">Compliant Since</div><div class="field-value" style="color:var(--success);font-weight:600">&#10003; ${esc(a.compliant_since.substring(0,10))}</div></div>`:''}
+            ${a.regressed_at?`<div class="sidebar-field"><div class="field-label">Regression</div><div class="field-value"><span class="badge badge-danger">REGRESSED</span> <span style="font-size:12px">${esc(a.regressed_at.substring(0,10))}</span><div style="font-size:11px;color:var(--text-light);margin-top:2px">Was compliant before — see History tab</div></div></div>`:''}
             <div class="sidebar-field"><div class="field-label">Priority</div><div class="field-value">${priorityBadge(a.priority)}</div></div>
             <div class="sidebar-field"><div class="field-label">Risk Level</div><div class="field-value">${a.risk_level}</div></div>
             <div class="sidebar-field"><div class="field-label">User Impact</div><div class="field-value">${a.user_impact}</div></div>
@@ -2913,6 +3051,7 @@ async function addAction() {
 
 async function showEditAction(id) {
   const a = await api.get(`/api/actions/${id}`);
+  window._editingOldStatus = a.status;
   const linkedToGlobal = !!a.global_action_id;
   const overridden = !!a.is_implementation_overridden;
   const globalSteps = a.global_implementation_steps || '';
@@ -3050,6 +3189,23 @@ async function updateAction(id) {
   const r = await api.put(`/api/actions/${id}`, data);
   if(r && r.error) return toast(r.error,'error');
   closeModal(); toast('Action updated','success');
+
+  // One fix, all tools: when the status changed and linked cross-tool
+  // actions now disagree, offer to sync them in one go.
+  if(data.status && data.status !== window._editingOldStatus) {
+    const peers = await api.get(`/api/actions/${id}/peers`);
+    const differing = (peers||[]).filter(p => p.status_differs);
+    if(differing.length) {
+      const list = differing.slice(0,5).map(p=>`${p.source_tool}: ${(p.title||'').substring(0,50)}`).join('\n');
+      if(await showConfirm(`${differing.length} Linked Action(s)`,
+          `Other tools check the same control:\n${list}${differing.length>5?'\n…':''}\n\nSet them to "${data.status}" too, so one fix validates every tool?`,
+          'Sync all', 'btn-primary')) {
+        const s = await api.post(`/api/actions/${id}/peers/sync`, {});
+        if(s.error) toast(s.error,'error');
+        else toast(`${s.updated} linked action(s) set to ${s.status}`, 'success');
+      }
+    }
+  }
   if(state.currentPage === 'actions') filterActions(); else navigate(state.currentPage);
 }
 
@@ -4276,11 +4432,16 @@ async function renderCorrelations() {
   const tabBar = `<div class="card mb-16" style="padding:0">
     <div class="action-tabs" style="margin:0">
       <div class="${tabClass('results')}" onclick="_corrTab='results';renderCorrelations()">Correlation Results</div>
+      <div class="${tabClass('suggestions')}" onclick="_corrTab='suggestions';renderCorrelations()">Suggested Links</div>
       <div class="${tabClass('families')}" onclick="_corrTab='families';renderCorrelations()">Manage Control Families</div>
     </div></div>`;
 
   if(_corrTab === 'families') {
     await renderControlFamilies(tabBar);
+    return;
+  }
+  if(_corrTab === 'suggestions') {
+    await renderSuggestedLinks(tabBar);
     return;
   }
 
@@ -4300,7 +4461,7 @@ async function renderCorrelations() {
       <p style="font-size:13px;color:var(--text-light);margin-bottom:8px">${esc(g.description||'')}</p>
       <div style="font-size:13px;margin-bottom:8px">Found in ${g.source_count} tools: ${g.sources.join(', ')}</div>
       <div class="table-wrap"><table><thead><tr><th>Source</th><th>Title</th><th>Status</th><th>Score</th><th style="width:40px"></th></tr></thead><tbody>
-        ${g.actions.map(a=>`<tr><td style="font-size:12px">${esc(a.source_tool||'')}</td><td>${esc((a.title||'').substring(0,60))}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}');event.stopPropagation()" title="Remove from group">&times;</button></td></tr>`).join('')}
+        ${g.actions.map(a=>`<tr onclick="openActionQuickView('${a.id}')" style="cursor:pointer"><td style="font-size:12px">${esc(a.source_tool||'')}</td><td>${esc((a.title||'').substring(0,60))}</td><td>${statusBadge(a.status)}</td><td>${a.score!=null?a.score+'/'+a.max_score:'-'}</td><td onclick="event.stopPropagation()"><button class="btn btn-sm btn-danger" onclick="unlinkActionFromGroup('${a.id}')" title="Remove from group">&times;</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`).join('');
 
@@ -4310,6 +4471,70 @@ async function renderCorrelations() {
       <div class="stat-card"><div class="value">${corr.reduce((s,g)=>s+g.action_count,0)}</div><div class="label">Linked Actions</div></div>
       <div class="stat-card"><div class="value">${corr.filter(g=>g.source_count>1).length}</div><div class="label">Cross-tool Links</div></div>
     </div></div>${html}`;
+}
+
+// ── Suggested cross-tool links (same control found by several tools) ──
+async function renderSuggestedLinks(tabBar) {
+  const t = state.activeTenant.name;
+  const suggestions = await api.get(`/api/tenants/${t}/suggested-links`);
+
+  const rows = (suggestions||[]).map((s,i) => `<tr id="sugg-row-${i}">
+    <td style="text-align:center;font-weight:600;color:${s.similarity>=0.75?'var(--success)':'var(--warning)'}">${Math.round(s.similarity*100)}%</td>
+    <td>
+      <div style="font-size:12px"><span class="badge badge-info" style="font-size:10px">${esc(s.a.source_tool)}</span> ${statusBadge(s.a.status)}</div>
+      <a href="#" onclick="openActionQuickView('${s.a.id}');event.preventDefault()" style="font-size:13px">${esc((s.a.title||'').substring(0,70))}</a>
+    </td>
+    <td>
+      <div style="font-size:12px"><span class="badge badge-info" style="font-size:10px">${esc(s.b.source_tool)}</span> ${statusBadge(s.b.status)}</div>
+      <a href="#" onclick="openActionQuickView('${s.b.id}');event.preventDefault()" style="font-size:13px">${esc((s.b.title||'').substring(0,70))}</a>
+    </td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-primary" onclick="acceptSuggestedLink('${s.a.id}','${s.b.id}',${i},${s.status_differs})">Link</button>
+      <button class="btn btn-sm" onclick="dismissSuggestedLink('${s.a.id}','${s.b.id}',${i})">Dismiss</button>
+    </td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card">
+      <div class="card-header">Suggested Cross-Tool Links (${(suggestions||[]).length})</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+        These action pairs from different tools very likely address the <strong>same control</strong>
+        (e.g. SCuBA and Secure Score both check "Disable device code authentication").
+        Linking them makes the tool warn when their statuses disagree and lets one fix update all of them —
+        so a single remediation raises the score in every framework at once.
+      </p>
+      ${rows ? `<div class="table-wrap"><table>
+        <thead><tr><th style="width:70px">Match</th><th>Action A</th><th>Action B</th><th style="width:140px"></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div style="padding:32px;text-align:center;color:var(--success)">&#10003; No open suggestions — everything similar is already linked, correlated, or was dismissed.</div>'}
+    </div>`;
+}
+
+async function acceptSuggestedLink(aId, bId, rowIdx, statusDiffers) {
+  const r = await api.post(`/api/actions/${aId}/links`, {target_action_id: bId});
+  if(r.error) return toast(r.error, 'error');
+  const row = document.getElementById(`sugg-row-${rowIdx}`);
+  if(row) row.style.opacity = '0.45';
+  const cell = row?.querySelector('td:last-child');
+  if(cell) cell.innerHTML = '<span class="badge badge-success">Linked</span>';
+  toast('Actions linked as the same control', 'success');
+  if(statusDiffers) {
+    if(await showConfirm('Statuses Differ',
+        'The two linked actions currently have different statuses. Copy the first action\'s status to the other so they stay in sync?',
+        'Sync status', 'btn-primary')) {
+      const s = await api.post(`/api/actions/${aId}/peers/sync`, {peer_ids: [bId]});
+      if(!s.error) toast(`Status synced (${s.status})`, 'success');
+    }
+  }
+}
+
+async function dismissSuggestedLink(aId, bId, rowIdx) {
+  const t = state.activeTenant.name;
+  const r = await api.post(`/api/tenants/${t}/suggested-links/dismiss`, {action_a_id: aId, action_b_id: bId});
+  if(r.error) return toast(r.error, 'error');
+  const row = document.getElementById(`sugg-row-${rowIdx}`);
+  if(row) row.remove();
+  toast('Suggestion dismissed — it will not be shown again', 'info');
 }
 
 async function renderControlFamilies(tabBar) {
@@ -4625,7 +4850,7 @@ async function renderE8() {
     ).join(' ');
 
     // Action table
-    let actionRows = (d.actions||[]).map(a => `<tr>
+    let actionRows = (d.actions||[]).map(a => `<tr onclick="event.stopPropagation();openActionQuickView('${a.id}')" style="cursor:pointer">
       <td style="font-size:11px;font-family:monospace">${esc(a.reference_id||'')}</td>
       <td style="font-size:12px">${esc(a.source_tool||'')}</td>
       <td>${esc((a.title||'').substring(0,55))}</td>
@@ -4633,7 +4858,7 @@ async function renderE8() {
       <td>${priorityBadge(a.priority)}</td>
       <td style="font-size:12px">${esc(a.maturity?.replace('Maturity ','')||'—')}</td>
       <td>${a.score!=null?a.score+'/'+a.max_score:'—'}</td>
-      <td><button class="btn btn-sm" onclick="event.stopPropagation();removeE8Action('${a.id}')" title="Remove from E8 control" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
+      <td onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="removeE8Action('${a.id}')" title="Remove from E8 control" style="padding:2px 6px;font-size:11px;color:var(--danger)">&times;</button></td>
     </tr>`).join('');
 
     return `<div class="card mb-16">
@@ -4719,10 +4944,12 @@ async function renderE8() {
 
   const radarChart = renderRadarChart(controls);
 
+  window._e8Controls = controls;
   document.getElementById('content').innerHTML = `
     <div class="flex justify-between items-center mb-16">
       <h2 style="margin:0">Essential Eight Assessment</h2>
       <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-sm" onclick="exportE8Excel()">Export Excel</button>
         <label style="font-size:12px;display:flex;align-items:center;gap:6px">
           <input type="checkbox" ${_e8ExcludeNA?'checked':''} onchange="_e8ExcludeNA=this.checked;renderE8()"> Exclude N/A & Risk Accepted
         </label>
@@ -4797,6 +5024,20 @@ async function renderE8() {
         <a href="https://learn.microsoft.com/en-us/compliance/anz/e8-overview" target="_blank">Microsoft E8 Overview</a>
       </div>
     </div>`;
+}
+
+function exportE8Excel() {
+  const controls = window._e8Controls || {};
+  const rows = [];
+  for(const [ctrl, d] of Object.entries(controls)) {
+    for(const a of (d.actions||[])) {
+      rows.push([ctrl, d.achieved_maturity||'', a.maturity||'', a.reference_id||'',
+                 a.source_tool||'', a.title||'', a.status||'', a.priority||'',
+                 a.score!=null?a.score:'', a.max_score!=null?a.max_score:'']);
+    }
+  }
+  exportTableExcel(`essential_eight_${state.activeTenant.name}`, 'Essential Eight',
+    ['E8 Control','Achieved Maturity','Action Maturity','Reference','Source','Title','Status','Priority','Score','Max Score'], rows);
 }
 
 // ── E8 action management ──
@@ -4884,7 +5125,7 @@ async function renderScuba() {
 
       let rows = (grp.actions || []).map(a => {
         const cid = a.reference_id || a.source_id?.replace('scuba_','') || '';
-        return `<tr>
+        return `<tr onclick="openActionQuickView('${a.id}')" style="cursor:pointer" title="Click for full details">
           <td style="font-size:12px;font-family:monospace;white-space:nowrap">${esc(cid)}</td>
           <td style="font-size:12px">${esc((a.title||'').replace(/^\[\w+\]\s*/,'').substring(0,90))}</td>
           <td>${statusBadge(a.status)}</td>
@@ -4957,8 +5198,11 @@ async function renderScuba() {
       <tbody>${rptRows}</tbody></table></div></div>`;
   }
 
+  window._scubaData = data;
   document.getElementById('content').innerHTML = `
-    <div class="card mb-16"><div class="grid grid-4" style="grid-template-columns: auto 1fr 1fr 1fr 1fr">
+    <div class="card mb-16">
+      <div style="text-align:right"><button class="btn btn-sm" onclick="exportScubaExcel()">Export Excel</button></div>
+      <div class="grid grid-4" style="grid-template-columns: auto 1fr 1fr 1fr 1fr">
       <div class="stat-card">${gauge(passRate, 100)}<div class="label">Pass Rate</div></div>
       <div class="stat-card"><div class="value">${data.total_controls}</div><div class="label">Total Controls</div></div>
       <div class="stat-card"><div class="value" style="color:var(--success)">${data.passed}</div><div class="label">Passed</div></div>
@@ -4967,6 +5211,23 @@ async function renderScuba() {
     </div></div>
     ${reportsHtml}
     ${productSections}`;
+}
+
+function exportScubaExcel() {
+  const d = window._scubaData;
+  if(!d) return;
+  const rows = [];
+  for(const [prod, pd] of Object.entries(d.products||{})) {
+    for(const [grpName, grp] of Object.entries(pd.groups||{})) {
+      for(const a of (grp.actions||[])) {
+        rows.push([prod, grpName, a.reference_id||a.source_id?.replace('scuba_','')||'',
+                   (a.title||'').replace(/^\[\w+\]\s*/,''), a.status||'', a.subcategory||'',
+                   a.current_value||'', a.notes||'']);
+      }
+    }
+  }
+  exportTableExcel(`scuba_${state.activeTenant.name}`, 'SCuBA',
+    ['Product','Group','Control ID','Requirement','Result','Criticality','Details','Notes'], rows);
 }
 
 async function showScubaReportDetail(reportId) {
@@ -5047,7 +5308,7 @@ async function renderExport() {
       <div class="card-header">Data Export (CSV / JSON)</div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Full action data with all tracked fields — for Excel, Power BI, or your own scripts.</p>
       <div class="form-row">
-        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="csv">CSV (Excel)</option><option value="json">JSON</option></select></div>
+        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option></select></div>
         <div class="form-group"><label>Status</label><select id="dexp-status">${dStatusOpts}</select></div>
         <div class="form-group"><label>Source Tool</label><select id="dexp-source">${srcOpts}</select></div>
         <div class="form-group"><label>Workload</label><select id="dexp-workload">${wlOpts}</select></div>
@@ -5277,15 +5538,19 @@ async function renderHistory() {
   const clSources = [...new Set(_histChangelog.map(h=>h.source_tool).filter(Boolean))].sort();
   const clUsers = [...new Set(_histChangelog.map(h=>h.changed_by).filter(Boolean))].sort();
 
+  window._histImports = imports;
   document.getElementById('content').innerHTML = `
     <div class="tabs"><div class="tab active" onclick="showHistTab(this,'imp-tab')">Imports (${imports.length})</div><div class="tab" onclick="showHistTab(this,'cl-tab')">Change Log</div></div>
-    <div id="imp-tab" class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>File</th><th>Parsed</th><th>New</th><th>Updated</th></tr></thead><tbody>${impRows||'<tr><td colspan="6" class="text-center">No imports yet</td></tr>'}</tbody></table></div></div>
+    <div id="imp-tab" class="card">
+      <div style="text-align:right;margin-bottom:8px"><button class="btn btn-sm" onclick="exportImportsExcel()">Export Excel</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>File</th><th>Parsed</th><th>New</th><th>Updated</th></tr></thead><tbody>${impRows||'<tr><td colspan="6" class="text-center">No imports yet</td></tr>'}</tbody></table></div></div>
     <div id="cl-tab" class="card hidden">
       <div class="filter-bar" style="margin-bottom:12px">
         <input type="text" id="cl-search" placeholder="Search action title..." oninput="renderChangelogRows()">
         <select id="cl-source" onchange="renderChangelogRows()"><option value="">All Sources</option>${clSources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
         <select id="cl-by" onchange="renderChangelogRows()"><option value="">All Users</option><option value="__import__">Imports only</option>${clUsers.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('')}</select>
         <select id="cl-type" onchange="renderChangelogRows()"><option value="">All Changes</option><option value="status">Status changes</option><option value="score">Score changes</option></select>
+        <button class="btn btn-sm" onclick="exportChangelogExcel()">Export Excel</button>
       </div>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Source</th><th>Change</th><th>By</th></tr></thead><tbody id="cl-tbody"></tbody></table></div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
@@ -5299,20 +5564,7 @@ async function renderHistory() {
 function renderChangelogRows() {
   const tbody = document.getElementById('cl-tbody');
   if(!tbody) return;
-  const q = (document.getElementById('cl-search')?.value||'').toLowerCase();
-  const src = document.getElementById('cl-source')?.value||'';
-  const by = document.getElementById('cl-by')?.value||'';
-  const type = document.getElementById('cl-type')?.value||'';
-
-  let rows = _histChangelog.filter(h => {
-    if(q && !(h.action_title||'').toLowerCase().includes(q)) return false;
-    if(src && h.source_tool !== src) return false;
-    if(by === '__import__') { if(h.changed_by) return false; }
-    else if(by && h.changed_by !== by) return false;
-    if(type === 'status' && !h.old_status) return false;
-    if(type === 'score' && h.old_score == null) return false;
-    return true;
-  });
+  let rows = _filteredChangelog();
 
   tbody.innerHTML = rows.map(h => {
     let desc = [];
@@ -5333,6 +5585,41 @@ async function loadMoreChangelog() {
   _histLimit += 400;
   _histChangelog = await api.get(`/api/tenants/${t}/changelog?limit=${_histLimit}`) || [];
   renderChangelogRows();
+}
+
+function exportImportsExcel() {
+  const rows = (window._histImports||[]).map(h => [
+    h.timestamp?.substring(0,19)||'', h.source_tool||'',
+    h.file_path?.split('/').pop()||'', h.action_count, h.new_actions, h.updated_actions,
+  ]);
+  exportTableExcel(`imports_${state.activeTenant.name}`, 'Imports',
+    ['Date','Source','File','Parsed','New','Updated'], rows);
+}
+
+function _filteredChangelog() {
+  const q = (document.getElementById('cl-search')?.value||'').toLowerCase();
+  const src = document.getElementById('cl-source')?.value||'';
+  const by = document.getElementById('cl-by')?.value||'';
+  const type = document.getElementById('cl-type')?.value||'';
+  return _histChangelog.filter(h => {
+    if(q && !(h.action_title||'').toLowerCase().includes(q)) return false;
+    if(src && h.source_tool !== src) return false;
+    if(by === '__import__') { if(h.changed_by) return false; }
+    else if(by && h.changed_by !== by) return false;
+    if(type === 'status' && !h.old_status) return false;
+    if(type === 'score' && h.old_score == null) return false;
+    return true;
+  });
+}
+
+function exportChangelogExcel() {
+  const rows = _filteredChangelog().map(h => [
+    h.timestamp?.substring(0,19)||'', h.action_title||'', h.source_tool||'',
+    h.old_status||'', h.new_status||'', h.old_score, h.new_score,
+    h.changed_by||(h.source_report?'import':''), h.notes||'',
+  ]);
+  exportTableExcel(`changelog_${state.activeTenant.name}`, 'Change Log',
+    ['Date','Action','Source','Old Status','New Status','Old Score','New Score','By','Notes'], rows);
 }
 
 function showHistTab(el, tabId) {
@@ -5508,6 +5795,7 @@ async function renderTrending() {
       <div class="tab" onclick="showTrendTab(this,'drift-tab')">Drift Reports (${driftReports.length})</div>
     </div>
     <div id="snap-tab" class="card">
+      <div style="text-align:right;margin-bottom:8px"><button class="btn btn-sm" onclick="exportSnapshotsExcel()">Export Excel</button></div>
       <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Trigger</th><th>Score</th><th>Δ vs prev.</th><th style="color:var(--purple)">Adjusted</th><th>Actions</th><th>Completed</th><th>By Tool</th><th></th></tr></thead>
       <tbody>${snapRows||'<tr><td colspan="9" class="text-center">No snapshots yet. Import data to create snapshots automatically.</td></tr>'}</tbody></table></div>
     </div>
@@ -5522,6 +5810,19 @@ function showTrendTab(el, tabId) {
   el.classList.add('active');
   document.getElementById('snap-tab').classList.toggle('hidden', tabId!=='snap-tab');
   document.getElementById('drift-tab').classList.toggle('hidden', tabId!=='drift-tab');
+}
+
+function exportSnapshotsExcel() {
+  const tools = [...new Set(_trendSnapshots.flatMap(s=>Object.keys(s.by_tool||{})))].sort();
+  const rows = _trendSnapshots.map((s,i) => {
+    const prev = _trendSnapshots[i+1];
+    const delta = (prev && prev.percentage!=null && s.percentage!=null) ? +(s.percentage-prev.percentage).toFixed(2) : '';
+    return [s.timestamp?.substring(0,19)||'', s.trigger||'', s.percentage, delta,
+            s.adj_percentage, s.total_actions, s.completed_actions,
+            ...tools.map(t=>(s.by_tool||{})[t]?.percentage ?? '')];
+  });
+  exportTableExcel(`snapshots_${state.activeTenant.name}`, 'Snapshots',
+    ['Timestamp','Trigger','Score %','Delta','Adjusted %','Actions','Completed', ...tools.map(t=>t+' %')], rows);
 }
 
 async function takeSnapshot() {
@@ -5642,6 +5943,7 @@ async function renderRisks() {
 
   document.getElementById('topbar-actions').innerHTML = `
     <button class="btn btn-sm" onclick="riskAddSelectedToPlan()" id="risk-plan-btn" disabled>Add Selected to Plan</button>
+    <button class="btn btn-sm" onclick="riskExportExcel()">Export Excel</button>
     <button class="btn btn-sm" onclick="riskExportCsv()">Export CSV</button>
     <button class="btn btn-sm btn-danger" onclick="expireRisks()" title="Auto-revert expired risk acceptances back to ToDo">Auto-expire</button>`;
 
@@ -5946,6 +6248,17 @@ async function riskExtendSave(actionId) {
   renderRisks();
 }
 
+function riskExportExcel() {
+  const actions = riskFilteredActions();
+  const rows = actions.map(a => [
+    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.risk_accepted_at?.substring(0,10)||'', a.risk_review_date||'', a.risk_expiry_date||'',
+    a.risk_justification||'', a.max_score||0,
+  ]);
+  exportTableExcel(`risk-register-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}`, 'Risk Register',
+    ['ID','Title','Workload','Source','Priority','Owner','Accepted At','Review Date','Expiry Date','Justification','Max Score'], rows);
+}
+
 function riskExportCsv() {
   const actions = riskFilteredActions();
   if (!actions.length) return toast('Nothing to export with current filters', 'error');
@@ -6085,6 +6398,7 @@ async function renderCpGlobalActions() {
   // Compliance-expert filters (computed on the enriched list)
   if(_cpGaFilter.unmapped) actions = actions.filter(a => !(a.compliance_mapping_count > 0));
   if(_cpGaFilter.no_impl) actions = actions.filter(a => !(a.implementation_steps||'').trim());
+  _cpGaData = actions;
 
   const rows = actions.map(a => `<tr data-ga-id="${a.id}" onclick="showCpGlobalActionDetail('${a.id}')" style="cursor:pointer">
     <td><strong>${esc((a.title||'').substring(0,60))}</strong>${(a.implementation_steps||'').trim()?'':' <span title="No implementation steps yet" style="color:var(--warning);cursor:help">&#9998;</span>'}</td>
@@ -6113,6 +6427,7 @@ async function renderCpGlobalActions() {
         <div class="flex gap-8 flex-wrap">
           <button class="btn btn-primary btn-sm" onclick="showCreateCpGlobalAction()">+ New Action</button>
           <button class="btn btn-sm" onclick="runCpMigration()">&#8635; Migrate from Tenants</button>
+          <button class="btn btn-sm" onclick="exportGaExcel()">Export Excel</button>
         </div>
       </div>
       <div class="flex gap-8 mb-12 flex-wrap items-center">
@@ -6133,6 +6448,19 @@ async function renderCpGlobalActions() {
         <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:32px">No global actions found. Use "Migrate from Tenants" to import existing actions.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+}
+
+let _cpGaData = [];
+
+function exportGaExcel() {
+  const rows = _cpGaData.map(a => [
+    a.id, a.title||'', a.source_tool||'', a.source_id||'', a.workload||'',
+    a.priority||'', a.risk_level||'', a.review_status||'',
+    a.compliance_mapping_count||0, a.tenant_action_count||0,
+    (a.implementation_steps||'').trim()?'yes':'no', a.reference_url||'',
+  ]);
+  exportTableExcel('global_actions', 'Global Actions',
+    ['ID','Title','Source Tool','Source ID','Workload','Priority','Risk Level','Review Status','Framework Mappings','Tenant Instances','Has Implementation','Reference URL'], rows);
 }
 
 async function toggleGaReview(gaId, newStatus) {
@@ -6312,13 +6640,14 @@ async function renderCpCrossTenant() {
   const filterOpts = ['','Microsoft Secure Score','SCuBA (CISA)','Zero Trust Assessment','Manual']
     .map(v=>`<option value="${v}">${v||'All Tools'}</option>`).join('');
 
+  window._crossTenantData = {tenants, globalActions};
   const headerCols = tenants.map(t=>`<th style="min-width:90px;text-align:center">${t}</th>`).join('');
   const rows = globalActions.map(ga => {
     const tenantCols = tenants.map(t => {
       const ts = ga.tenant_status[t];
       if(!ts) return `<td style="text-align:center"><span style="color:var(--border)">—</span></td>`;
       const color = statusColors[ts.status]||'gray';
-      return `<td style="text-align:center"><span class="badge badge-${color}" style="font-size:10px">${esc(ts.status||'')}</span></td>`;
+      return `<td style="text-align:center"><a href="#" onclick="openActionQuickView('${ts.action_id}');event.preventDefault()" style="text-decoration:none" title="Open details"><span class="badge badge-${color}" style="font-size:10px">${esc(ts.status||'')}</span></a></td>`;
     }).join('');
     return `<tr>
       <td style="max-width:220px"><strong>${esc((ga.title||'').substring(0,55))}</strong></td>
@@ -6333,7 +6662,10 @@ async function renderCpCrossTenant() {
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-12">
         <div class="card-header" style="margin:0">Implementation Status Across All Tenants</div>
-        <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
+        <div class="flex gap-8">
+          <select onchange="filterCrossTenantTable(this.value)" style="width:200px">${filterOpts}</select>
+          <button class="btn btn-sm" onclick="exportCrossTenantExcel()">Export Excel</button>
+        </div>
       </div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:12px">
         Showing ${globalActions.length} of ${total} global actions across ${tenants.length} tenants.
@@ -6344,6 +6676,17 @@ async function renderCpCrossTenant() {
         <tbody>${rows||'<tr><td colspan="20" style="text-align:center;padding:32px;color:var(--text-light)">No global actions. Run migration first.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+}
+
+function exportCrossTenantExcel() {
+  const d = window._crossTenantData;
+  if(!d) return;
+  const rows = d.globalActions.map(ga => [
+    ga.title||'', ga.source_tool||'', ga.workload||'', ga.review_status||'',
+    ...d.tenants.map(t => ga.tenant_status[t]?.status || ''),
+  ]);
+  exportTableExcel('cross_tenant_status', 'Cross-Tenant',
+    ['Action','Tool','Workload','Review', ...d.tenants], rows);
 }
 
 function filterCrossTenantTable(tool) {

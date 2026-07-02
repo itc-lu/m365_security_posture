@@ -435,6 +435,15 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_gasa_ga ON global_action_source_aliases(global_action_id);
 
+                -- Dismissed cross-tool link suggestions (don't re-suggest)
+                CREATE TABLE IF NOT EXISTS link_dismissals (
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    action_a_id TEXT NOT NULL,
+                    action_b_id TEXT NOT NULL,
+                    dismissed_at TEXT,
+                    PRIMARY KEY (tenant_name, action_a_id, action_b_id)
+                );
+
                 -- ── Automation: scheduled tool runs & imports ──
 
                 CREATE TABLE IF NOT EXISTS schedules (
@@ -1070,6 +1079,32 @@ class Database:
                 (d["id"],)
             ).fetchall()
             d["history"] = [dict(h) for h in history]
+
+            # Compliance timeline: since when is this action valid (Completed),
+            # or when did it regress after having been valid — mirroring the
+            # Secure Score "regressed" concept.
+            compliant_since = None
+            regressed_at = None
+            was_compliant = False
+            for h in d["history"]:
+                if not h.get("new_status"):
+                    continue  # score-only history entry
+                if h["new_status"] == ActionStatus.COMPLETED.value:
+                    compliant_since = h["timestamp"]
+                    regressed_at = None
+                    was_compliant = True
+                elif h.get("old_status") == ActionStatus.COMPLETED.value:
+                    regressed_at = h["timestamp"]
+                    compliant_since = None
+            if d.get("status") == ActionStatus.COMPLETED.value:
+                # Imported as Completed with no recorded transition: valid since creation
+                d["compliant_since"] = compliant_since or d.get("created_at")
+                d["regressed_at"] = None
+                d["was_compliant"] = True
+            else:
+                d["compliant_since"] = None
+                d["regressed_at"] = regressed_at if was_compliant else None
+                d["was_compliant"] = was_compliant
             # Merge implementation steps from global action and tenant override.
             ga_id = d.get("global_action_id")
             global_steps = ""
@@ -1105,6 +1140,9 @@ class Database:
             d["global_implementation_steps"] = ""
             d["implementation_steps"] = d.get("remediation_steps") or ""
             d["is_implementation_overridden"] = False
+            d["compliant_since"] = None
+            d["regressed_at"] = None
+            d["was_compliant"] = d.get("status") == ActionStatus.COMPLETED.value
         return d
 
     def get_actions(self, tenant_name: str, filters: dict = None,
@@ -2193,6 +2231,36 @@ class Database:
                 (action_id, action_id, action_id, action_id),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_linked_pairs(self, tenant_name: str) -> set:
+        """All existing action-link pairs for a tenant as sorted id tuples."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT al.source_action_id, al.target_action_id
+                     FROM action_links al
+                     JOIN actions a ON a.id = al.source_action_id
+                    WHERE a.tenant_name=?""",
+                (tenant_name,),
+            ).fetchall()
+        return {tuple(sorted((r["source_action_id"], r["target_action_id"]))) for r in rows}
+
+    def get_dismissed_link_pairs(self, tenant_name: str) -> set:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT action_a_id, action_b_id FROM link_dismissals WHERE tenant_name=?",
+                (tenant_name,),
+            ).fetchall()
+        return {tuple(sorted((r["action_a_id"], r["action_b_id"]))) for r in rows}
+
+    def dismiss_link_suggestion(self, tenant_name: str, action_a_id: str, action_b_id: str):
+        a, b = sorted((action_a_id, action_b_id))
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO link_dismissals
+                   (tenant_name, action_a_id, action_b_id, dismissed_at)
+                   VALUES (?,?,?,?)""",
+                (tenant_name, a, b, datetime.utcnow().isoformat()),
+            )
 
     def get_action_peers(self, action_id: str) -> list[dict]:
         """Return tenant-scoped peer actions: other actions in the same tenant

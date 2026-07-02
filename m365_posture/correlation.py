@@ -234,6 +234,94 @@ def auto_correlate(db: Database, tenant_name: str, threshold: float = 0.05):
     return {"groups_created": groups_created, "actions_linked": actions_linked}
 
 
+_STOPWORDS = {
+    "the", "a", "an", "to", "for", "of", "on", "in", "is", "are", "be",
+    "should", "shall", "must", "ensure", "enable", "enabled", "disable",
+    "disabled", "set", "configure", "configured", "use", "used", "using",
+    "all", "and", "or", "not", "with", "at", "least", "policy", "policies",
+    "microsoft", "365", "m365", "office",
+}
+
+
+def _title_tokens(title: str) -> set:
+    """Significant tokens of an action title for similarity matching."""
+    words = re.findall(r"[a-z0-9]+", (title or "").lower())
+    return {w for w in words if w not in _STOPWORDS and len(w) > 2}
+
+
+def suggest_action_links(db: Database, tenant_name: str,
+                         min_similarity: float = 0.5, limit: int = 60) -> list[dict]:
+    """Suggest cross-tool action pairs that likely represent the SAME control
+    (e.g. SCuBA and Secure Score both say "Disable device code authentication").
+
+    Uses title-token similarity (Jaccard) across actions from different source
+    tools, skipping pairs that are already linked, share a correlation group,
+    point at the same global action, or were dismissed by the user.
+    """
+    from difflib import SequenceMatcher
+
+    actions = db.get_actions(tenant_name)
+    candidates = [a for a in actions if a.get("title")]
+
+    linked = db.get_linked_pairs(tenant_name)
+    dismissed = db.get_dismissed_link_pairs(tenant_name)
+
+    # Invert token index so we only compare pairs sharing tokens
+    token_index: dict = {}
+    tokens_by_id = {}
+    for a in candidates:
+        toks = _title_tokens(a["title"])
+        tokens_by_id[a["id"]] = toks
+        for t in toks:
+            token_index.setdefault(t, []).append(a)
+
+    seen_pairs = set()
+    suggestions = []
+    for a in candidates:
+        toks_a = tokens_by_id[a["id"]]
+        if not toks_a:
+            continue
+        partners: dict = {}
+        for t in toks_a:
+            for b in token_index.get(t, []):
+                if b["id"] == a["id"] or b["source_tool"] == a["source_tool"]:
+                    continue
+                partners[b["id"]] = b
+        for b in partners.values():
+            key = tuple(sorted((a["id"], b["id"])))
+            if key in seen_pairs or key in linked or key in dismissed:
+                continue
+            seen_pairs.add(key)
+            # Same correlation group or global action already implies a link
+            if (a.get("correlation_group_id") and
+                    a.get("correlation_group_id") == b.get("correlation_group_id")):
+                continue
+            if (a.get("global_action_id") and
+                    a.get("global_action_id") == b.get("global_action_id")):
+                continue
+            toks_b = tokens_by_id[b["id"]]
+            union = toks_a | toks_b
+            jaccard = len(toks_a & toks_b) / len(union) if union else 0
+            if jaccard < min_similarity:
+                continue
+            ratio = SequenceMatcher(None, _normalize(a["title"]),
+                                    _normalize(b["title"])).ratio()
+            similarity = round(max(jaccard, ratio), 2)
+            if similarity < min_similarity:
+                continue
+            suggestions.append({
+                "similarity": similarity,
+                "a": {"id": a["id"], "title": a["title"], "source_tool": a["source_tool"],
+                      "status": a["status"], "workload": a.get("workload", "")},
+                "b": {"id": b["id"], "title": b["title"], "source_tool": b["source_tool"],
+                      "status": b["status"], "workload": b.get("workload", "")},
+                "status_differs": a["status"] != b["status"],
+            })
+
+    suggestions.sort(key=lambda s: -s["similarity"])
+    return suggestions[:limit]
+
+
 def get_correlation_summary(db: Database, tenant_name: str) -> list[dict]:
     """Get a summary of all correlation groups with their actions for a tenant."""
     groups = db.list_correlation_groups()
