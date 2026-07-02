@@ -3115,7 +3115,7 @@ async function startGraphAuth() {
   const r = await api.post(`/api/tenants/${t}/graph/device-code`);
   if(r.error) {
     btn.disabled = false;
-    btn.textContent = 'Sign in with Microsoft';
+    btn.textContent = 'Sign in with Device Code';
     toast(r.error, 'error');
     return;
   }
