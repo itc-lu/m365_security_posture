@@ -570,10 +570,11 @@ class Database:
                 )""")
                 row = conn.execute("SELECT name FROM schema_migrations WHERE name='cp_migration_v1'").fetchone()
                 if row is None:
-                    count = self.migrate_actions_to_global()
+                    result = self.migrate_actions_to_global()
                     conn.execute("INSERT INTO schema_migrations(name, applied_at) VALUES('cp_migration_v1', ?)", (datetime.utcnow().isoformat(),))
-                    if count:
-                        print(f"[INFO] Auto-migrated {count} actions to Control Plane global actions.", flush=True)
+                    if result.get("global_actions_created") or result.get("tenant_actions_linked"):
+                        print(f"[INFO] Control Plane migration: {result['global_actions_created']} global actions created, "
+                              f"{result['tenant_actions_linked']} tenant actions linked.", flush=True)
             except Exception as e:
                 print(f"[WARNING] Auto-migration skipped: {e}", flush=True)
 
@@ -1356,10 +1357,14 @@ class Database:
                                  existing["status"], action.status, source_file),
                             )
                             changes["status"] = action.status
+                            changes["import_suggested_status"] = ""
                         else:
                             # Record that the import wanted to change status, but we preserved
                             # the user's decision. Store the import's suggested status for reference.
                             changes["import_suggested_status"] = action.status
+                    elif existing.get("import_suggested_status"):
+                        # Import now agrees with the DB status — drop the stale conflict.
+                        changes["import_suggested_status"] = ""
 
                     # Always update source_id and title to latest format
                     changes["source_id"] = action.source_id
@@ -1494,6 +1499,58 @@ class Database:
 
         return new_count, updated_count, updated_details, touched_ids
 
+    # ── Import status conflicts ──
+
+    def get_import_status_conflicts(self, tenant_name: str) -> list[dict]:
+        """Actions whose protected DB status differs from the status the last
+        import reported (stored in import_suggested_status)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, title, status, import_suggested_status, source_tool,
+                          workload, last_seen_in_report
+                     FROM actions
+                    WHERE tenant_name=?
+                      AND import_suggested_status IS NOT NULL
+                      AND import_suggested_status != ''
+                      AND import_suggested_status != status
+                    ORDER BY source_tool, title""",
+                (tenant_name,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def resolve_import_status_conflicts(self, tenant_name: str, resolution: str,
+                                        action_ids: list[str] = None,
+                                        changed_by: str = "") -> dict:
+        """Resolve import/DB status conflicts.
+
+        resolution='use_import' applies the imported status to the action;
+        resolution='keep_mine' keeps the DB status. Both clear the conflict.
+        """
+        conflicts = self.get_import_status_conflicts(tenant_name)
+        if action_ids is not None:
+            wanted = set(action_ids)
+            conflicts = [c for c in conflicts if c["id"] in wanted]
+        applied = 0
+        dismissed = 0
+        for c in conflicts:
+            if resolution == "use_import":
+                # Route through update_action so history is recorded and the
+                # score auto-bump on Completed transitions applies.
+                self.update_action(
+                    c["id"],
+                    {"status": c["import_suggested_status"],
+                     "import_suggested_status": "",
+                     "change_notes": "Applied status reported by import"},
+                    changed_by=changed_by,
+                )
+                applied += 1
+            else:
+                self.update_action(c["id"], {"import_suggested_status": ""},
+                                   changed_by=changed_by)
+                dismissed += 1
+        return {"resolution": resolution, "applied": applied,
+                "dismissed": dismissed, "total": applied + dismissed}
+
     def deduplicate_actions(self, tenant_name: str, source_tool: str = None) -> dict:
         """Remove duplicate actions, keeping the most recently updated one.
 
@@ -1532,14 +1589,6 @@ class Database:
         return {"removed": removed, "checked": len(actions)}
 
     # ── Action history ──
-
-    def get_action_history(self, action_id: str) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM action_history WHERE action_id=? ORDER BY timestamp",
-                (action_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
 
     def get_tenant_change_log(self, tenant_name: str, limit: int = 100) -> list[dict]:
         with self._conn() as conn:
@@ -1778,35 +1827,6 @@ class Database:
             "blocks": [dict(r) for r in blocked_by_me],
         }
 
-    def get_dependency_graph(self, tenant_name: str) -> list[dict]:
-        """Get all dependencies for a tenant as edges."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT ad.*, a1.title as action_title, a1.status as action_status,
-                   a2.title as depends_on_title, a2.status as depends_on_status
-                   FROM action_dependencies ad
-                   JOIN actions a1 ON ad.action_id = a1.id
-                   JOIN actions a2 ON ad.depends_on_id = a2.id
-                   WHERE a1.tenant_name=?""",
-                (tenant_name,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_blocked_actions(self, tenant_name: str) -> list[dict]:
-        """Get actions that are blocked by incomplete dependencies."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT DISTINCT a.*, dep_a.id as blocking_id, dep_a.title as blocking_title
-                   FROM actions a
-                   JOIN action_dependencies ad ON a.id = ad.action_id
-                   JOIN actions dep_a ON ad.depends_on_id = dep_a.id
-                   WHERE a.tenant_name=?
-                   AND a.status NOT IN ('Completed', 'Not Applicable')
-                   AND dep_a.status NOT IN ('Completed', 'Risk Accepted')""",
-                (tenant_name,),
-            ).fetchall()
-            return [self._row_to_action_dict(r) for r in rows]
-
     def _would_create_cycle(self, action_id: str, depends_on_id: str) -> bool:
         """Check if adding action_id -> depends_on_id creates a cycle."""
         visited = set()
@@ -1828,89 +1848,7 @@ class Database:
                     stack.append(r["action_id"])
         return False
 
-    def get_implementation_order(self, tenant_name: str, action_ids: list[str] = None) -> list[dict]:
-        """Topological sort of actions respecting dependencies."""
-        with self._conn() as conn:
-            if action_ids:
-                placeholders = ",".join("?" * len(action_ids))
-                actions = conn.execute(
-                    f"SELECT * FROM actions WHERE id IN ({placeholders})", action_ids
-                ).fetchall()
-                deps = conn.execute(
-                    f"""SELECT * FROM action_dependencies
-                        WHERE action_id IN ({placeholders})
-                        AND depends_on_id IN ({placeholders})""",
-                    action_ids + action_ids,
-                ).fetchall()
-            else:
-                actions = conn.execute(
-                    "SELECT * FROM actions WHERE tenant_name=? AND status NOT IN ('Completed','Not Applicable')",
-                    (tenant_name,),
-                ).fetchall()
-                deps = conn.execute(
-                    """SELECT ad.* FROM action_dependencies ad
-                       JOIN actions a ON ad.action_id = a.id
-                       WHERE a.tenant_name=?""",
-                    (tenant_name,),
-                ).fetchall()
-
-        action_map = {dict(a)["id"]: self._row_to_action_dict(a) for a in actions}
-        # Build adjacency: action_id -> [depends_on_id, ...]
-        in_degree = {aid: 0 for aid in action_map}
-        graph = {aid: [] for aid in action_map}
-        for d in deps:
-            d = dict(d)
-            if d["action_id"] in action_map and d["depends_on_id"] in action_map:
-                graph[d["depends_on_id"]].append(d["action_id"])
-                in_degree[d["action_id"]] = in_degree.get(d["action_id"], 0) + 1
-
-        # Kahn's algorithm
-        queue = [aid for aid, deg in in_degree.items() if deg == 0]
-        ordered = []
-        while queue:
-            queue.sort(key=lambda x: action_map[x].get("priority", "Medium"))
-            node = queue.pop(0)
-            action_map[node]["_order"] = len(ordered) + 1
-            ordered.append(action_map[node])
-            for neighbor in graph.get(node, []):
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
-
-        # Any remaining are in cycles
-        for aid in action_map:
-            if aid not in {a["id"] for a in ordered}:
-                action_map[aid]["_order"] = len(ordered) + 1
-                action_map[aid]["_cycle"] = True
-                ordered.append(action_map[aid])
-
-        return ordered
-
     # ── Compliance Mappings ──
-
-    def get_action_compliance(self, action_id: str) -> list[dict]:
-        """Return compliance mappings for an action, sourced from the global
-        action's mappings (and falling back to legacy per-tenant rows for
-        actions not yet linked to a global action)."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT global_action_id FROM actions WHERE id=?", (action_id,)
-            ).fetchone()
-            ga_id = row["global_action_id"] if row else None
-            if ga_id:
-                rows = conn.execute(
-                    """SELECT framework, control_id, control_name, control_family, notes
-                         FROM global_compliance_mappings
-                        WHERE global_action_id=?
-                        ORDER BY framework, control_id""",
-                    (ga_id,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM compliance_mappings WHERE action_id=? ORDER BY framework, control_id",
-                    (action_id,),
-                ).fetchall()
-            return [dict(r) for r in rows]
 
     def get_compliance_summary(self, tenant_name: str, framework: str = None) -> dict:
         """Compliance posture for a tenant. Mappings live on the global action;

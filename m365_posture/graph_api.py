@@ -18,12 +18,9 @@ import hashlib
 import json
 import os
 import secrets
-import time
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import urlencode
 
 # Default scope for Secure Score read access
 GRAPH_SCOPES = "https://graph.microsoft.com/SecurityEvents.Read.All offline_access"
@@ -263,23 +260,6 @@ def exchange_auth_code(tenant_id: str, client_id: str, code: str,
             raise RuntimeError(err.get("error_description", body))
         except json.JSONDecodeError:
             raise RuntimeError(f"Token exchange failed ({e.code}): {body}")
-
-
-# Store pending interactive auth sessions (keyed by state)
-_interactive_sessions: dict = {}
-
-
-def wait_for_auth_callback(state: str, timeout: int = 300) -> dict | None:
-    """Wait for the auth callback to arrive. Returns the session data or None on timeout."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        session = _interactive_sessions.get(state)
-        if session and session.get("code"):
-            return session
-        if session and session.get("error"):
-            return session
-        time.sleep(1)
-    return None
 
 
 def fetch_secure_scores(access_token: str) -> dict:

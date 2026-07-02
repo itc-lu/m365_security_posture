@@ -317,6 +317,10 @@ body.unauth { background:#0f172a; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       Essential Eight
     </a>
+    <a href="#scuba" data-page="scuba">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg>
+      SCuBA
+    </a>
     <a href="#compliance" data-page="compliance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
       Compliance
@@ -361,10 +365,6 @@ body.unauth { background:#0f172a; }
     <a href="#cp-tenants" data-page="cp-tenants">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
       Tenant Config
-    </a>
-    <a href="#cp-correlations" data-page="cp-correlations">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      Correlations
     </a>
     <a href="#cp-merge" data-page="cp-merge">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -645,7 +645,7 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-correlations':'Control Plane · Correlations','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -660,7 +660,6 @@ async function navigate(page) {
     'cp-frameworks':renderCpFrameworks,
     'cp-users':renderCpUsers,
     'cp-tenants':renderCpTenants,
-    'cp-correlations':renderCpCorrelations,
     'cp-merge':renderMergeTool,
   };
   if(render[page]) await render[page]();
@@ -2104,7 +2103,7 @@ async function showPinActionModal() {
 async function pinSelectedActions() {
   const ids = [...document.querySelectorAll('.pin-cb:checked')].map(c=>c.value);
   if(!ids.length) return toast('Select at least one action','error');
-  for(const id of ids) await api.post(`/api/actions/${id}/pin`);
+  for(const id of ids) await api.put(`/api/actions/${id}`, {pinned_priority: 1});
   closeModal();
   toast(ids.length + ' action(s) pinned','success');
   _dashData = {};
@@ -2135,6 +2134,7 @@ async function renderActions() {
       <select id="f-zt-status" onchange="applyZtFilters()"><option value="">All ZT Statuses</option><option value="Failed">Failed</option><option value="Passed">Passed</option><option value="Investigate">Investigate</option><option value="Planned">Planned</option><option value="Skipped">Skipped</option></select>
       <select id="f-sfi" onchange="applyZtFilters()"><option value="">All SFI Pillars</option></select>
     </div>
+    <div id="import-conflicts-banner"></div>
     <div class="card"><div class="table-wrap" id="actions-table"></div></div>`;
   await filterActions();
 }
@@ -2143,6 +2143,9 @@ let _actionPlanMap = {};
 let _peerDisagreements = {};
 
 async function filterActions() {
+  // The edit/accept-risk modals reuse this as a refresh hook; skip silently
+  // when the Actions page isn't the one being displayed.
+  if(!document.getElementById('actions-table')) return;
   const t = state.activeTenant.name;
   const params = new URLSearchParams();
   const s = document.getElementById('f-search')?.value; if(s) params.set('search', s);
@@ -2151,13 +2154,25 @@ async function filterActions() {
   const src = document.getElementById('f-source')?.value; if(src) params.set('source_tool', src);
   const pr = document.getElementById('f-priority')?.value; if(pr) params.set('priority', pr);
 
-  const [actions, planMap, peerDisagreements] = await Promise.all([
+  const [actions, planMap, peerDisagreements, importConflicts] = await Promise.all([
     api.get(`/api/tenants/${t}/actions?${params}`),
     api.get(`/api/tenants/${t}/action-plans`),
     api.get(`/api/tenants/${t}/peer-disagreements`),
+    api.get(`/api/tenants/${t}/import-status-conflicts`),
   ]);
   _actionPlanMap = planMap || {};
   _peerDisagreements = peerDisagreements || {};
+
+  // Banner for unresolved import/DB status conflicts
+  const confBanner = document.getElementById('import-conflicts-banner');
+  if(confBanner) {
+    confBanner.innerHTML = (importConflicts||[]).length ? `
+      <div class="drift-banner neutral mb-16" style="background:#fef3c7;border-color:#fde68a">
+        <span style="font-size:20px">&#9888;</span>
+        <div style="flex:1"><strong>${importConflicts.length} action(s)</strong> have an imported status that differs from the status set in this tool.</div>
+        <button class="btn btn-sm btn-primary" onclick="showImportConflictsModal()">Review</button>
+      </div>` : '';
+  }
 
   // Show ZT filter row if ZT Report actions exist
   const hasZT = actions.some(a => a.source_tool === 'Zero Trust Report');
@@ -2489,6 +2504,19 @@ function actionDetailHtml(a) {
     </div>`;
   }
 
+  // Import/DB status conflict banner
+  let importConflictHtml = '';
+  if(a.import_suggested_status && a.import_suggested_status !== a.status) {
+    const cid = `detail-conf-${a.id}`;
+    importConflictHtml = `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px;font-size:13px">
+      <span style="color:#92400e">&#9888; Last import reported ${statusBadge(a.import_suggested_status)} but the status here is ${statusBadge(a.status)}.</span>
+      <span id="${cid}" style="margin-left:auto;white-space:nowrap">
+        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','use_import','${cid}');event.stopPropagation()">Use imported</button>
+        <button class="btn btn-sm" onclick="resolveImportConflict('${a.id}','keep_mine','${cid}');event.stopPropagation()">Keep mine</button>
+      </span>
+    </div>`;
+  }
+
   // Score bar
   const scorePct = a.max_score > 0 ? Math.round(a.score / a.max_score * 100) : 0;
   const scoreDisplay = a.score != null ? `${a.score} / ${a.max_score}` : 'N/A';
@@ -2534,6 +2562,7 @@ function actionDetailHtml(a) {
       <div>${srcBadge} ${statusBadge(a.status)}</div>
     </div>
     ${riskHtml}
+    ${importConflictHtml}
     <div id="peers-banner-${a.id}" style="display:none"></div>
     <div class="action-tabs">
       <div class="atab active" onclick="switchActionTab('${uid}','general',this);event.stopPropagation()">General</div>
@@ -2630,8 +2659,7 @@ function actionDetailHtml(a) {
       <div style="font-weight:600;margin-bottom:8px;font-size:13px">Linked Actions (Cross-Tool)</div>
       <div id="action-links-${uid}" style="margin-bottom:8px"><span style="color:var(--text-light);font-size:12px">Loading...</span></div>
       <button class="btn btn-sm" onclick="showLinkAction('${a.id}','${uid}');event.stopPropagation()">+ Link Action</button>
-      ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span>
-      ${a.import_suggested_status?` &middot; <span style="font-size:12px;color:var(--warning)">Import wanted status: <strong>${a.import_suggested_status}</strong> (protected)</span>`:''}</div>`:''}
+      ${a.last_seen_in_report?`<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-light)">Last seen in report: <strong>${a.last_seen_in_report?.substring(0,10)||'Never'}</strong></span></div>`:''}
     </div>
     <!-- History Tab -->
     ${hist?`<div class="action-tab-content" id="atab-${uid}-history">${hist}</div>`:''}
@@ -2709,9 +2737,10 @@ async function loadActionPeers(actionId) {
 }
 
 async function _syncPeerStatus(actionId) {
-  if(!confirm('Apply this action\'s current status to all differing peer actions?')) return;
+  if(!await showConfirm('Sync Status', "Apply this action's current status to all differing peer actions?", 'Sync', 'btn-primary')) return;
   try {
     const r = await api.post(`/api/actions/${actionId}/peers/sync`, {});
+    if(r.error) return toast(r.error, 'error');
     toast(`Status synced to ${r.updated} peer${r.updated!==1?'s':''}`, 'success');
     loadActionPeers(actionId);
     // refresh peer disagreement stars in the table
@@ -2880,7 +2909,8 @@ async function saveImplementation(id, scope) {
   const r = await api.put(`/api/actions/${id}/implementation`, {implementation_steps: steps, scope});
   if(r.error) return toast(r.error, 'error');
   toast(scope === 'global' ? 'Saved globally for all tenants' : 'Saved for this tenant only','success');
-  closeModal(); filterActions();
+  closeModal();
+  if(state.currentPage === 'actions') filterActions(); else navigate(state.currentPage);
 }
 
 async function saveImplementationLocal(id) {
@@ -2888,7 +2918,8 @@ async function saveImplementationLocal(id) {
   const r = await api.put(`/api/actions/${id}`, {remediation_steps: steps});
   if(r.error) return toast(r.error, 'error');
   toast('Saved','success');
-  closeModal(); filterActions();
+  closeModal();
+  if(state.currentPage === 'actions') filterActions(); else navigate(state.currentPage);
 }
 
 async function resetImplementationOverride(id) {
@@ -2920,7 +2951,8 @@ async function updateAction(id) {
   }
   const r = await api.put(`/api/actions/${id}`, data);
   if(r && r.error) return toast(r.error,'error');
-  closeModal(); toast('Action updated','success'); filterActions();
+  closeModal(); toast('Action updated','success');
+  if(state.currentPage === 'actions') filterActions(); else navigate(state.currentPage);
 }
 
 async function saveActionNotes(id, uid) {
@@ -2932,7 +2964,8 @@ async function saveActionNotes(id, uid) {
 async function deleteAction(id) {
   if(!await showConfirm('Delete Action', 'Delete this action? This cannot be undone.')) return;
   await api.del(`/api/actions/${id}`);
-  toast('Action deleted','success'); filterActions();
+  toast('Action deleted','success');
+  if(state.currentPage === 'actions') filterActions(); else navigate(state.currentPage);
 }
 
 // ── Import ──
@@ -3258,9 +3291,21 @@ async function doImport() {
         <div class="stat-card"><div class="value" style="color:var(--purple)">${r.correlation?.actions_linked||0}</div><div class="label">Correlated</div></div>
       </div>
       ${r.compliance?.total_mappings?`<div style="margin-top:12px;font-size:13px;color:var(--text-light)">Compliance: ${r.compliance.total_mappings} mappings across ${Object.keys(r.compliance.by_framework||{}).join(', ')}</div>`:''}
-      ${r.protected_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--primary)">&#128274; Protected Actions (status preserved)</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions had their status protected during import (Risk Accepted, Completed, In Progress, Exception).</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Current Status</th><th>Import Wanted</th></tr></thead><tbody>${r.protected_actions.map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.current_status)}</td><td>${statusBadge(d.import_wanted_status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-      ${r.stale_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--warning)">&#9888; Stale Actions (${r.stale_actions.length})</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions from the same source tool were not in this import. They may be obsolete.</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Status</th><th>Last Seen</th></tr></thead><tbody>${r.stale_actions.slice(0,20).map(d => `<tr><td>${d.title}</td><td>${statusBadge(d.status)}</td><td>${d.last_seen?.substring(0,10)||'—'}</td></tr>`).join('')}</tbody></table>${r.stale_actions.length>20?`<div style="font-size:11px;color:var(--text-light)">... and ${r.stale_actions.length-20} more</div>`:''}</div>` : ''}
-      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${d.title}</td><td><code>${d.source_id}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+d.existing_source_id+'</code>':''}</td><td>${d.matched_by}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.protected_actions?.length ? `<div style="margin-top:12px">
+        <div class="field-label" style="color:var(--primary)">&#128274; Status Conflicts (${r.protected_actions.length}) — your status was preserved</div>
+        <div style="font-size:12px;color:var(--text-light);margin-bottom:6px">These actions carry a manually set status (Risk Accepted, Completed, In Progress) that differs from what this report says. Decide per item — or for all at once — whether to keep your status or take the imported one.</div>
+        <div class="flex gap-8 mb-8">
+          <button class="btn btn-sm btn-primary" onclick="resolveAllImportConflicts('use_import')">Use imported status for all</button>
+          <button class="btn btn-sm" onclick="resolveAllImportConflicts('keep_mine')">Keep my status for all</button>
+        </div>
+        <table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>My Status</th><th>Imported Status</th><th style="width:210px">Decision</th></tr></thead><tbody>
+        ${r.protected_actions.map(d => `<tr><td>${esc(d.title||'')}</td><td>${statusBadge(d.current_status)}</td><td>${statusBadge(d.import_wanted_status)}</td>
+          <td id="imp-conf-${d.id}" style="white-space:nowrap">
+            <button class="btn btn-sm" onclick="resolveImportConflict('${d.id}','use_import','imp-conf-${d.id}')">Use imported</button>
+            <button class="btn btn-sm" onclick="resolveImportConflict('${d.id}','keep_mine','imp-conf-${d.id}')">Keep mine</button>
+          </td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${r.stale_actions?.length ? `<div style="margin-top:12px"><div class="field-label" style="color:var(--warning)">&#9888; Stale Actions (${r.stale_actions.length})</div><div style="font-size:12px;color:var(--text-light);margin-bottom:4px">These actions from the same source tool were not in this import. They may be obsolete.</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Status</th><th>Last Seen</th></tr></thead><tbody>${r.stale_actions.slice(0,20).map(d => `<tr><td>${esc(d.title||'')}</td><td>${statusBadge(d.status)}</td><td>${d.last_seen?.substring(0,10)||'—'}</td></tr>`).join('')}</tbody></table>${r.stale_actions.length>20?`<div style="font-size:11px;color:var(--text-light)">... and ${r.stale_actions.length-20} more</div>`:''}</div>` : ''}
+      ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${esc(d.title||'')}</td><td><code>${esc(d.source_id||'')}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+esc(d.existing_source_id||'')+'</code>':''}</td><td>${esc(d.matched_by||'')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
   // Reload ZT reports after import
@@ -3269,6 +3314,66 @@ async function doImport() {
   if(r.unlinked_actions && r.unlinked_actions.length > 0) {
     setTimeout(() => handlePostImportUnlinked(state.activeTenant.name, r), 400);
   }
+}
+
+// ── Import status conflict resolution ──
+
+async function resolveImportConflict(actionId, resolution, cellId) {
+  const t = state.activeTenant.name;
+  const r = await api.post(`/api/tenants/${t}/import-status-conflicts/resolve`, {resolution, action_ids: [actionId]});
+  if(r.error) return toast(r.error, 'error');
+  const cell = document.getElementById(cellId);
+  if(cell) cell.innerHTML = resolution === 'use_import'
+    ? '<span class="badge badge-success">Imported status applied</span>'
+    : '<span class="badge badge-gray">Kept my status</span>';
+}
+
+async function resolveAllImportConflicts(resolution) {
+  const t = state.activeTenant.name;
+  const msg = resolution === 'use_import'
+    ? 'Apply the imported status to ALL remaining conflicting actions?'
+    : 'Keep your current status for ALL remaining conflicting actions and dismiss the conflicts?';
+  if(!await showConfirm('Resolve All Conflicts', msg, 'Apply', 'btn-primary')) return;
+  const r = await api.post(`/api/tenants/${t}/import-status-conflicts/resolve`, {resolution});
+  if(r.error) return toast(r.error, 'error');
+  toast(`${r.total} conflict(s) resolved`, 'success');
+  closeModal();
+  if(state.currentPage === 'actions') filterActions();
+  else navigate(state.currentPage);
+}
+
+async function showImportConflictsModal() {
+  const t = state.activeTenant.name;
+  const conflicts = await api.get(`/api/tenants/${t}/import-status-conflicts`);
+  if(!conflicts.length) {
+    toast('No open import status conflicts', 'info');
+    if(state.currentPage === 'actions') filterActions();
+    return;
+  }
+  const rows = conflicts.map(c => `<tr>
+    <td>${esc((c.title||'').substring(0,70))}</td>
+    <td style="font-size:11px">${esc(c.source_tool||'')}</td>
+    <td>${statusBadge(c.status)}</td>
+    <td>${statusBadge(c.import_suggested_status)}</td>
+    <td id="conf-modal-${c.id}" style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="resolveImportConflict('${c.id}','use_import','conf-modal-${c.id}')">Use imported</button>
+      <button class="btn btn-sm" onclick="resolveImportConflict('${c.id}','keep_mine','conf-modal-${c.id}')">Keep mine</button>
+    </td>
+  </tr>`).join('');
+  openModal(`Import Status Conflicts (${conflicts.length})`, `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+      For these actions the last imported report says something different from the status set in this tool.
+      Your status was preserved — decide per item, or resolve everything at once.
+    </p>
+    <div class="flex gap-8 mb-12">
+      <button class="btn btn-sm btn-primary" onclick="resolveAllImportConflicts('use_import')">Use imported status for all</button>
+      <button class="btn btn-sm" onclick="resolveAllImportConflicts('keep_mine')">Keep my status for all</button>
+    </div>
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Title</th><th>Source</th><th>My Status</th><th>Imported</th><th style="width:210px">Decision</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`,
+    `<button class="btn btn-primary" onclick="closeModal();if(state.currentPage==='actions')filterActions()">Done</button>`);
 }
 
 function onSourceChange() {
@@ -4452,7 +4557,7 @@ async function e8AddAction(controlName) {
 }
 
 async function removeE8Action(actionId) {
-  if(!confirm('Remove this action from Essential Eight control?')) return;
+  if(!await showConfirm('Remove from Essential Eight', 'Remove this action from the Essential Eight control mapping?', 'Remove', 'btn-danger')) return;
   await api.put(`/api/actions/${actionId}`, {essential_eight_control:'', essential_eight_maturity:''});
   toast('Action removed from E8 control','success');
   renderE8();
@@ -5378,8 +5483,8 @@ function riskAddSelectedToPlan() {
 }
 
 async function riskRevoke(actionId) {
-  if (!confirm('Revoke this risk acceptance? The action will revert to ToDo and start counting toward the score again.')) return;
-  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null});
+  if (!await showConfirm('Revoke Risk Acceptance', 'Revoke this risk acceptance? The action will revert to ToDo and start counting toward the score again.', 'Revoke', 'btn-danger')) return;
+  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null, risk_accepted_at: null});
   toast('Risk acceptance revoked', 'success');
   renderRisks();
 }
@@ -5433,6 +5538,7 @@ function riskExportCsv() {
 }
 
 async function expireRisks() {
+  if(!await showConfirm('Auto-expire Risks', 'Revert all risk acceptances past their expiry date back to ToDo?', 'Expire', 'btn-danger')) return;
   const r = await api.post(`/api/tenants/${state.activeTenant.name}/expire-risks`);
   if(r.expired_count > 0) {
     toast(`${r.expired_count} risk acceptance(s) expired and reverted to ToDo`, 'info');
@@ -5472,7 +5578,8 @@ async function acceptRisk(actionId) {
   if(r.error) return toast(r.error, 'error');
   closeModal();
   toast('Risk accepted', 'success');
-  filterActions();
+  if(state.currentPage === 'actions') filterActions();
+  else navigate(state.currentPage);
 }
 
 // ── Dependencies ──
@@ -5875,7 +5982,7 @@ async function renderCpUsers() {
       <td>${esc(u.email||'—')}</td>
       <td><span class="badge badge-${roleColors[u.role]||'gray'}">${esc(u.role||'')}</span></td>
       <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
-      <td>${accessList||'<span style="color:var(--text-light);font-size:12px">${u.role==="admin"?"Full access":"No tenant access"}</span>'}</td>
+      <td>${accessList||`<span style="color:var(--text-light);font-size:12px">${u.role==='admin'?'Full access':'No tenant access'}</span>`}</td>
       <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
@@ -5919,7 +6026,7 @@ function showCreateUser() {
       <div class="form-group"><label>Role</label><select id="cu-role">${roleOpts}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Password</label><input id="cu-pw" type="password" placeholder="Min 6 characters"></div>
+      <div class="form-group"><label>Password</label><input id="cu-pw" type="password" placeholder="Min 12 characters"></div>
       <div class="form-group"><label>Confirm Password</label><input id="cu-pw2" type="password"></div>
     </div>
     <div class="form-group" id="cu-tenant-wrap">
@@ -5956,7 +6063,7 @@ async function submitCreateUser() {
   const pw2 = document.getElementById('cu-pw2').value;
   if(!username) return toast('Username required','error');
   if(pw !== pw2) return toast('Passwords do not match','error');
-  if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+  if(pw.length < 12) return toast('Password must be at least 12 characters','error');
   const r = await api.post('/api/control-plane/users', {
     username, password: pw,
     display_name: document.getElementById('cu-display').value,
@@ -6013,7 +6120,7 @@ async function submitEditUser(userId) {
     tenant_access: collectTenantAccess('eu-tenant-list'),
   };
   if(pw) {
-    if(pw.length < 6) return toast('Password must be at least 6 characters','error');
+    if(pw.length < 12) return toast('Password must be at least 12 characters','error');
     updates.password = pw;
   }
   const r = await api.put(`/api/control-plane/users/${userId}`, updates);
@@ -6062,14 +6169,6 @@ async function renderCpTenants() {
     </tr>`;
   }).join('');
 
-  // Database migration status
-  const migStatus = await api.get('/api/admin/migration-status');
-  const migHtml = migStatus.migrated
-    ? `<div style="color:var(--success);font-size:13px">&#10003; Migrated to per-tenant databases on ${migStatus.migrated_at?.substring(0,10)}<br><span style="color:var(--text-light)">${migStatus.tenant_db_count} tenant database(s): ${(migStatus.tenants||[]).join(', ')}</span></div>`
-    : `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Currently using a single database for all tenants. Migrating to per-tenant databases improves isolation, performance, and prepares for encryption.</div>
-       <button class="btn btn-sm btn-primary" onclick="migrateDatabase()">Migrate to Per-Tenant Databases</button>
-       <div id="migration-result" style="margin-top:8px"></div>`;
-
   document.getElementById('content').innerHTML = `
     <div class="grid grid-4 mb-16">
       <div class="card stat-card"><div class="value">${tenants.length}</div><div class="label">Total Tenants</div></div>
@@ -6086,8 +6185,7 @@ async function renderCpTenants() {
         <thead><tr><th>Tenant</th><th>Actions</th><th>Frameworks</th><th>Users</th><th>Created</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light)">No tenants yet.</td></tr>'}</tbody>
       </table></div>
-    </div>
-    <div class="card"><div class="card-header">Database Administration</div>${migHtml}</div>`;
+    </div>`;
 }
 
 async function activateTenantCp(name) {
@@ -6097,26 +6195,6 @@ async function activateTenantCp(name) {
   updateTenantIndicator();
   toast('Switched to '+name,'success');
   renderCpTenants();
-}
-
-async function migrateDatabase() {
-  if(!await showConfirm('Migrate Database', 'This will migrate to per-tenant databases. The original database will be backed up. Continue?', 'Migrate', 'btn-primary')) return;
-  const el = document.getElementById('migration-result');
-  if(el) el.innerHTML = '<div style="color:var(--text-light)">Migrating... this may take a moment.</div>';
-  const r = await api.post('/api/admin/migrate-database');
-  if(r.error) {
-    if(el) el.innerHTML = `<div style="color:var(--danger)">${esc(r.error)}</div>`;
-    return;
-  }
-  if(r.success) {
-    let details = Object.entries(r.tenants||{}).map(([t,d]) =>
-      `<div style="font-size:12px;padding:2px 0"><strong>${esc(t)}</strong>: ${d.actions||0} actions, ${d.plans||0} plans, ${d.snapshots||0} snapshots</div>`
-    ).join('');
-    if(el) el.innerHTML = `<div style="color:var(--success);font-weight:600">&#10003; Migration complete!</div>
-      <div style="font-size:12px;color:var(--text-light)">Backup saved to: ${esc(r.backup||'')}</div>
-      ${details}
-      <div style="font-size:12px;color:var(--warning);margin-top:8px">Restart the application to use per-tenant databases.</div>`;
-  }
 }
 
 async function showCpTenantDetail(tenantName) {
@@ -6312,90 +6390,6 @@ async function createGlobalFromAction(actionId, tenantName) {
   showCpTenantDetail(tenantName);
 }
 
-// ── Control Plane: Correlations ──
-async function renderCpCorrelations() {
-  const groups = await api.get('/api/control-plane/correlation-groups');
-  document.getElementById('topbar-actions').innerHTML =
-    `<button class="btn btn-primary" onclick="showCreateCorrelationGroup()">+ New Group</button>`;
-
-  const rows = (groups||[]).map(g => `<tr>
-    <td><strong>${esc(g.canonical_name||'')}</strong></td>
-    <td style="font-size:12px;color:var(--text-light);max-width:200px">${esc((g.description||'').substring(0,80))}</td>
-    <td style="font-size:12px">${(g.keywords||[]).slice(0,5).join(', ')}</td>
-    <td style="text-align:center">${g.action_count||0}</td>
-    <td>
-      <button class="btn btn-sm" onclick="showEditCorrelationGroup('${g.id}')">Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteCorrelationGroup('${g.id}')">&#x2715;</button>
-    </td>
-  </tr>`).join('');
-
-  document.getElementById('content').innerHTML = `
-    <div class="card mb-16">
-      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">
-        Correlation groups link actions from different source tools (SCuBA, ZeroTrust, Secure Score) that address the same security topic.
-        Actions in the same group are shown together in the Correlations view.
-      </p>
-      <div class="flex justify-between items-center mb-12">
-        <div class="card-header" style="margin:0">Correlation Groups (${(groups||[]).length})</div>
-        <button class="btn btn-primary btn-sm" onclick="showCreateCorrelationGroup()">+ New Group</button>
-      </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Group Name</th><th>Description</th><th>Keywords</th><th>Actions</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-light)">No correlation groups. They are created automatically during import.</td></tr>'}</tbody>
-      </table></div>
-    </div>`;
-}
-
-function showCreateCorrelationGroup() {
-  openModal('New Correlation Group', `
-    <div class="form-group"><label>Group Name</label><input id="cg-name" placeholder="e.g. Multi-Factor Authentication"></div>
-    <div class="form-group"><label>Description</label><textarea id="cg-desc" rows="2" placeholder="What security topic does this group address?"></textarea></div>
-    <div class="form-group"><label>Keywords (comma-separated)</label><input id="cg-kw" placeholder="mfa, multi-factor, authenticator, phishing-resistant"></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreateCorrelationGroup()">Create</button>`);
-}
-
-async function submitCreateCorrelationGroup() {
-  const name = document.getElementById('cg-name').value.trim();
-  if(!name) return toast('Name required','error');
-  const keywords = document.getElementById('cg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
-  const r = await api.post('/api/control-plane/correlation-groups', {
-    canonical_name: name,
-    description: document.getElementById('cg-desc').value,
-    keywords,
-  });
-  if(r.error) return toast(r.error,'error');
-  closeModal(); toast('Group created','success'); renderCpCorrelations();
-}
-
-async function showEditCorrelationGroup(groupId) {
-  const groups = await api.get('/api/control-plane/correlation-groups');
-  const g = groups.find(x=>x.id===groupId);
-  if(!g) return;
-  openModal('Edit Correlation Group', `
-    <div class="form-group"><label>Group Name</label><input id="eg-name" value="${esc(g.canonical_name||'')}"></div>
-    <div class="form-group"><label>Description</label><textarea id="eg-desc" rows="2">${esc(g.description||'')}</textarea></div>
-    <div class="form-group"><label>Keywords (comma-separated)</label><input id="eg-kw" value="${(g.keywords||[]).join(', ')}"></div>`,
-    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditCorrelationGroup('${groupId}')">Save</button>`);
-}
-
-async function submitEditCorrelationGroup(groupId) {
-  const keywords = document.getElementById('eg-kw').value.split(',').map(k=>k.trim()).filter(Boolean);
-  const r = await api.put(`/api/control-plane/correlation-groups/${groupId}`, {
-    canonical_name: document.getElementById('eg-name').value,
-    description: document.getElementById('eg-desc').value,
-    keywords,
-  });
-  if(r.error) return toast(r.error,'error');
-  closeModal(); toast('Saved','success'); renderCpCorrelations();
-}
-
-async function deleteCorrelationGroup(groupId) {
-  if(!await showConfirm('Delete Group','Delete this correlation group? Actions will be unlinked but not deleted.')) return;
-  await api.del(`/api/control-plane/correlation-groups/${groupId}`);
-  toast('Deleted','success'); renderCpCorrelations();
-}
-
-
 // ── Control Plane: Action Linking (cross-tool equivalences) ──
 async function showGaLinks(gaId) {
   const ga = await api.get(`/api/control-plane/global-actions/${gaId}`);
@@ -6550,11 +6544,13 @@ async function submitMerge() {
 }
 
 // ── Import: unlinked action handling (shown after import) ──
+let _unlinkedGaOpts = '';
+
 async function handlePostImportUnlinked(tenantName, importResult) {
   if(!importResult.unlinked_actions || importResult.unlinked_actions.length === 0) return;
   const unlinked = importResult.unlinked_actions;
   const globalActions = await api.get('/api/control-plane/global-actions');
-  const gaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${esc(ga.source_tool||'')}] ${esc((ga.title||'').substring(0,60))}</option>`).join('');
+  _unlinkedGaOpts = globalActions.map(ga=>`<option value="${ga.id}">[${esc(ga.source_tool||'')}] ${esc((ga.title||'').substring(0,60))}</option>`).join('');
 
   const rows = unlinked.map((a,i) => `<tr id="unlinked-row-${i}">
     <td>${esc((a.title||'').substring(0,50))}</td>
@@ -6564,8 +6560,8 @@ async function handlePostImportUnlinked(tenantName, importResult) {
       <span class="badge badge-warning">Pending</span>
     </td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-primary" onclick="autoCreateOneUnlinked('${a.id}','${tenantName}',${i})">Create in CP</button>
-      <button class="btn btn-sm" onclick="showInlineLink('${a.id}','${tenantName}',${i},'${encodeURIComponent(JSON.stringify(gaOpts))}')">Link</button>
+      <button class="btn btn-sm btn-primary" onclick="autoCreateOneUnlinked('${a.id}',${i})">Create in CP</button>
+      ${_unlinkedGaOpts?`<button class="btn btn-sm" onclick="linkUnlinkedInline('${a.id}',${i})">Link</button>`:''}
       <button class="btn btn-sm" style="color:var(--text-light)" onclick="skipUnlinked(${i})">Skip</button>
     </td>
   </tr>`).join('');
@@ -6585,11 +6581,29 @@ async function handlePostImportUnlinked(tenantName, importResult) {
     `<button class="btn btn-primary" onclick="closeModal()">Done</button>`);
 }
 
-async function autoCreateOneUnlinked(actionId, tenantName, rowIdx) {
+async function autoCreateOneUnlinked(actionId, rowIdx) {
   const r = await api.post('/api/control-plane/create-from-action', {action_id: actionId});
   if(r.error) return toast(r.error,'error');
   document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-success">Created in CP</span>';
   toast('Global action created and linked','success');
+}
+
+function linkUnlinkedInline(actionId, rowIdx) {
+  const cell = document.getElementById(`unlinked-action-${rowIdx}`);
+  if(!cell) return;
+  cell.innerHTML = `<div style="display:flex;gap:6px;align-items:center">
+    <select id="unlinked-select-${rowIdx}" style="font-size:12px;max-width:260px">${_unlinkedGaOpts}</select>
+    <button class="btn btn-sm btn-primary" onclick="confirmLinkUnlinked('${actionId}',${rowIdx})">OK</button>
+  </div>`;
+}
+
+async function confirmLinkUnlinked(actionId, rowIdx) {
+  const gaId = document.getElementById(`unlinked-select-${rowIdx}`)?.value;
+  if(!gaId) return;
+  const r = await api.post(`/api/control-plane/global-actions/${gaId}/link-action`, {action_id: actionId});
+  if(r.error) return toast(r.error,'error');
+  document.getElementById(`unlinked-action-${rowIdx}`).innerHTML = '<span class="badge badge-success">Linked</span>';
+  toast('Action linked','success');
 }
 
 async function autoCreateAllUnlinked(tenantName) {

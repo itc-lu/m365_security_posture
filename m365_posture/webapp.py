@@ -29,7 +29,7 @@ from .parsers import (
     SCTParser, M365AssessParser,
     enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
 )
-from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
+from .essential_eight import apply_e8_mapping, get_e8_summary
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
@@ -92,6 +92,18 @@ def create_app(db_path: str = None) -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = 28800  # 8 hours
     app.json.sort_keys = False
     db = Database(db_path)
+
+    # Seed the Secure Score control reference table on first run so imported
+    # actions carry descriptions and remediation steps even before a Graph
+    # API fetch refreshes them.
+    with db._conn() as conn:
+        _has_controls = conn.execute(
+            "SELECT COUNT(*) AS c FROM secure_score_controls").fetchone()["c"]
+    if not _has_controls:
+        _seeds = load_seed_controls()
+        if _seeds:
+            result = db.seed_controls(_seeds)
+            print(f"[INFO] Seeded {result['total']} Secure Score reference controls.", flush=True)
 
     def login_required(f):
         @wraps(f)
@@ -337,10 +349,6 @@ def create_app(db_path: str = None) -> Flask:
                 deleted += 1
         return jsonify({"deleted": deleted, "total_requested": len(action_ids)})
 
-    @app.route("/api/actions/<action_id>/history", methods=["GET"])
-    def api_action_history(action_id):
-        return jsonify(db.get_action_history(action_id))
-
     @app.route("/api/actions/<action_id>/implementation", methods=["PUT"])
     def api_update_action_implementation(action_id):
         """Save implementation steps either globally (default) or only for
@@ -388,11 +396,12 @@ def create_app(db_path: str = None) -> Flask:
         if peer_ids is not None:
             peer_id_set = set(peer_ids)
             targets = [p for p in targets if p["id"] in peer_id_set]
+        changed_by = session.get("username") or data.get("changed_by", "peer-sync")
         updated = 0
         for p in targets:
-            db.update_action(p["id"], status=action.status)
+            db.update_action(p["id"], {"status": action["status"]}, changed_by=changed_by)
             updated += 1
-        return jsonify({"updated": updated, "status": action.status})
+        return jsonify({"updated": updated, "status": action["status"]})
 
     @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
     def api_tenant_peer_disagreements(name):
@@ -650,10 +659,37 @@ def create_app(db_path: str = None) -> Flask:
         finally:
             os.unlink(tmp_path)
 
-    # ── Zero Trust Report endpoints ──
+    # ── Import status conflicts (DB status vs. last imported status) ──
 
-    def _zt_reports_dir():
-        return Path(db.db_path).parent / "zt_reports"
+    @app.route("/api/tenants/<name>/import-status-conflicts", methods=["GET"])
+    def api_import_status_conflicts(name):
+        """Actions whose protected status differs from what the last import
+        reported. The user decides per item (or in bulk) which side wins."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_import_status_conflicts(name))
+
+    @app.route("/api/tenants/<name>/import-status-conflicts/resolve", methods=["POST"])
+    def api_resolve_import_status_conflicts(name):
+        """Resolve import/DB status conflicts.
+
+        Body: {"resolution": "use_import"|"keep_mine",
+               "action_ids": [...]}          # omit action_ids to resolve all
+        - use_import: set the action status to the status the import reported.
+        - keep_mine:  keep the DB status and dismiss the conflict.
+        """
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        resolution = data.get("resolution")
+        if resolution not in ("use_import", "keep_mine"):
+            return _json_error("resolution must be 'use_import' or 'keep_mine'")
+        changed_by = session.get("username") or data.get("changed_by", "import-sync")
+        result = db.resolve_import_status_conflicts(
+            name, resolution, data.get("action_ids"), changed_by)
+        return jsonify(result)
+
+    # ── Zero Trust Report endpoints ──
 
     @app.route("/api/tenants/<name>/zt-reports", methods=["GET"])
     def api_zt_reports(name):
@@ -681,26 +717,6 @@ def create_app(db_path: str = None) -> Flask:
         if not html_path or not Path(html_path).exists():
             return _json_error("HTML report file not found", 404)
         return send_file(html_path, mimetype="text/html")
-
-    @app.route("/api/zt-reports/<report_id>/data/<path:filepath>", methods=["GET"])
-    def api_zt_report_data(report_id, filepath):
-        """Serve files from the report's zt-export data directory."""
-        report = db.get_zt_report(report_id)
-        if not report:
-            return _json_error("Report not found", 404)
-        data_dir = report.get("data_dir", "")
-        if not data_dir:
-            return _json_error("No data directory for this report", 404)
-        full_path = Path(data_dir) / filepath
-        # Security: ensure path stays within data_dir
-        try:
-            full_path.resolve().relative_to(Path(data_dir).resolve())
-        except ValueError:
-            return _json_error("Invalid path", 400)
-        if not full_path.exists():
-            return _json_error("File not found", 404)
-        mime = "application/json" if full_path.suffix == ".json" else "application/octet-stream"
-        return send_file(str(full_path), mimetype=mime)
 
     # ── Scores endpoint ──
 
@@ -1350,24 +1366,6 @@ def create_app(db_path: str = None) -> Flask:
         db.unlink_actions(aid, tid)
         return jsonify({"ok": True})
 
-    # ── Pin/unpin actions on dashboard ──
-
-    @app.route("/api/actions/<action_id>/pin", methods=["POST"])
-    def api_pin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 1})
-        return jsonify({"pinned": True})
-
-    @app.route("/api/actions/<action_id>/unpin", methods=["POST"])
-    def api_unpin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 0})
-        return jsonify({"pinned": False})
-
     # ── Batch status update ──
 
     @app.route("/api/actions/batch-status", methods=["POST"])
@@ -1616,26 +1614,6 @@ def create_app(db_path: str = None) -> Flask:
         db.remove_dependency(action_id, depends_on_id)
         return jsonify({"removed": True})
 
-    @app.route("/api/tenants/<name>/dependency-graph", methods=["GET"])
-    def api_dependency_graph(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        return jsonify(db.get_dependency_graph(name))
-
-    @app.route("/api/tenants/<name>/blocked-actions", methods=["GET"])
-    def api_blocked_actions(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        return jsonify(db.get_blocked_actions(name))
-
-    @app.route("/api/tenants/<name>/implementation-order", methods=["POST"])
-    def api_implementation_order(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        action_ids = data.get("action_ids")
-        return jsonify(db.get_implementation_order(name, action_ids))
-
     # ── Compliance endpoints ──
 
     @app.route("/api/tenants/<name>/compliance", methods=["GET"])
@@ -1653,10 +1631,6 @@ def create_app(db_path: str = None) -> Flask:
         frameworks = data.get("frameworks")
         result = auto_map_compliance(db, name, frameworks)
         return jsonify(result)
-
-    @app.route("/api/actions/<action_id>/compliance", methods=["GET"])
-    def api_action_compliance(action_id):
-        return jsonify(db.get_action_compliance(action_id))
 
     # ── Risk Acceptance endpoints ──
 
@@ -1718,14 +1692,6 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         limit = request.args.get("limit", 20, type=int)
         return jsonify(db.get_drift_reports(name, limit))
-
-    @app.route("/api/tenants/<name>/drift/detect", methods=["POST"])
-    def api_detect_drift(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        result = detect_drift(db, name, data.get("source_tool"))
-        return jsonify(result)
 
     # ── Graph API (Device Code Auth) ──
 
@@ -2537,62 +2503,6 @@ def create_app(db_path: str = None) -> Flask:
         if not result:
             return _json_error("Action not found", 404)
         return jsonify(result), 201
-
-    # ── Correlation groups (CP management) ──
-
-    @app.route("/api/control-plane/correlation-groups", methods=["GET"])
-    def api_cp_list_correlation_groups():
-        return jsonify(db.list_correlation_groups())
-
-    @app.route("/api/control-plane/correlation-groups", methods=["POST"])
-    def api_cp_create_correlation_group():
-        data = request.get_json() or {}
-        if not data.get("canonical_name"):
-            return _json_error("canonical_name required")
-        result = db.create_correlation_group(
-            data["canonical_name"], data.get("description", ""), data.get("keywords", [])
-        )
-        return jsonify(result), 201
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["PUT"])
-    def api_cp_update_correlation_group(group_id):
-        data = request.get_json() or {}
-        result = db.update_correlation_group(group_id, **data)
-        if not result:
-            return _json_error("Not found", 404)
-        return jsonify(result)
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["DELETE"])
-    def api_cp_delete_correlation_group(group_id):
-        db.delete_correlation_group(group_id)
-        return jsonify({"status": "deleted"})
-
-    # ── Database Migration ──
-
-    @app.route("/api/admin/migrate-database", methods=["POST"])
-    def api_migrate_database():
-        """Migrate to per-tenant database layout."""
-        from .tenant_db import migrate_to_per_tenant, is_migrated
-        if is_migrated():
-            return jsonify({"already_migrated": True,
-                            "message": "Database already migrated to per-tenant layout."})
-        result = migrate_to_per_tenant(db.db_path)
-        return jsonify(result)
-
-    @app.route("/api/admin/migration-status", methods=["GET"])
-    def api_migration_status():
-        from .tenant_db import is_migrated, MIGRATION_MARKER, TENANT_DB_DIR
-        if not is_migrated():
-            return jsonify({"migrated": False})
-        import json as _json
-        marker = _json.loads(MIGRATION_MARKER.read_text())
-        tenant_dbs = list(TENANT_DB_DIR.glob("*.db"))
-        return jsonify({
-            "migrated": True,
-            "migrated_at": marker.get("migrated_at"),
-            "tenants": marker.get("tenants", []),
-            "tenant_db_count": len(tenant_dbs),
-        })
 
     return app
 
