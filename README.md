@@ -79,9 +79,13 @@ If a later import agrees with your status again, the conflict clears automatical
 
 ## Web UI Pages
 
+**Global Overview** (landing page):
+
+- All tenants side by side: overall score, adjusted score (excl. N/A & Risk Accepted), 7-day and 30-day progress, actions completed, blocked count and status pills per tenant — each card opens that tenant's dashboard. Below the cards: cross-tenant **Score by Source Tool** and **Score by Workload** matrices and a **status distribution** table (per-tenant counts and shares per status). Exportable as Excel and as a printable **management report (PDF)** with the same summary, tenant overview table, matrices and status distribution.
+
 **Tenant pages** (for the active tenant, switchable from the sidebar):
 
-- **Dashboard** – overall and per-tool scores, workload breakdown, 30-day progress, blocked actions (open items waiting on incomplete dependencies), pinned top-priority actions (ROI-ranked), tenant comparison with per-action drill-down and PDF management report. Scores can exclude *Not Applicable* and *Risk Accepted* actions.
+- **Tenant Dashboard** – overall and per-tool scores, workload breakdown, 30-day progress, blocked actions (open items waiting on incomplete dependencies), pinned top-priority actions (ROI-ranked), tenant comparison with per-action drill-down and PDF management report. Scores can exclude *Not Applicable* and *Risk Accepted* actions.
 - **Actions** – filterable/sortable action list with expandable detail (description, implementation, notes, linked actions, history), batch status/delete/add-to-plan, cross-tool peer status warnings with one-click sync, import-conflict review, Excel export of the filtered set, and a compliance timeline per action: *Compliant since* / *Regressed on* (like Secure Score's regression tracking), with a "Regressed" filter and dashboard alert.
 - **Import** – file upload (with per-source hints), Graph API import with all four auth flows (including per-tenant sign-out), drift summary after each import, stale-action detection, and post-import linking of unrecognized controls to the Control Plane. Wrong-tenant protection: the target tenant is shown prominently with its Entra tenant ID, every import is confirmed, and reports that embed a tenant ID (SCuBA, Zero Trust) are **verified against the target tenant** — a mismatch is rejected with an offer to import into the matching tenant instead (or an explicit, audited override). The active tenant is scoped per user session, so another user's or tab's tenant switch can never retarget your import.
 - **Automation** – scheduled or on-demand Secure Score imports, SCuBA runs and Zero Trust Assessment runs per tenant, with tool configuration and run history (see Automation & Scheduling above).

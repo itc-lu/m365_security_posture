@@ -293,9 +293,13 @@ body.unauth { background:#0f172a; }
     M365 Posture
   </div>
   <nav>
-    <a href="#dashboard" data-page="dashboard" class="active">
+    <a href="#global" data-page="global" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      Overview
+    </a>
+    <a href="#dashboard" data-page="dashboard">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-      Dashboard
+      Tenant Dashboard
     </a>
     <a href="#actions" data-page="actions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,11 12,14 22,4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
@@ -649,12 +653,13 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',automation:'Automation & Scheduling',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {global:'Global Overview',dashboard:'Tenant Dashboard',actions:'Actions',import:'Import Data',automation:'Automation & Scheduling',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
+    global:renderGlobalDashboard,
     dashboard:renderDashboard,actions:renderActions,import:renderImport,
     automation:renderAutomation,
     plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
@@ -671,7 +676,7 @@ async function navigate(page) {
   setTimeout(applySort, 50);
 }
 
-window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
+window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'global'));
 
 async function navigateToCpAction(globalActionId) {
   await navigate('cp-global-actions');
@@ -803,7 +808,7 @@ async function loadAuthenticatedState() {
   const active = await api.get('/api/active-tenant');
   state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
   updateTenantIndicator();
-  navigate(location.hash.slice(1)||'dashboard');
+  navigate(location.hash.slice(1)||'global');
 }
 
 function showForcedPasswordChange(prefillCurrent) {
@@ -952,6 +957,303 @@ document.addEventListener('click', () => {
 function requireTenant() {
   if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('cp-tenants'); return false; }
   return true;
+}
+
+// ── Global Overview (multi-tenant landing page) ──
+let _globalDash = null;
+
+function _gdDelta(d) {
+  if (d === null || d === undefined) return '<span style="color:var(--text-light);font-size:11px" title="Needs at least one snapshot older than the period">no baseline</span>';
+  const cls = d > 0.005 ? 'drift-positive' : d < -0.005 ? 'drift-negative' : 'drift-neutral';
+  return `<span class="${cls}">${d >= 0 ? '+' : ''}${d.toFixed(2)}%</span>`;
+}
+
+async function openTenantFromGlobal(name) {
+  await api.post(`/api/tenants/${name}/activate`);
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  updateTenantIndicator();
+  navigate('dashboard');
+}
+
+async function renderGlobalDashboard() {
+  const c = document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML = `
+    <button class="btn btn-sm" onclick="exportGlobalExcel()">Export Excel</button>
+    <button class="btn btn-sm btn-primary" onclick="downloadGlobalPDF()">Management Report (PDF)</button>`;
+  c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-light)">Loading global overview...</div>';
+
+  const data = await api.get('/api/global-dashboard');
+  _globalDash = data;
+  const tenants = data.tenants || [];
+  const totals = data.totals || {};
+
+  if (!tenants.length) {
+    c.innerHTML = `<div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px">No tenants yet</div>
+      <div style="color:var(--text-light);margin-bottom:16px">Add a tenant to start tracking your M365 security posture.</div>
+      <button class="btn btn-primary" onclick="navigate('cp-tenants')">Add Tenant</button>
+    </div>`;
+    return;
+  }
+
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
+  // Summary stat cards across all tenants
+  const summary = `<div class="grid grid-4 mb-16">
+    <div class="card stat-card"><div class="value">${totals.tenant_count||0}</div><div class="label">Tenants</div></div>
+    <div class="card stat-card"><div class="value" style="color:${pctColor(totals.avg_percentage||0)}">${(totals.avg_percentage||0).toFixed(2)}%</div><div class="label">Avg Overall Score</div></div>
+    <div class="card stat-card"><div class="value" style="color:${pctColor(totals.avg_adj_percentage||0)}">${(totals.avg_adj_percentage||0).toFixed(2)}%</div><div class="label">Avg Adjusted Score <span title="Excludes Not Applicable and Risk Accepted actions">&#9432;</span></div></div>
+    <div class="card stat-card"><div class="value">${totals.completed_actions||0} / ${totals.total_actions||0}</div><div class="label">Actions Completed</div></div>
+  </div>`;
+
+  const alerts = [];
+  if (totals.blocked) alerts.push(`<div class="drift-banner negative mb-16"><span style="font-size:20px">&#128274;</span><div><strong>${totals.blocked} blocked action(s)</strong> across all tenants are waiting on incomplete prerequisites.</div></div>`);
+
+  // Per-tenant cards: gauge + adjusted + 7d/30d + status pills
+  const tenantCards = tenants.map(t => {
+    const noData = !t.total_actions;
+    const pills = Object.entries(t.by_status||{}).map(([s,n]) => `${statusBadge(s)} <strong>${n}</strong>`).join('&nbsp; ');
+    return `<div class="card" style="cursor:pointer" onclick="openTenantFromGlobal('${esc(t.name)}')" title="Open tenant dashboard">
+      <div class="flex justify-between items-center" style="margin-bottom:8px">
+        <div>
+          <div style="font-size:16px;font-weight:700">${esc(t.display_name)}</div>
+          <div style="font-size:11px;color:var(--text-light)">${esc(t.tenant_id||'No Entra tenant ID')}</div>
+        </div>
+        <button class="btn btn-sm" onclick="openTenantFromGlobal('${esc(t.name)}');event.stopPropagation()">Open</button>
+      </div>
+      ${noData ? '<div style="color:var(--text-light);padding:16px 0">No data imported yet</div>' : `
+      <div class="flex items-center" style="gap:16px">
+        ${gauge(t.percentage||0, 96, 'overall')}
+        <div style="flex:1;font-size:13px">
+          <div class="flex justify-between mb-8"><span>Adjusted Score <span style="color:var(--text-light)" title="Excludes Not Applicable and Risk Accepted actions">&#9432;</span></span><strong style="color:${pctColor(t.adj_percentage||0)}">${(t.adj_percentage||0).toFixed(2)}%</strong></div>
+          <div class="flex justify-between mb-8"><span>7-Day Progress</span>${_gdDelta(t.progress_7d)}</div>
+          <div class="flex justify-between mb-8"><span>30-Day Progress</span>${_gdDelta(t.progress_30d)}</div>
+          <div class="flex justify-between mb-8"><span>Actions</span><span><strong>${t.completed_actions}</strong> / ${t.total_actions} completed</span></div>
+          <div class="flex justify-between"><span>Blocked / Risk Accepted</span><span>${t.blocked_count ? `<span class="drift-negative">${t.blocked_count}</span>` : '0'} / ${t.risk_accepted||0}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:12px">${pills||''}</div>`}
+    </div>`;
+  }).join('');
+
+  // Cross-tenant matrix helper: rows = tool/workload, columns = tenants
+  const withData = tenants.filter(t => t.total_actions > 0);
+  function matrix(key) {
+    const rowNames = [...new Set(withData.flatMap(t => Object.keys(t[key]||{})))].sort();
+    if (!rowNames.length) return '<div style="color:var(--text-light);padding:8px">No data</div>';
+    const head = withData.map(t => `<th title="${esc(t.name)}">${esc(t.display_name)}</th>`).join('');
+    const body = rowNames.map(rn => {
+      const cells = withData.map(t => {
+        const d = (t[key]||{})[rn];
+        if (!d) return '<td style="color:var(--text-light)">—</td>';
+        return `<td title="${d.completed}/${d.total} actions completed"><span style="color:${pctColor(d.percentage||0)};font-weight:600">${(d.percentage||0).toFixed(1)}%</span> <span style="font-size:11px;color:var(--text-light)">${d.completed}/${d.total}</span></td>`;
+      }).join('');
+      return `<tr><td style="font-weight:600">${esc(rn)}</td>${cells}</tr>`;
+    }).join('');
+    return `<div class="table-wrap"><table><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  // Status distribution matrix: rows = status, columns = tenants
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const seenStatuses = statusOrder.filter(s => withData.some(t => (t.by_status||{})[s]));
+  const statusMatrix = seenStatuses.length ? `<div class="table-wrap"><table>
+    <thead><tr><th></th>${withData.map(t => `<th title="${esc(t.name)}">${esc(t.display_name)}</th>`).join('')}</tr></thead>
+    <tbody>${seenStatuses.map(s => `<tr><td>${statusBadge(s)}</td>${withData.map(t => {
+      const n = (t.by_status||{})[s]||0;
+      const pct = t.total_actions ? (n/t.total_actions*100).toFixed(1) : '0.0';
+      return `<td>${n ? `<strong>${n}</strong> <span style="font-size:11px;color:var(--text-light)">(${pct}%)</span>` : '<span style="color:var(--text-light)">—</span>'}</td>`;
+    }).join('')}</tr>`).join('')}</tbody>
+  </table></div>` : '<div style="color:var(--text-light);padding:8px">No data</div>';
+
+  c.innerHTML = `
+    <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
+      <div class="flex justify-between items-center">
+        <div>
+          <div style="font-size:24px;font-weight:700">Global Security Posture</div>
+          <div style="font-size:13px;opacity:.7;margin-top:4px">${totals.tenant_count||0} tenant(s) &middot; ${today}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:42px;font-weight:800">${(totals.avg_percentage||0).toFixed(2)}%</div>
+          <div style="font-size:12px;opacity:.7">Average overall score across tenants</div>
+        </div>
+      </div>
+    </div>
+    ${alerts.join('')}
+    ${summary}
+    <div class="grid grid-2 mb-16">${tenantCards}</div>
+    <div class="grid grid-2 mb-16">
+      <div class="card"><div class="card-header">Score by Source Tool</div>${matrix('by_tool')}</div>
+      <div class="card"><div class="card-header">Score by Workload</div>${matrix('by_workload')}</div>
+    </div>
+    <div class="card mb-16"><div class="card-header">Status Distribution</div>${statusMatrix}</div>`;
+}
+
+function exportGlobalExcel() {
+  if (!_globalDash || !(_globalDash.tenants||[]).length) return toast('Nothing to export', 'error');
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const headers = ['Tenant','Entra Tenant ID','Overall Score %','Adjusted Score %','7-Day Progress %','30-Day Progress %','Total Actions','Completed','Blocked'].concat(statusOrder);
+  const rows = _globalDash.tenants.map(t => [
+    t.display_name, t.tenant_id||'',
+    t.percentage!=null?t.percentage.toFixed(2):'', t.adj_percentage!=null?t.adj_percentage.toFixed(2):'',
+    t.progress_7d!=null?t.progress_7d.toFixed(2):'', t.progress_30d!=null?t.progress_30d.toFixed(2):'',
+    t.total_actions, t.completed_actions, t.blocked_count,
+  ].concat(statusOrder.map(s => (t.by_status||{})[s]||0)));
+  exportTableExcel('global-overview', 'Global Overview', headers, rows);
+}
+
+async function downloadGlobalPDF() {
+  if (!_globalDash) _globalDash = await api.get('/api/global-dashboard');
+  const data = _globalDash;
+  if (!(data.tenants||[]).length) return toast('Nothing to report', 'error');
+  toast('Building management report...', 'info');
+  const printWin = window.open('', '_blank', 'width=1000,height=800');
+  printWin.document.write(_buildGlobalReportHtml(data));
+  printWin.document.close();
+}
+
+// Printable management report over all tenants (same visual language as the tenant report)
+function _buildGlobalReportHtml(data) {
+  const tenants = data.tenants || [];
+  const totals = data.totals || {};
+  const withData = tenants.filter(t => t.total_actions > 0);
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+  function scoreColor(pct) {
+    if (pct >= 80) return '#16a34a';
+    if (pct >= 60) return '#84cc16';
+    if (pct >= 40) return '#f59e0b';
+    if (pct >= 20) return '#f97316';
+    return '#dc2626';
+  }
+  function delta(d) {
+    if (d === null || d === undefined) return '<span style="color:#94a3b8">—</span>';
+    const clr = d > 0.005 ? '#16a34a' : d < -0.005 ? '#dc2626' : '#64748b';
+    return `<span style="color:${clr};font-weight:600">${d >= 0 ? '+' : ''}${d.toFixed(2)}%</span>`;
+  }
+
+  // Tenant overview table
+  const tenantRows = tenants.map(t => `<tr>
+    <td><strong>${esc(t.display_name)}</strong><br><span style="font-size:9px;color:#94a3b8">${esc(t.tenant_id||'')}</span></td>
+    <td style="color:${scoreColor(t.percentage||0)};font-weight:700">${(t.percentage||0).toFixed(2)}%</td>
+    <td style="color:${scoreColor(t.adj_percentage||0)};font-weight:600">${(t.adj_percentage||0).toFixed(2)}%</td>
+    <td>${delta(t.progress_7d)}</td>
+    <td>${delta(t.progress_30d)}</td>
+    <td style="color:#64748b">${t.completed_actions} / ${t.total_actions}</td>
+    <td style="color:${t.blocked_count?'#dc2626':'#64748b'}">${t.blocked_count||0}</td>
+    <td style="color:#64748b">${t.risk_accepted||0}</td>
+  </tr>`).join('');
+
+  // Cross-tenant matrices
+  function pdfMatrix(key) {
+    const rowNames = [...new Set(withData.flatMap(t => Object.keys(t[key]||{})))].sort();
+    if (!rowNames.length) return '<p style="color:#94a3b8;font-size:11px">No data</p>';
+    const head = withData.map(t => `<th>${esc(t.display_name)}</th>`).join('');
+    const body = rowNames.map(rn => `<tr><td style="font-weight:600">${esc(rn)}</td>${withData.map(t => {
+      const d = (t[key]||{})[rn];
+      if (!d) return '<td style="color:#94a3b8">—</td>';
+      return `<td><span style="color:${scoreColor(d.percentage||0)};font-weight:600">${(d.percentage||0).toFixed(1)}%</span> <span style="font-size:9px;color:#94a3b8">${d.completed}/${d.total}</span></td>`;
+    }).join('')}</tr>`).join('');
+    return `<table><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  // Status distribution matrix
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const statusClr = {'Completed':'#16a34a','In Progress':'#3b82f6','In Planning':'#a855f7','ToDo':'#ef4444','Risk Accepted':'#f59e0b','Not Applicable':'#6b7280','Third Party':'#06b6d4','Warning':'#f97316'};
+  const seenStatuses = statusOrder.filter(s => withData.some(t => (t.by_status||{})[s]));
+  const statusTable = seenStatuses.length ? `<table>
+    <thead><tr><th>Status</th>${withData.map(t => `<th>${esc(t.display_name)}</th>`).join('')}</tr></thead>
+    <tbody>${seenStatuses.map(s => `<tr>
+      <td><span style="color:${statusClr[s]||'#6b7280'};font-weight:600">${esc(s)}</span></td>
+      ${withData.map(t => {
+        const n = (t.by_status||{})[s]||0;
+        const pct = t.total_actions ? (n/t.total_actions*100).toFixed(1) : '0.0';
+        return `<td>${n ? `<strong>${n}</strong> <span style="font-size:9px;color:#94a3b8">(${pct}%)</span>` : '<span style="color:#cbd5e1">—</span>'}</td>`;
+      }).join('')}
+    </tr>`).join('')}</tbody>
+  </table>` : '<p style="color:#94a3b8;font-size:11px">No data</p>';
+
+  return `<!DOCTYPE html><html><head><title>Global M365 Security Posture Report</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; font-size:12px; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; padding-bottom:14px; border-bottom:3px solid #3b82f6; }
+    .page-header h1 { font-size:20px; color:#0f172a; margin-bottom:3px; }
+    .page-header .sub { color:#64748b; font-size:11px; }
+    .score-block { display:flex; gap:12px; margin-bottom:14px; }
+    .score-card { flex:1; border:1px solid #e2e8f0; border-radius:8px; padding:12px; text-align:center; }
+    .score-card .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+    .score-card .val { font-size:30px; font-weight:800; line-height:1; }
+    .score-card .det { font-size:10px; color:#94a3b8; margin-top:5px; }
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:14px; break-inside:avoid; }
+    .card-hdr { font-size:11px; font-weight:600; color:#374151; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    th { text-align:left; padding:5px 7px; background:#f8fafc; border-bottom:2px solid #e2e8f0; font-size:9px; text-transform:uppercase; color:#64748b; }
+    td { padding:5px 7px; border-bottom:1px solid #f1f5f9; }
+    .footer { text-align:center; margin-top:20px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10px; }
+    @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body>
+
+  <div class="page-header">
+    <div>
+      <h1>Global M365 Security Posture Report</h1>
+      <div class="sub">All tenants &middot; ${today}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#64748b">
+      <div>Tenants: <strong>${totals.tenant_count||0}</strong></div>
+      <div>Total Actions: <strong>${totals.total_actions||0}</strong></div>
+      <div>Completed: <strong>${totals.completed_actions||0}</strong></div>
+      ${totals.blocked ? `<div style="color:#dc2626">Blocked: <strong>${totals.blocked}</strong></div>` : ''}
+    </div>
+  </div>
+
+  <div class="score-block">
+    <div class="score-card">
+      <div class="lbl">Avg Overall Score</div>
+      <div class="val" style="color:${scoreColor(totals.avg_percentage||0)}">${(totals.avg_percentage||0).toFixed(2)}%</div>
+      <div class="det">Average across ${withData.length} tenant(s) with data</div>
+    </div>
+    <div class="score-card" style="border-color:#3b82f6;background:#f0f7ff">
+      <div class="lbl" style="color:#3b82f6">Avg Adjusted Score <span style="color:#94a3b8">(excl. N/A &amp; RA)</span></div>
+      <div class="val" style="color:${scoreColor(totals.avg_adj_percentage||0)}">${(totals.avg_adj_percentage||0).toFixed(2)}%</div>
+      <div class="det">${totals.risk_accepted||0} risk acceptance(s) on record</div>
+    </div>
+    <div class="score-card">
+      <div class="lbl">Actions Completed</div>
+      <div class="val" style="color:#0f172a">${totals.completed_actions||0} / ${totals.total_actions||0}</div>
+      <div class="det">${totals.blocked||0} blocked behind prerequisites</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Tenant Overview</div>
+    <table>
+      <thead><tr>
+        <th>Tenant</th><th>Overall Score</th><th>Adjusted Score</th><th>7-Day Progress</th><th>30-Day Progress</th>
+        <th>Completed</th><th>Blocked</th><th>Risk Accepted</th>
+      </tr></thead>
+      <tbody>${tenantRows}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Score by Source Tool</div>
+    ${pdfMatrix('by_tool')}
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Score by Workload</div>
+    ${pdfMatrix('by_workload')}
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Status Distribution</div>
+    ${statusTable}
+  </div>
+
+  <div class="footer">M365 Security Posture Manager &middot; Generated ${today} &middot; Adjusted score excludes Not Applicable and Risk Accepted actions</div>
+  <scr`+`ipt>setTimeout(()=>{window.print();},500);<\/scr`+`ipt>
+  </body></html>`;
 }
 
 // ── Dashboard ──

@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -278,6 +278,61 @@ def create_app(db_path: str = None) -> Flask:
             if tenant:
                 return jsonify(_redact_tenant(tenant))
         return jsonify(_redact_tenant(db.get_active_tenant() or {}))
+
+    # ── Global dashboard (all tenants) ──
+
+    @app.route("/api/global-dashboard", methods=["GET"])
+    def api_global_dashboard():
+        """Fleet overview: per-tenant scores, adjusted scores, 7/30-day
+        progress, tool/workload breakdowns and status distribution, plus
+        aggregate totals. Feeds the landing page and the management report."""
+        def _progress(snapshots, current_pct, days):
+            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            older = [s for s in snapshots if s["timestamp"] <= cutoff]
+            baseline = older[0] if older else (snapshots[-1] if snapshots else None)
+            if not baseline or baseline.get("percentage") is None:
+                return None
+            return round(current_pct - baseline["percentage"], 2)
+
+        tenants_out = []
+        for t in db.list_tenants():
+            name = t["name"]
+            scores = db.get_scores(name)
+            adj = db.get_scores(name, exclude_na=True, exclude_ra=True)
+            snapshots = db.get_score_snapshots(name, limit=200)
+            pct = scores.get("percentage", 0)
+            by_status = scores.get("by_status", {})
+            tenants_out.append({
+                "name": name,
+                "display_name": t.get("display_name") or name,
+                "tenant_id": t.get("tenant_id", ""),
+                "percentage": pct,
+                "adj_percentage": adj.get("percentage", 0),
+                "total_actions": scores.get("total_actions", 0),
+                "completed_actions": scores.get("completed_actions", 0),
+                "progress_7d": _progress(snapshots, pct, 7),
+                "progress_30d": _progress(snapshots, pct, 30),
+                "snapshot_count": len(snapshots),
+                "by_tool": scores.get("by_tool", {}),
+                "by_workload": scores.get("by_workload", {}),
+                "by_status": by_status,
+                "risk_accepted": by_status.get("Risk Accepted", 0),
+                "not_applicable": by_status.get("Not Applicable", 0),
+                "blocked_count": len(db.get_blocked_actions(name)),
+            })
+
+        with_actions = [t for t in tenants_out if t["total_actions"] > 0]
+        totals = {
+            "tenant_count": len(tenants_out),
+            "avg_percentage": round(sum(t["percentage"] for t in with_actions) / len(with_actions), 2) if with_actions else 0,
+            "avg_adj_percentage": round(sum(t["adj_percentage"] for t in with_actions) / len(with_actions), 2) if with_actions else 0,
+            "total_actions": sum(t["total_actions"] for t in tenants_out),
+            "completed_actions": sum(t["completed_actions"] for t in tenants_out),
+            "risk_accepted": sum(t["risk_accepted"] for t in tenants_out),
+            "blocked": sum(t["blocked_count"] for t in tenants_out),
+        }
+        return jsonify({"tenants": tenants_out, "totals": totals,
+                        "generated_at": datetime.utcnow().isoformat()})
 
     # ── Action endpoints ──
 
