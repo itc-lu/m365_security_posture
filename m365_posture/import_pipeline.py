@@ -38,6 +38,65 @@ PARSER_MAP = {
 }
 
 
+class TenantMismatchError(Exception):
+    """Raised when a report was generated for a different tenant than the
+    import target. Carries a structured payload for the UI to offer the
+    right choices (import into the matching tenant / force / cancel)."""
+
+    def __init__(self, payload: dict):
+        super().__init__(payload.get("message", "Report tenant mismatch"))
+        self.payload = payload
+
+
+def _verify_report_tenant(db, tenant_name: str, parser):
+    """Compare the tenant identity embedded in the report (SCuBA and Zero
+    Trust reports carry the Entra tenant ID) against the import target.
+
+    Raises TenantMismatchError when the report clearly belongs to a
+    different tenant. Imports stay allowed when neither side has a tenant
+    ID to compare.
+    """
+    meta = getattr(parser, "report_metadata", {}) or {}
+    report_tid = (meta.get("tenant_id") or "").strip().lower()
+    if not report_tid:
+        return  # Report carries no tenant identity — nothing to verify
+
+    target = db.get_tenant(tenant_name) or {}
+    target_tid = (target.get("tenant_id") or "").strip().lower()
+    if target_tid and report_tid == target_tid:
+        return  # Verified match
+
+    matching = [t for t in db.list_tenants()
+                if (t.get("tenant_id") or "").strip().lower() == report_tid
+                and t["name"] != tenant_name]
+
+    if (target_tid and report_tid != target_tid) or (not target_tid and matching):
+        report_label = meta.get("tenant_name") or meta.get("domain") or meta.get("tenant_id")
+        if matching:
+            hint = ("It matches your configured tenant "
+                    + ", ".join(f"'{t.get('display_name') or t['name']}'" for t in matching) + ".")
+        elif target_tid:
+            hint = "It does not match any configured tenant."
+        else:
+            hint = ""
+        raise TenantMismatchError({
+            "tenant_mismatch": True,
+            "message": (f"This report was generated for tenant '{report_label}' "
+                        f"({meta.get('tenant_id', '')}), not for the selected tenant "
+                        f"'{target.get('display_name') or tenant_name}'. {hint}").strip(),
+            "target_tenant": tenant_name,
+            "target_tenant_display": target.get("display_name") or tenant_name,
+            "target_tenant_id": target.get("tenant_id") or "",
+            "report_tenant_id": meta.get("tenant_id", ""),
+            "report_tenant_name": meta.get("tenant_name", ""),
+            "report_domain": meta.get("domain", ""),
+            "matching_tenants": [
+                {"name": t["name"], "display_name": t.get("display_name") or t["name"]}
+                for t in matching
+            ],
+        })
+
+
 def store_zt_report(db, tenant_name: str, filename: str, tmp_path: str,
                     parser, actions) -> str:
     """Store ZT report HTML and data files, save metadata to DB."""
@@ -156,12 +215,20 @@ def store_scuba_report(db, tenant_name: str, filename: str, tmp_path: str,
 
 
 def process_file_import(db, tenant_name: str, source: str,
-                        file_path: str, filename: str) -> dict:
+                        file_path: str, filename: str,
+                        force_tenant: bool = False) -> dict:
     """Parse and merge a report file for a tenant, then run all post-import
-    processing. Returns the import result dict. Raises on parse errors."""
+    processing. Returns the import result dict. Raises on parse errors and
+    raises TenantMismatchError when the report belongs to a different tenant
+    (unless force_tenant is set)."""
     parser_cls, source_tool = PARSER_MAP[source]
     parser = parser_cls()
     actions = parser.parse_file(file_path)
+
+    # Guard against importing a report into the wrong tenant.
+    if not force_tenant:
+        _verify_report_tenant(db, tenant_name, parser)
+
     actions = apply_e8_mapping(actions)
     actions = enrich_actions_from_controls(db, actions)
 
@@ -199,10 +266,20 @@ def process_file_import(db, tenant_name: str, source: str,
                     "last_seen": a["last_seen_in_report"],
                 })
 
+    meta = getattr(parser, "report_metadata", {}) or {}
     result = {
         "success": True,
         "source": source,
         "file": filename,
+        "report_identity": {
+            "tenant_id": meta.get("tenant_id", ""),
+            "tenant_name": meta.get("tenant_name", ""),
+            "domain": meta.get("domain", ""),
+        } if meta.get("tenant_id") or meta.get("domain") else None,
+        "tenant_verified": bool(
+            meta.get("tenant_id")
+            and (db.get_tenant(tenant_name) or {}).get("tenant_id", "").strip().lower()
+            == (meta.get("tenant_id") or "").strip().lower()),
         "total_parsed": len(actions),
         "new_actions": new_count,
         "updated_actions": updated_count,

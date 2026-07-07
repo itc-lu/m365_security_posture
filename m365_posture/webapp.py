@@ -35,7 +35,10 @@ from .graph_api import (
     client_credentials_token_cert, thumbprint_from_pem,
     start_interactive_auth, exchange_auth_code,
 )
-from .import_pipeline import PARSER_MAP, process_file_import, import_secure_scores_with_token
+from .import_pipeline import (
+    PARSER_MAP, TenantMismatchError, process_file_import,
+    import_secure_scores_with_token,
+)
 from .web_frontend import get_spa_html
 
 # Simple in-memory login rate limiter
@@ -260,13 +263,21 @@ def create_app(db_path: str = None) -> Flask:
     def api_activate_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
+        # The active tenant is per user session. The DB flag is only kept as
+        # the fallback default for fresh sessions — a tenant switch in one
+        # session must never retarget another user's (or tab's) imports.
+        session["active_tenant"] = name
         db.set_active_tenant(name)
         return jsonify({"active": name})
 
     @app.route("/api/active-tenant", methods=["GET"])
     def api_active_tenant():
-        tenant = db.get_active_tenant()
-        return jsonify(tenant or {})
+        selected = session.get("active_tenant")
+        if selected:
+            tenant = db.get_tenant(selected)
+            if tenant:
+                return jsonify(_redact_tenant(tenant))
+        return jsonify(_redact_tenant(db.get_active_tenant() or {}))
 
     # ── Action endpoints ──
 
@@ -438,9 +449,17 @@ def create_app(db_path: str = None) -> Flask:
             file.save(tmp)
             tmp_path = tmp.name
 
+        force_tenant = request.form.get("force") == "1"
         try:
-            result = process_file_import(db, name, source, tmp_path, file.filename)
+            result = process_file_import(db, name, source, tmp_path, file.filename,
+                                         force_tenant=force_tenant)
+            db.audit("import.file", actor=session.get("username"),
+                     entity_type="tenant", entity_id=name,
+                     detail=f"{source}:{file.filename}"
+                            + (" (tenant check overridden)" if force_tenant else ""))
             return jsonify(result)
+        except TenantMismatchError as e:
+            return jsonify({"error": e.payload["message"], **e.payload}), 409
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
         finally:
@@ -494,6 +513,19 @@ def create_app(db_path: str = None) -> Flask:
         if not report:
             return _json_error("Report not found", 404)
         return jsonify(report)
+
+    @app.route("/api/zt-reports/<report_id>", methods=["DELETE"])
+    def api_zt_report_delete(report_id):
+        """Remove a stored ZT report record and its files (imported actions
+        are kept — clean those up via the Actions page if needed)."""
+        report = db.get_zt_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_zt_report(report_id)
+        db.audit("zt_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
 
     @app.route("/api/zt-reports/<report_id>/html", methods=["GET"])
     def api_zt_report_html(report_id):
@@ -619,6 +651,19 @@ def create_app(db_path: str = None) -> Flask:
         if not report:
             return _json_error("Report not found", 404)
         return jsonify(report)
+
+    @app.route("/api/scuba-reports/<report_id>", methods=["DELETE"])
+    def api_scuba_report_delete(report_id):
+        """Remove a stored SCuBA report record and its files (imported
+        actions are kept — clean those up via the Actions page if needed)."""
+        report = db.get_scuba_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_scuba_report(report_id)
+        db.audit("scuba_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
 
     @app.route("/api/scuba-reports/<report_id>/html", methods=["GET"])
     @app.route("/api/scuba-reports/<report_id>/html/<path:subpath>", methods=["GET"])

@@ -766,6 +766,25 @@ class Database:
             d["tenant_info"] = json.loads(d.get("tenant_info") or "{}")
             return d
 
+    def delete_zt_report(self, report_id: str):
+        """Delete a ZT report record and its stored files."""
+        report = self.get_zt_report(report_id)
+        if not report:
+            return
+        import shutil as _shutil
+        for key in ("html_path", "data_dir"):
+            p = report.get(key) or ""
+            if p:
+                # Stored under data/zt_reports/<tenant>/<report_id>/
+                report_dir = Path(p)
+                while report_dir.name and report_dir.name != report_id:
+                    report_dir = report_dir.parent
+                if report_dir.name == report_id and report_dir.exists():
+                    _shutil.rmtree(report_dir, ignore_errors=True)
+                    break
+        with self._conn() as conn:
+            conn.execute("DELETE FROM zt_reports WHERE id=?", (report_id,))
+
     # ── SCuBA Reports ──
 
     def store_scuba_report(self, tenant_name: str, report_data: dict) -> str:
@@ -824,6 +843,22 @@ class Database:
             d["products_assessed"] = json.loads(d.get("products_assessed") or "[]")
             d["product_summary"] = json.loads(d.get("product_summary") or "{}")
             return d
+
+    def delete_scuba_report(self, report_id: str):
+        """Delete a SCuBA report record and its stored files."""
+        report = self.get_scuba_report(report_id)
+        if not report:
+            return
+        import shutil as _shutil
+        p = report.get("html_path") or ""
+        if p:
+            report_dir = Path(p)
+            while report_dir.name and report_dir.name != report_id:
+                report_dir = report_dir.parent
+            if report_dir.name == report_id and report_dir.exists():
+                _shutil.rmtree(report_dir, ignore_errors=True)
+        with self._conn() as conn:
+            conn.execute("DELETE FROM scuba_reports WHERE id=?", (report_id,))
 
     # ── GitLab Templates ──
 

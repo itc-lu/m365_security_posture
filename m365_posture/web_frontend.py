@@ -3449,7 +3449,18 @@ async function renderImport() {
       </div>`;
   }
 
+  const displayName = state.activeTenant.display_name || state.activeTenant.name;
+  const tenantOpts = state.tenants.map(tn =>
+    `<option value="${esc(tn.name)}" ${tn.name===t?'selected':''}>${esc(tn.display_name||tn.name)}</option>`).join('');
+
   c.innerHTML = `
+    <div class="card mb-16" style="border-left:4px solid var(--primary);display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px">
+      <div style="font-size:14px;font-weight:600">Importing into tenant:</div>
+      <select id="imp-tenant" onchange="switchTenant(this.value)" style="max-width:280px;font-weight:600">${tenantOpts}</select>
+      <div style="font-size:12px;color:var(--text-light)">
+        ${state.activeTenant.tenant_id ? `Entra tenant ID: <code>${esc(state.activeTenant.tenant_id)}</code> — reports carrying a different tenant ID are rejected` : `<span style="color:#92400e">&#9888; No Entra tenant ID configured — the report/tenant match cannot be verified. Set it in Tenant Config.</span>`}
+      </div>
+    </div>
     ${graphSection}
     <div class="card mb-16">
       <div class="card-header">Import from File</div>
@@ -3463,7 +3474,7 @@ async function renderImport() {
       </div>
       <input type="file" id="imp-file" accept=".json,.csv,.zip" style="display:none" onchange="handleFileSelect(event)">
       <div id="imp-file-name" style="margin-top:8px;font-size:13px"></div>
-      <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import</button>
+      <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import into "${esc(displayName)}"</button>
     </div>
     <div id="imp-result"></div>
     <div id="zt-reports-section"></div>`;
@@ -3662,16 +3673,48 @@ function handleDrop(e) { e.preventDefault(); e.currentTarget.classList.remove('d
 
 async function doImport() {
   if(!selectedFile) return;
+  const source = document.getElementById('imp-source').value;
+  const tenantName = document.getElementById('imp-tenant')?.value || state.activeTenant.name;
+  const disp = state.tenants.find(x=>x.name===tenantName)?.display_name || tenantName;
+  if(!await showConfirm('Confirm Import',
+      `Import "${selectedFile.name}" (${source}) into tenant "${disp}"?`,
+      'Import', 'btn-primary')) return;
+  await _postImport(tenantName, source, false);
+}
+
+function _showTenantMismatchDialog(r, tenantName, source) {
+  const matchBtns = (r.matching_tenants||[]).map(m =>
+    `<button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:8px"
+      onclick="closeModal();_postImport('${esc(m.name)}','${esc(source)}',false)">
+      Import into "${esc(m.display_name)}" instead (recommended)</button>`).join('');
+  openModal('&#9888; Report Belongs to a Different Tenant', `
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#991b1b">
+      ${esc(r.message||'')}
+    </div>
+    <table style="font-size:13px;margin-bottom:14px">
+      <tr><td style="color:var(--text-light);padding:3px 12px 3px 0">Report generated for</td><td><strong>${esc(r.report_tenant_name||r.report_domain||'—')}</strong> <code style="font-size:11px">${esc(r.report_tenant_id||'')}</code></td></tr>
+      <tr><td style="color:var(--text-light);padding:3px 12px 3px 0">Selected tenant</td><td><strong>${esc(r.target_tenant_display||r.target_tenant||'')}</strong> <code style="font-size:11px">${esc(r.target_tenant_id||'(no tenant ID configured)')}</code></td></tr>
+    </table>
+    ${matchBtns}
+    <button class="btn" style="width:100%;justify-content:center;margin-bottom:8px"
+      onclick="closeModal();(async()=>{if(await showConfirm('Are you sure?','Importing this report into &quot;${esc(r.target_tenant_display||r.target_tenant)}&quot; will mix another tenant\\'s results into its data. This is almost always a mistake.','Import anyway','btn-danger'))_postImport('${esc(tenantName)}','${esc(source)}',true)})()">
+      Import anyway into "${esc(r.target_tenant_display||r.target_tenant)}" (override)</button>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>`);
+}
+
+async function _postImport(tenantName, source, force) {
   const fd = new FormData();
-  fd.append('source', document.getElementById('imp-source').value);
+  fd.append('source', source);
   fd.append('file', selectedFile);
-  document.getElementById('imp-btn').disabled=true;
-  document.getElementById('imp-btn').textContent='Importing...';
-  const r = await api.upload(`/api/tenants/${state.activeTenant.name}/import`, fd);
-  document.getElementById('imp-btn').textContent='Import';
-  document.getElementById('imp-btn').disabled=false;
+  if(force) fd.append('force', '1');
+  const btn = document.getElementById('imp-btn');
+  if(btn) { btn.disabled = true; btn.textContent = 'Importing...'; }
+  const r = await api.upload(`/api/tenants/${tenantName}/import`, fd);
+  if(btn) { btn.textContent = 'Import'; btn.disabled = false; }
+  if(r.tenant_mismatch) { _showTenantMismatchDialog(r, tenantName, source); return; }
   if(r.error) { toast(r.error,'error'); return; }
-  toast('Import successful!','success');
+  const _dispT = state.tenants.find(x=>x.name===tenantName)?.display_name || tenantName;
+  toast(`Import into "${_dispT}" successful!`,'success');
 
   // Drift detection display
   let driftHtml = '';
@@ -3702,8 +3745,21 @@ async function doImport() {
     expiredHtml = `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${r.expired_risk_acceptances} risk acceptance(s) expired</strong> and reverted to ToDo. <a href="#risks" style="text-decoration:underline">Review</a></div></div>`;
   }
 
+  const identityHtml = (() => {
+    const id = r.report_identity;
+    const label = id ? (id.tenant_name || id.domain || id.tenant_id) : '';
+    if(r.tenant_verified) {
+      return `<div style="font-size:12px;margin-bottom:10px"><span class="badge badge-success">&#10003; Tenant verified</span> <span style="color:var(--text-light)">Report generated for <strong>${esc(label)}</strong> (${esc(id.tenant_id||'')}) — matches "${esc(_dispT)}".</span></div>`;
+    }
+    if(id) {
+      return `<div style="font-size:12px;margin-bottom:10px"><span class="badge badge-warning">Unverified</span> <span style="color:var(--text-light)">Report identity: <strong>${esc(label)}</strong>${id.tenant_id?` (${esc(id.tenant_id)})`:''} — imported into "${esc(_dispT)}"${force?' with tenant check overridden':' (target has no tenant ID configured to verify against)'}.</span></div>`;
+    }
+    return `<div style="font-size:12px;margin-bottom:10px;color:var(--text-light)">Imported into <strong>${esc(_dispT)}</strong>. This report format carries no tenant identity to verify.</div>`;
+  })();
+
   document.getElementById('imp-result').innerHTML = `${expiredHtml}${driftHtml}
-    <div class="card"><div class="card-header">Import Result</div>
+    <div class="card"><div class="card-header">Import Result — ${esc(_dispT)}</div>
+      ${identityHtml}
       <div class="grid grid-4">
         <div class="stat-card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
         <div class="stat-card"><div class="value" style="color:var(--success)">${r.new_actions}</div><div class="label">New</div></div>
@@ -3728,11 +3784,14 @@ async function doImport() {
       ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${esc(d.title||'')}</td><td><code>${esc(d.source_id||'')}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+esc(d.existing_source_id||'')+'</code>':''}</td><td>${esc(d.matched_by||'')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
+  const fname = document.getElementById('imp-file-name');
+  if(fname) fname.textContent = '';
+  if(btn) btn.disabled = true;
   // Reload ZT reports after import
-  if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+  if(r.zt_report_id) loadZtReports(tenantName);
   // Show unlinked action dialog if any couldn't be matched to global actions
   if(r.unlinked_actions && r.unlinked_actions.length > 0) {
-    setTimeout(() => handlePostImportUnlinked(state.activeTenant.name, r), 400);
+    setTimeout(() => handlePostImportUnlinked(tenantName, r), 400);
   }
 }
 
@@ -3843,7 +3902,8 @@ async function loadZtReports(tenantName) {
       <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
       <td style="font-size:12px">${esc(summaryText)}</td>
       <td>${esc(r.tool_version || '')}</td>
-      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
+      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteZtReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
     </tr>`;
   }).join('');
 
@@ -3855,6 +3915,15 @@ async function loadZtReports(tenantName) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+async function deleteZtReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this Zero Trust report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source > select all > Delete if the import was a mistake.')) return;
+  const r = await api.del(`/api/zt-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  loadZtReports(state.activeTenant.name);
 }
 
 async function showZtReportDetail(reportId) {
@@ -5396,7 +5465,8 @@ async function renderScuba() {
         <td>${esc(r.tool_version || '')}</td>
         <td>${gauge(pr, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
-        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
+        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteScubaReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
       </tr>`;
     }).join('');
     reportsHtml = `<div class="card mb-16"><div class="card-header">Import History</div>
@@ -5434,6 +5504,15 @@ function exportScubaExcel() {
   }
   exportTableExcel(`scuba_${state.activeTenant.name}`, 'SCuBA',
     ['Product','Group','Control ID','Requirement','Result','Criticality','Details','Notes'], rows);
+}
+
+async function deleteScubaReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this SCuBA report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source > select all > Delete if the import was a mistake.')) return;
+  const r = await api.del(`/api/scuba-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  renderScuba();
 }
 
 async function showScubaReportDetail(reportId) {
