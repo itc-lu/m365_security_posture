@@ -111,26 +111,6 @@ class GlobalActionReviewStatus(str, Enum):
 
 
 @dataclass
-class HistoryEntry:
-    """A single point-in-time snapshot of an action's status."""
-    timestamp: str
-    old_status: Optional[str] = None
-    new_status: Optional[str] = None
-    old_score: Optional[float] = None
-    new_score: Optional[float] = None
-    source_report: Optional[str] = None
-    changed_by: Optional[str] = None
-    notes: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
-
-    @classmethod
-    def from_dict(cls, data: dict) -> HistoryEntry:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
-
-@dataclass
 class Action:
     """A single security recommendation/action item."""
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -192,36 +172,6 @@ class Action:
     def from_dict(cls, data: dict) -> Action:
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
-
-    def update_status(self, new_status: str, source_report: str = "", changed_by: str = "", notes: str = ""):
-        old_status = self.status
-        entry = HistoryEntry(
-            timestamp=datetime.utcnow().isoformat(),
-            old_status=old_status,
-            new_status=new_status,
-            source_report=source_report or None,
-            changed_by=changed_by or None,
-            notes=notes or None,
-        )
-        self.history.append(entry.to_dict())
-        self.status = new_status
-        self.updated_at = datetime.utcnow().isoformat()
-
-    def update_score(self, new_score: float, max_score: float = None, source_report: str = ""):
-        old_score = self.score
-        entry = HistoryEntry(
-            timestamp=datetime.utcnow().isoformat(),
-            old_score=old_score,
-            new_score=new_score,
-            source_report=source_report or None,
-        )
-        self.history.append(entry.to_dict())
-        self.score = new_score
-        if max_score is not None:
-            self.max_score = max_score
-        if self.max_score and self.max_score > 0:
-            self.score_percentage = round((new_score / self.max_score) * 100, 2)
-        self.updated_at = datetime.utcnow().isoformat()
 
 
 @dataclass
@@ -343,19 +293,3 @@ class User:
     def from_dict(cls, data: dict) -> User:
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
-
-
-@dataclass
-class TenantData:
-    """All security posture data for a single tenant."""
-    tenant: dict = field(default_factory=dict)
-    actions: list[dict] = field(default_factory=list)
-    import_history: list[dict] = field(default_factory=list)
-    scores: dict = field(default_factory=dict)  # source_tool -> {score, max_score, date}
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> TenantData:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})

@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import tempfile
 import webbrowser
 from datetime import datetime
@@ -24,33 +23,20 @@ from .models import (
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
     GlobalAction, UserRole,
 )
-from .parsers import (
-    SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
-    SCTParser, M365AssessParser,
-    enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
-)
-from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
+from .parsers import load_seed_controls, parse_graph_control_profiles
+from .essential_eight import apply_e8_mapping, get_e8_summary
+from .compliance import auto_map_compliance
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
-from .compliance import auto_map_compliance
-from .drift import detect_drift
 from .graph_api import (
-    start_device_code_flow, poll_for_token, fetch_secure_scores,
+    start_device_code_flow, poll_for_token,
     fetch_control_profiles, client_credentials_token,
-    client_credentials_token_cert,
+    client_credentials_token_cert, thumbprint_from_pem,
     start_interactive_auth, exchange_auth_code,
 )
+from .import_pipeline import PARSER_MAP, process_file_import, import_secure_scores_with_token
 from .web_frontend import get_spa_html
-
-PARSER_MAP = {
-    "secure-score": (SecureScoreParser, SourceTool.SECURE_SCORE.value),
-    "scuba": (ScubaParser, SourceTool.SCUBA.value),
-    "zero-trust": (ZeroTrustParser, SourceTool.ZERO_TRUST.value),
-    "zero-trust-report": (ZeroTrustReportParser, SourceTool.ZERO_TRUST_REPORT.value),
-    "sct": (SCTParser, SourceTool.SCT.value),
-    "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
-}
 
 # Simple in-memory login rate limiter
 _login_attempts: dict = {}
@@ -92,6 +78,18 @@ def create_app(db_path: str = None) -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = 28800  # 8 hours
     app.json.sort_keys = False
     db = Database(db_path)
+
+    # Seed the Secure Score control reference table on first run so imported
+    # actions carry descriptions and remediation steps even before a Graph
+    # API fetch refreshes them.
+    with db._conn() as conn:
+        _has_controls = conn.execute(
+            "SELECT COUNT(*) AS c FROM secure_score_controls").fetchone()["c"]
+    if not _has_controls:
+        _seeds = load_seed_controls()
+        if _seeds:
+            result = db.seed_controls(_seeds)
+            print(f"[INFO] Seeded {result['total']} Secure Score reference controls.", flush=True)
 
     def login_required(f):
         @wraps(f)
@@ -157,6 +155,10 @@ def create_app(db_path: str = None) -> Flask:
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
                 return jsonify({"error": "CSRF check failed"}), 403
+            # Viewers are read-only everywhere except their own auth actions
+            if session.get("role") == "viewer" and request.endpoint not in (
+                    "api_auth_login", "api_auth_logout", "api_auth_change_password"):
+                return jsonify({"error": "Read-only role: viewers cannot modify data"}), 403
         # Force password-change: restrict access until the flag is cleared
         if session.get("must_change_password"):
             if request.endpoint not in _PASSWORD_RESET_ALLOWED:
@@ -245,10 +247,13 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["DELETE"])
+    @require_role("admin")
     def api_delete_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         db.delete_tenant(name)
+        db.audit("tenant.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
         return jsonify({"deleted": True})
 
     @app.route("/api/tenants/<name>/activate", methods=["POST"])
@@ -337,10 +342,6 @@ def create_app(db_path: str = None) -> Flask:
                 deleted += 1
         return jsonify({"deleted": deleted, "total_requested": len(action_ids)})
 
-    @app.route("/api/actions/<action_id>/history", methods=["GET"])
-    def api_action_history(action_id):
-        return jsonify(db.get_action_history(action_id))
-
     @app.route("/api/actions/<action_id>/implementation", methods=["PUT"])
     def api_update_action_implementation(action_id):
         """Save implementation steps either globally (default) or only for
@@ -388,11 +389,12 @@ def create_app(db_path: str = None) -> Flask:
         if peer_ids is not None:
             peer_id_set = set(peer_ids)
             targets = [p for p in targets if p["id"] in peer_id_set]
+        changed_by = session.get("username") or data.get("changed_by", "peer-sync")
         updated = 0
         for p in targets:
-            db.update_action(p["id"], status=action.status)
+            db.update_action(p["id"], {"status": action["status"]}, changed_by=changed_by)
             updated += 1
-        return jsonify({"updated": updated, "status": action.status})
+        return jsonify({"updated": updated, "status": action["status"]})
 
     @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
     def api_tenant_peer_disagreements(name):
@@ -418,136 +420,6 @@ def create_app(db_path: str = None) -> Flask:
 
     # ── Import endpoint ──
 
-    def _store_zt_report(db, tenant_name, filename, tmp_path, parser, actions):
-        """Store ZT report HTML and data files, save metadata to DB."""
-        reports_dir = Path(db.db_path).parent / "zt_reports" / tenant_name
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        import uuid as _uuid
-        report_id = str(_uuid.uuid4())[:8]
-        report_dir = reports_dir / report_id
-        report_dir.mkdir(exist_ok=True)
-
-        html_path = ""
-        data_dir = ""
-
-        if Path(tmp_path).suffix.lower() == ".zip":
-            # Extract ZIP contents to report directory
-            extract_dir = getattr(parser, "_extract_dir", None)
-            if extract_dir and Path(extract_dir).exists():
-                # Move extracted files to permanent storage
-                for item in Path(extract_dir).iterdir():
-                    dest = report_dir / item.name
-                    if item.is_dir():
-                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(str(item), str(dest))
-                shutil.rmtree(extract_dir, ignore_errors=True)
-
-            # Find HTML file
-            for html_file in report_dir.rglob("*.html"):
-                html_path = str(html_file)
-                break
-
-            # Find zt-export data dir
-            for candidate in report_dir.rglob("zt-export"):
-                if candidate.is_dir():
-                    data_dir = str(candidate)
-                    break
-        else:
-            # Single JSON file - copy it
-            shutil.copy2(tmp_path, str(report_dir / filename))
-
-        # Count statuses
-        from collections import Counter
-        status_counts = Counter(a.status for a in actions)
-
-        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
-        report_data = {
-            "id": report_id,
-            "imported_at": datetime.utcnow().isoformat(),
-            "executed_at": metadata.get("executed_at", ""),
-            "report_tenant_id": metadata.get("tenant_id", ""),
-            "report_tenant_name": metadata.get("tenant_name", ""),
-            "report_domain": metadata.get("domain", ""),
-            "report_account": metadata.get("account", ""),
-            "tool_version": metadata.get("tool_version", ""),
-            "test_result_summary": getattr(parser, "test_result_summary", {}),
-            "tenant_info": getattr(parser, "tenant_info", {}),
-            "html_path": html_path,
-            "data_dir": data_dir,
-            "total_tests": len(actions),
-            "passed_tests": status_counts.get("Completed", 0),
-            "failed_tests": status_counts.get("ToDo", 0),
-            "source_file": filename,
-        }
-        return db.store_zt_report(tenant_name, report_data)
-
-    def _store_scuba_report(db, tenant_name, filename, tmp_path, parser, actions):
-        """Store SCuBA report HTML and data files, save metadata to DB."""
-        reports_dir = Path(db.db_path).parent / "scuba_reports" / tenant_name
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        import uuid as _uuid
-        report_id = str(_uuid.uuid4())[:8]
-        report_dir = reports_dir / report_id
-        report_dir.mkdir(exist_ok=True)
-
-        html_path = ""
-
-        if Path(tmp_path).suffix.lower() == ".zip":
-            # Extract ZIP contents to report directory
-            extract_dir = getattr(parser, "_extract_dir", None)
-            if extract_dir and Path(extract_dir).exists():
-                for item in Path(extract_dir).iterdir():
-                    dest = report_dir / item.name
-                    if item.is_dir():
-                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(str(item), str(dest))
-                shutil.rmtree(extract_dir, ignore_errors=True)
-
-            # Find BaselineReports.html (main ScubaGear report)
-            for html_file in report_dir.rglob("BaselineReports.html"):
-                html_path = str(html_file)
-                break
-            # Fall back to any HTML
-            if not html_path:
-                for html_file in report_dir.rglob("*.html"):
-                    html_path = str(html_file)
-                    break
-        else:
-            # Single JSON/CSV file - copy it
-            shutil.copy2(tmp_path, str(report_dir / filename))
-
-        # Count statuses
-        from collections import Counter
-        status_counts = Counter(a.status for a in actions)
-
-        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
-        product_summary = parser.product_summary if hasattr(parser, "product_summary") else {}
-
-        report_data = {
-            "id": report_id,
-            "imported_at": datetime.utcnow().isoformat(),
-            "executed_at": metadata.get("timestamp", ""),
-            "report_tenant_id": metadata.get("tenant_id", ""),
-            "report_tenant_name": metadata.get("tenant_name", ""),
-            "report_domain": metadata.get("domain", ""),
-            "tool_version": metadata.get("tool_version", ""),
-            "report_uuid": metadata.get("report_uuid", ""),
-            "products_assessed": metadata.get("products_assessed", []),
-            "product_summary": product_summary,
-            "total_controls": len(actions),
-            "passed_controls": status_counts.get("Completed", 0),
-            "failed_controls": status_counts.get("ToDo", 0),
-            "warning_controls": status_counts.get("In Planning", 0),
-            "manual_controls": status_counts.get("Not Applicable", 0),
-            "source_file": filename,
-            "html_path": html_path,
-        }
-        return db.store_scuba_report(tenant_name, report_data)
-
     @app.route("/api/tenants/<name>/import", methods=["POST"])
     def api_import(name):
         if not db.get_tenant(name):
@@ -567,93 +439,44 @@ def create_app(db_path: str = None) -> Flask:
             tmp_path = tmp.name
 
         try:
-            parser_cls, source_tool = PARSER_MAP[source]
-            parser = parser_cls()
-            actions = parser.parse_file(tmp_path)
-            actions = apply_e8_mapping(actions)
-
-            # Enrich actions from the reference control table
-            actions = enrich_actions_from_controls(db, actions)
-
-            new_count, updated_count, updated_details, imported_ids = db.merge_actions(name, actions, source_tool, file.filename)
-
-            # Auto-link imported actions to global actions (single transaction)
-            link_result = db.bulk_auto_link_imported(imported_ids)
-            unlinked_actions = link_result["unlinked"]
-
-            # For Zero Trust Report: store HTML report and metadata
-            zt_report_id = None
-            if source == "zero-trust-report":
-                zt_report_id = _store_zt_report(db, name, file.filename, tmp_path, parser, actions)
-
-            # For SCuBA: store report metadata
-            scuba_report_id = None
-            if source == "scuba":
-                scuba_report_id = _store_scuba_report(db, name, file.filename, tmp_path, parser, actions)
-
-            # Auto-correlate after import
-            corr = auto_correlate(db, name)
-
-            # Auto-map compliance frameworks
-            compliance = auto_map_compliance(db, name)
-
-            # Take score snapshot for trending
-            snapshot = db.take_score_snapshot(name, trigger=f"import:{source}")
-
-            # Expire any risk acceptances past their date
-            expired = db.expire_risk_acceptances(name)
-
-            # Detect drift vs previous snapshot
-            drift = detect_drift(db, name, source_tool)
-
-            # Count actions whose status was protected during import
-            protected_actions = [d for d in updated_details if d.get("status_protected")]
-
-            # Find stale actions: same source_tool but not in this import
-            all_tenant_actions = db.get_actions(name)
-            import_ts = datetime.utcnow().isoformat()
-            stale_actions = []
-            for a in all_tenant_actions:
-                if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
-                    # If last_seen is significantly older than this import, it's stale
-                    if a["last_seen_in_report"] < import_ts[:10]:
-                        stale_actions.append({
-                            "id": a["id"], "title": a["title"],
-                            "status": a["status"],
-                            "last_seen": a["last_seen_in_report"],
-                        })
-
-            result = {
-                "success": True,
-                "source": source,
-                "file": file.filename,
-                "total_parsed": len(actions),
-                "new_actions": new_count,
-                "updated_actions": updated_count,
-                "updated_details": updated_details,
-                "protected_actions": protected_actions,
-                "stale_actions": stale_actions,
-                "correlation": corr,
-                "compliance": compliance,
-                "drift": drift,
-                "expired_risk_acceptances": len(expired),
-                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
-            }
-            if zt_report_id:
-                result["zt_report_id"] = zt_report_id
-            if scuba_report_id:
-                result["scuba_report_id"] = scuba_report_id
-            result["unlinked_actions"] = unlinked_actions
+            result = process_file_import(db, name, source, tmp_path, file.filename)
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
         finally:
             os.unlink(tmp_path)
 
-    # ── Zero Trust Report endpoints ──
+    # ── Import status conflicts (DB status vs. last imported status) ──
 
-    def _zt_reports_dir():
-        return Path(db.db_path).parent / "zt_reports"
+    @app.route("/api/tenants/<name>/import-status-conflicts", methods=["GET"])
+    def api_import_status_conflicts(name):
+        """Actions whose protected status differs from what the last import
+        reported. The user decides per item (or in bulk) which side wins."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_import_status_conflicts(name))
+
+    @app.route("/api/tenants/<name>/import-status-conflicts/resolve", methods=["POST"])
+    def api_resolve_import_status_conflicts(name):
+        """Resolve import/DB status conflicts.
+
+        Body: {"resolution": "use_import"|"keep_mine",
+               "action_ids": [...]}          # omit action_ids to resolve all
+        - use_import: set the action status to the status the import reported.
+        - keep_mine:  keep the DB status and dismiss the conflict.
+        """
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        resolution = data.get("resolution")
+        if resolution not in ("use_import", "keep_mine"):
+            return _json_error("resolution must be 'use_import' or 'keep_mine'")
+        changed_by = session.get("username") or data.get("changed_by", "import-sync")
+        result = db.resolve_import_status_conflicts(
+            name, resolution, data.get("action_ids"), changed_by)
+        return jsonify(result)
+
+    # ── Zero Trust Report endpoints ──
 
     @app.route("/api/tenants/<name>/zt-reports", methods=["GET"])
     def api_zt_reports(name):
@@ -681,26 +504,6 @@ def create_app(db_path: str = None) -> Flask:
         if not html_path or not Path(html_path).exists():
             return _json_error("HTML report file not found", 404)
         return send_file(html_path, mimetype="text/html")
-
-    @app.route("/api/zt-reports/<report_id>/data/<path:filepath>", methods=["GET"])
-    def api_zt_report_data(report_id, filepath):
-        """Serve files from the report's zt-export data directory."""
-        report = db.get_zt_report(report_id)
-        if not report:
-            return _json_error("Report not found", 404)
-        data_dir = report.get("data_dir", "")
-        if not data_dir:
-            return _json_error("No data directory for this report", 404)
-        full_path = Path(data_dir) / filepath
-        # Security: ensure path stays within data_dir
-        try:
-            full_path.resolve().relative_to(Path(data_dir).resolve())
-        except ValueError:
-            return _json_error("Invalid path", 400)
-        if not full_path.exists():
-            return _json_error("File not found", 404)
-        mime = "application/json" if full_path.suffix == ".json" else "application/octet-stream"
-        return send_file(str(full_path), mimetype=mime)
 
     # ── Scores endpoint ──
 
@@ -911,6 +714,26 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         result = auto_correlate(db, name)
         return jsonify(result)
+
+    @app.route("/api/tenants/<name>/suggested-links", methods=["GET"])
+    def api_suggested_links(name):
+        """Cross-tool action pairs that likely represent the same control
+        (title similarity), so linking them lets one fix validate all tools."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .correlation import suggest_action_links
+        return jsonify(suggest_action_links(db, name))
+
+    @app.route("/api/tenants/<name>/suggested-links/dismiss", methods=["POST"])
+    def api_dismiss_suggested_link(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        a, b = data.get("action_a_id"), data.get("action_b_id")
+        if not a or not b:
+            return _json_error("action_a_id and action_b_id required")
+        db.dismiss_link_suggestion(name, a, b)
+        return jsonify({"dismissed": True})
 
     @app.route("/api/correlation-groups", methods=["GET"])
     def api_correlation_groups():
@@ -1350,24 +1173,6 @@ def create_app(db_path: str = None) -> Flask:
         db.unlink_actions(aid, tid)
         return jsonify({"ok": True})
 
-    # ── Pin/unpin actions on dashboard ──
-
-    @app.route("/api/actions/<action_id>/pin", methods=["POST"])
-    def api_pin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 1})
-        return jsonify({"pinned": True})
-
-    @app.route("/api/actions/<action_id>/unpin", methods=["POST"])
-    def api_unpin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 0})
-        return jsonify({"pinned": False})
-
     # ── Batch status update ──
 
     @app.route("/api/actions/batch-status", methods=["POST"])
@@ -1521,6 +1326,93 @@ def create_app(db_path: str = None) -> Flask:
             "issues": issues,
         })
 
+    # ── Generic table → Excel export ──
+
+    @app.route("/api/export-xlsx", methods=["POST"])
+    def api_export_xlsx():
+        """Turn posted table data into an Excel file.
+
+        Body: {"filename": "...", "sheet": "...", "headers": [...], "rows": [[...], ...]}
+        Used by the 'Export Excel' buttons throughout the UI.
+        """
+        from .xlsx import make_xlsx
+        data = request.get_json() or {}
+        headers = data.get("headers") or []
+        rows = data.get("rows") or []
+        if not headers:
+            return _json_error("headers required")
+        if len(rows) > 50000:
+            return _json_error("Too many rows (max 50000)")
+        fname = re.sub(r"[^A-Za-z0-9._-]", "_", data.get("filename") or "export")[:80]
+        content = make_xlsx(headers, rows, data.get("sheet") or "Export")
+        resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp.headers["Content-Disposition"] = f"attachment; filename={fname}.xlsx"
+        return resp
+
+    # ── Data export (raw actions as CSV / JSON / Excel) ──
+
+    _EXPORT_COLUMNS = [
+        "id", "title", "status", "priority", "risk_level", "user_impact",
+        "implementation_effort", "workload", "source_tool", "source_id",
+        "reference_id", "category", "subcategory", "score", "max_score",
+        "score_percentage", "required_licence", "essential_eight_control",
+        "essential_eight_maturity", "responsible", "planned_date", "notes",
+        "risk_owner", "risk_justification", "risk_review_date", "risk_expiry_date",
+        "reference_url", "last_seen_in_report", "created_at", "updated_at",
+    ]
+
+    @app.route("/api/tenants/<name>/export-actions", methods=["GET"])
+    def api_export_actions(name):
+        """Download the tenant's actions as CSV or JSON, with optional
+        status / source_tool / workload filters."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        fmt = request.args.get("format", "csv").lower()
+        filters = {}
+        for key in ("status", "source_tool", "workload"):
+            val = request.args.get(key)
+            if val:
+                filters[key] = val
+        actions = db.get_actions(name, filters)
+        stamp = datetime.utcnow().strftime("%Y%m%d")
+
+        if fmt == "json":
+            rows = []
+            for a in actions:
+                row = {k: a.get(k) for k in _EXPORT_COLUMNS}
+                row["description"] = a.get("description", "")
+                row["implementation_steps"] = a.get("implementation_steps", "")
+                row["tags"] = a.get("tags", [])
+                rows.append(row)
+            resp = Response(json.dumps(rows, indent=2), mimetype="application/json")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.json"
+            return resp
+
+        if fmt == "csv":
+            import csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(_EXPORT_COLUMNS)
+            for a in actions:
+                writer.writerow([a.get(k) if a.get(k) is not None else "" for k in _EXPORT_COLUMNS])
+            resp = Response(buf.getvalue(), mimetype="text/csv")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.csv"
+            return resp
+
+        if fmt == "xlsx":
+            from .xlsx import make_xlsx
+            rows = [[a.get(k) for k in _EXPORT_COLUMNS] for a in actions]
+            content = make_xlsx(_EXPORT_COLUMNS, rows, "Actions")
+            resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.xlsx"
+            return resp
+
+        return _json_error("format must be 'csv', 'json' or 'xlsx'")
+
     # ── Export endpoint ──
 
     @app.route("/api/tenants/<name>/export", methods=["POST"])
@@ -1616,25 +1508,12 @@ def create_app(db_path: str = None) -> Flask:
         db.remove_dependency(action_id, depends_on_id)
         return jsonify({"removed": True})
 
-    @app.route("/api/tenants/<name>/dependency-graph", methods=["GET"])
-    def api_dependency_graph(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        return jsonify(db.get_dependency_graph(name))
-
     @app.route("/api/tenants/<name>/blocked-actions", methods=["GET"])
     def api_blocked_actions(name):
+        """Open actions waiting on incomplete dependencies."""
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         return jsonify(db.get_blocked_actions(name))
-
-    @app.route("/api/tenants/<name>/implementation-order", methods=["POST"])
-    def api_implementation_order(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        action_ids = data.get("action_ids")
-        return jsonify(db.get_implementation_order(name, action_ids))
 
     # ── Compliance endpoints ──
 
@@ -1653,10 +1532,6 @@ def create_app(db_path: str = None) -> Flask:
         frameworks = data.get("frameworks")
         result = auto_map_compliance(db, name, frameworks)
         return jsonify(result)
-
-    @app.route("/api/actions/<action_id>/compliance", methods=["GET"])
-    def api_action_compliance(action_id):
-        return jsonify(db.get_action_compliance(action_id))
 
     # ── Risk Acceptance endpoints ──
 
@@ -1718,14 +1593,6 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         limit = request.args.get("limit", 20, type=int)
         return jsonify(db.get_drift_reports(name, limit))
-
-    @app.route("/api/tenants/<name>/drift/detect", methods=["POST"])
-    def api_detect_drift(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        result = detect_drift(db, name, data.get("source_tool"))
-        return jsonify(result)
 
     # ── Graph API (Device Code Auth) ──
 
@@ -1813,58 +1680,8 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            # Fetch scores and control profiles for full enrichment
-            scores_data = fetch_secure_scores(flow["access_token"])
-            try:
-                profiles_data = fetch_control_profiles(flow["access_token"])
-            except Exception:
-                profiles_data = None
-
-            # If we got profiles, update the reference table too
-            if profiles_data:
-                try:
-                    controls = parse_graph_control_profiles(profiles_data)
-                    db.seed_controls(controls)
-                except Exception:
-                    pass  # Non-critical
-
-            parser = SecureScoreParser()
-            actions, overall_scores = parser.parse_graph_response(scores_data, profiles_data)
-            actions = apply_e8_mapping(actions)
-            actions = enrich_actions_from_controls(db, actions)
-
-            source_tool = SourceTool.SECURE_SCORE.value
-            new_count, updated_count, _, _imported_ids = db.merge_actions(name, actions, source_tool, "graph_api")
-
-            # Remove any duplicates from previous imports with different source_id formats
-            dedup = db.deduplicate_actions(name, source_tool)
-
-            # Store the authoritative overall scores from Graph API
-            if overall_scores.get("maxScore", 0) > 0:
-                db.store_graph_scores(name, overall_scores)
-
-            # Post-import processing
-            corr = auto_correlate(db, name)
-            compliance = auto_map_compliance(db, name)
-            snapshot = db.take_score_snapshot(name, trigger="import:graph-api")
-            expired = db.expire_risk_acceptances(name)
-            drift = detect_drift(db, name, source_tool)
-
-            return jsonify({
-                "success": True,
-                "source": "Microsoft Graph API",
-                "total_parsed": len(actions),
-                "new_actions": new_count,
-                "updated_actions": updated_count,
-                "correlation": corr,
-                "compliance": compliance,
-                "drift": drift,
-                "expired_risk_acceptances": len(expired),
-                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
-                "profiles_loaded": getattr(parser, '_profile_count', 0),
-                "unmatched_controls": getattr(parser, '_unmatched_controls', []),
-                "duplicates_removed": dedup.get("removed", 0),
-            })
+            result = import_secure_scores_with_token(db, name, flow["access_token"])
+            return jsonify(result)
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")
 
@@ -2082,6 +1899,188 @@ def create_app(db_path: str = None) -> Flask:
             remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
             return jsonify({"authenticated": True, "expires_in": remaining})
         return jsonify({"authenticated": False})
+
+    @app.route("/api/tenants/<name>/graph/logout", methods=["POST"])
+    def api_graph_logout(name):
+        """Sign out of the tenant's Graph session: discard cached tokens and
+        any pending auth flows for this tenant."""
+        had_session = name in _device_flows or name in _interactive_flows
+        _device_flows.pop(name, None)
+        _interactive_flows.pop(name, None)
+        db.audit("graph.logout", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify({"logged_out": had_session})
+
+    @app.route("/api/tenants/<name>/graph/test", methods=["POST"])
+    def api_graph_test(name):
+        """Test the tenant's app-only Graph credentials without importing.
+
+        Tries certificate auth when a certificate is configured, otherwise
+        the client secret. Returns which method succeeded or a clear error.
+        """
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        if not tenant.get("tenant_id") or not tenant.get("client_id"):
+            return _json_error("Set Tenant ID and Client ID first.")
+
+        errors = []
+        if tenant.get("certificate_path"):
+            try:
+                client_credentials_token_cert(
+                    tenant["tenant_id"], tenant["client_id"],
+                    tenant["certificate_path"],
+                    tenant.get("certificate_thumbprint", ""))
+                return jsonify({"ok": True, "method": "certificate"})
+            except Exception as e:
+                errors.append(f"Certificate: {e}")
+        if tenant.get("client_secret"):
+            try:
+                client_credentials_token(
+                    tenant["tenant_id"], tenant["client_id"], tenant["client_secret"])
+                return jsonify({"ok": True, "method": "client_secret"})
+            except Exception as e:
+                errors.append(f"Client secret: {e}")
+        if not errors:
+            return _json_error(
+                "No app-only credentials configured. Upload a certificate or set a client secret.")
+        return jsonify({"ok": False, "error": " | ".join(errors)}), 400
+
+    @app.route("/api/tenants/<name>/certificate", methods=["POST"])
+    @require_role("admin")
+    def api_upload_certificate(name):
+        """Upload a PEM certificate bundle (private key + certificate) for
+        app-only Graph authentication. Stores it under data/certs/ and sets
+        certificate_path + derived thumbprint on the tenant."""
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        file = request.files.get("file")
+        if not file:
+            return _json_error("No file uploaded")
+        pem_bytes = file.read()
+        if len(pem_bytes) > 1024 * 1024:
+            return _json_error("Certificate file too large")
+        text = pem_bytes.decode("utf-8", errors="ignore")
+        if "PRIVATE KEY-----" not in text:
+            return _json_error(
+                "The PEM file must contain the private key "
+                "(a '-----BEGIN PRIVATE KEY-----' or '-----BEGIN RSA PRIVATE KEY-----' block). "
+                "Export both key and certificate into one .pem file.")
+        if "-----BEGIN CERTIFICATE-----" not in text:
+            return _json_error(
+                "The PEM file must also contain the certificate "
+                "(a '-----BEGIN CERTIFICATE-----' block).")
+        thumbprint = thumbprint_from_pem(pem_bytes)
+        if not thumbprint:
+            return _json_error("Could not read the certificate from the PEM file.")
+
+        certs_dir = Path(db.db_path).parent / "certs"
+        certs_dir.mkdir(parents=True, exist_ok=True)
+        cert_path = certs_dir / f"{name}.pem"
+        cert_path.write_bytes(pem_bytes)
+        try:
+            os.chmod(cert_path, 0o600)
+        except OSError:
+            pass
+
+        db.update_tenant(name, certificate_path=str(cert_path),
+                         certificate_thumbprint=thumbprint)
+        # Cached tokens were obtained against old credentials
+        _device_flows.pop(name, None)
+        _interactive_flows.pop(name, None)
+        db.audit("tenant.certificate_upload", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=thumbprint)
+        return jsonify({"ok": True, "certificate_path": str(cert_path),
+                        "thumbprint": thumbprint})
+
+    @app.route("/api/tenants/<name>/certificate", methods=["DELETE"])
+    @require_role("admin")
+    def api_delete_certificate(name):
+        """Remove the stored certificate from the tenant configuration."""
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        cert_path = tenant.get("certificate_path", "")
+        managed_dir = str(Path(db.db_path).parent / "certs")
+        if cert_path and cert_path.startswith(managed_dir) and os.path.isfile(cert_path):
+            os.unlink(cert_path)
+        db.update_tenant(name, certificate_path="", certificate_thumbprint="")
+        _device_flows.pop(name, None)
+        db.audit("tenant.certificate_delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify({"ok": True})
+
+    # ── Automation: schedules, tool configs, runs ──
+
+    @app.route("/api/tenants/<name>/automation", methods=["GET"])
+    def api_automation_overview(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .runner import find_pwsh
+        ps_cfg = db.get_tool_config(name, "powershell")
+        tenant = db.get_tenant(name)
+        return jsonify({
+            "schedules": db.get_schedules(name),
+            "tool_configs": {
+                "scuba": db.get_tool_config(name, "scuba"),
+                "zero_trust": db.get_tool_config(name, "zero_trust"),
+                "powershell": ps_cfg,
+            },
+            "runs": db.get_tool_runs(name),
+            "environment": {
+                "pwsh_found": bool(find_pwsh(ps_cfg)),
+                "pwsh_path": find_pwsh(ps_cfg) or "",
+                "app_credentials": bool(
+                    tenant.get("tenant_id") and tenant.get("client_id")
+                    and (tenant.get("client_secret") or tenant.get("certificate_path"))),
+            },
+        })
+
+    @app.route("/api/tenants/<name>/schedules/<task_type>", methods=["PUT"])
+    def api_set_schedule(name, task_type):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        try:
+            sched = db.set_schedule(name, task_type,
+                                    data.get("frequency", "manual"),
+                                    bool(data.get("enabled")))
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("schedule.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name,
+                 detail=f"{task_type}={sched['frequency']},enabled={sched['enabled']}")
+        return jsonify(sched)
+
+    @app.route("/api/tenants/<name>/tool-config/<tool>", methods=["PUT"])
+    def api_set_tool_config(name, tool):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        if tool not in ("scuba", "zero_trust", "powershell"):
+            return _json_error("Unknown tool")
+        data = request.get_json() or {}
+        return jsonify(db.set_tool_config(name, tool, data.get("config", {})))
+
+    @app.route("/api/tenants/<name>/run/<task_type>", methods=["POST"])
+    def api_run_task(name, task_type):
+        """Start a tool run in the background. Poll /runs for its status."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .runner import execute_task_async, TASK_TYPES
+        if task_type not in TASK_TYPES:
+            return _json_error("Unknown task type")
+        run_id = execute_task_async(db.db_path, name, task_type, trigger="manual")
+        db.audit("tool.run", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=task_type)
+        return jsonify({"run_id": run_id, "status": "running"}), 202
+
+    @app.route("/api/tenants/<name>/runs", methods=["GET"])
+    def api_tool_runs(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 30, type=int)
+        return jsonify(db.get_tool_runs(name, limit))
 
     # ── Auth ──
 
@@ -2538,68 +2537,15 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Action not found", 404)
         return jsonify(result), 201
 
-    # ── Correlation groups (CP management) ──
-
-    @app.route("/api/control-plane/correlation-groups", methods=["GET"])
-    def api_cp_list_correlation_groups():
-        return jsonify(db.list_correlation_groups())
-
-    @app.route("/api/control-plane/correlation-groups", methods=["POST"])
-    def api_cp_create_correlation_group():
-        data = request.get_json() or {}
-        if not data.get("canonical_name"):
-            return _json_error("canonical_name required")
-        result = db.create_correlation_group(
-            data["canonical_name"], data.get("description", ""), data.get("keywords", [])
-        )
-        return jsonify(result), 201
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["PUT"])
-    def api_cp_update_correlation_group(group_id):
-        data = request.get_json() or {}
-        result = db.update_correlation_group(group_id, **data)
-        if not result:
-            return _json_error("Not found", 404)
-        return jsonify(result)
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["DELETE"])
-    def api_cp_delete_correlation_group(group_id):
-        db.delete_correlation_group(group_id)
-        return jsonify({"status": "deleted"})
-
-    # ── Database Migration ──
-
-    @app.route("/api/admin/migrate-database", methods=["POST"])
-    def api_migrate_database():
-        """Migrate to per-tenant database layout."""
-        from .tenant_db import migrate_to_per_tenant, is_migrated
-        if is_migrated():
-            return jsonify({"already_migrated": True,
-                            "message": "Database already migrated to per-tenant layout."})
-        result = migrate_to_per_tenant(db.db_path)
-        return jsonify(result)
-
-    @app.route("/api/admin/migration-status", methods=["GET"])
-    def api_migration_status():
-        from .tenant_db import is_migrated, MIGRATION_MARKER, TENANT_DB_DIR
-        if not is_migrated():
-            return jsonify({"migrated": False})
-        import json as _json
-        marker = _json.loads(MIGRATION_MARKER.read_text())
-        tenant_dbs = list(TENANT_DB_DIR.glob("*.db"))
-        return jsonify({
-            "migrated": True,
-            "migrated_at": marker.get("migrated_at"),
-            "tenants": marker.get("tenants", []),
-            "tenant_db_count": len(tenant_dbs),
-        })
-
     return app
 
 
 def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True):
-    """Start the web server."""
+    """Start the web server and the automation scheduler."""
+    from .database import DEFAULT_DB_PATH
+    from .runner import start_scheduler
     app = create_app(db_path)
+    start_scheduler(str(db_path or DEFAULT_DB_PATH))
     url = f"http://localhost:{port}"
     print(f"Starting M365 Security Posture Manager at {url}")
     if open_browser:
