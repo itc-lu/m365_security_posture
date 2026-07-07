@@ -42,17 +42,17 @@ m365-posture migrate-from-json [--data-dir DIR] [--db PATH] [--tenant NAME] [--d
 | Security Compliance Toolkit | JSON, CSV | |
 | M365-Assess | JSON, CSV | |
 
-Graph API import supports four auth methods per tenant: interactive browser (PKCE, no secret), device code, client secret, and certificate (requires `msal`). Certificates are uploaded as a PEM file (private key + certificate) in Tenant Config — the thumbprint is derived automatically, and a **Test Connection** button verifies the app-only credentials against Graph. Each tenant's Graph session can be signed out at any time (Import page or Tenant Config).
+Graph API import supports four auth methods per tenant: interactive browser (PKCE, no secret), device code, client secret, and certificate (requires `msal`). Each method can be **enabled or disabled per tenant** in Tenant Config — disabled methods disappear from the Import page and are rejected by the API — and the app-only methods (certificate, client secret) each have their own **Test** button. Certificates are uploaded as a PEM file (private key + certificate); the thumbprint is derived automatically. Each tenant's Graph session can be signed out at any time (Import page or Tenant Config).
 
 ### Automation & Scheduling
 
 The **Automation** page runs the assessment tools directly and imports their results — manually ("Run now") or on a per-tenant schedule (daily / weekly / monthly, e.g. Secure Score daily and SCuBA weekly for one tenant, both monthly for another):
 
 - **Secure Score Import** — via Graph API with the tenant's app-only credentials (certificate or client secret). Fully unattended.
-- **SCuBA Run + Import** — invokes `Invoke-SCuBA` (CISA ScubaGear) with the tenant's product list, organization and optional ScubaGear config YAML, then imports the report. Requires PowerShell 7 (`pwsh`) + the ScubaGear module; certificate auth enables unattended runs.
-- **Zero Trust Run + Import** — invokes `Invoke-ZTAssessment` and imports the report. Requires PowerShell 7 + the ZeroTrustAssessment module.
+- **SCuBA Run + Import** — invokes `Invoke-SCuBA` (CISA ScubaGear) driven entirely by an **uploaded ScubaGear YAML config file** (products, organization, environment and auth all live in that file; use its certificate/AppID settings for unattended runs), then imports the report. Requires PowerShell 7 (`pwsh`); the ScubaGear module can be installed via `Install-Module` or pointed at a local checkout via the *ScubaGear folder* setting.
+- **Zero Trust Run + Import** — invokes `Invoke-ZTAssessment` and imports the report. Requires PowerShell 7 + the ZeroTrustAssessment module (installed, or via a module-folder setting).
 
-Every run (manual or scheduled) is recorded in the Run History with status, duration and output details. The scheduler runs inside `m365-posture web`; schedules fire while the app is running.
+Every run (manual or scheduled) is recorded in the Run History with status and duration; clicking a run expands the complete tool output (stdout/stderr tails on failure) so the reason for a failure is always visible. The scheduler runs inside `m365-posture web`; schedules fire while the app is running.
 
 PowerShell collection scripts for running the tools on another machine live in `powershell/`.
 
@@ -94,6 +94,7 @@ If a later import agrees with your status again, the conflict clears automatical
 - **Trending** – multi-series score chart (overall, adjusted, per source tool — toggleable), snapshot table with per-snapshot deltas, and one-click comparison of the current state against any snapshot; drift reports.
 - **Export** – full data export (Excel / CSV / JSON with status/source/workload filters), GitLab issue export (CSV / JSON / shell script) with status multi-select, per-tenant issue templates with `{{variable}}` placeholders, and plan-to-GitLab export. Every major table (Actions, Risk Register, History, Trending, Comparison, SCuBA, Essential Eight, Global Actions, Cross-Tenant) also has its own *Export Excel* button, and every table row opens the full action details inline or in a quick-view.
 - **PDF reports** – the dashboard management report and both comparison reports show **Blocked Actions** (open items stuck behind unfinished prerequisites) and the **Accepted Risks Register** (signed-off decisions with owner/justification/expiry) as clearly separated sections.
+- **Tenant comparison** – overall/per-tool/per-workload scores with completion ratios, a **status distribution by workload** table (each workload's ToDo / In Progress / Risk Accepted / N/A / Completed counts side by side per tenant, Excel-exportable), and the action-differences list with search, workload filter, a *hide missing* mode, Excel/JSON export of the filtered set, and adding selected actions to a plan of a chosen tenant.
 - **History** – import log and a filterable per-action change log (search, source, user/imports-only, status vs. score changes) with load-more.
 
 **Control Plane** (cross-tenant administration):

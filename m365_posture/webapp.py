@@ -1599,12 +1599,19 @@ def create_app(db_path: str = None) -> Flask:
     # In-memory store for pending device code flows (per-tenant)
     _device_flows = {}
 
+    def _method_disabled_error(method):
+        return _json_error(
+            f"The '{method.replace('_', ' ')}' authentication method is disabled "
+            f"for this tenant. Enable it in Control Plane > Tenant Config.", 403)
+
     @app.route("/api/tenants/<name>/graph/device-code", methods=["POST"])
     def api_graph_device_code(name):
         """Start device code authentication flow for Graph API access."""
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "device_code"):
+            return _method_disabled_error("device_code")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1732,6 +1739,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "client_secret"):
+            return _method_disabled_error("client_secret")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1768,6 +1777,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "certificate"):
+            return _method_disabled_error("certificate")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1808,6 +1819,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "interactive"):
+            return _method_disabled_error("interactive")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1915,8 +1928,9 @@ def create_app(db_path: str = None) -> Flask:
     def api_graph_test(name):
         """Test the tenant's app-only Graph credentials without importing.
 
-        Tries certificate auth when a certificate is configured, otherwise
-        the client secret. Returns which method succeeded or a clear error.
+        Body (optional): {"method": "certificate"|"client_secret"} to test one
+        specific method. Without it, every enabled + configured app-only
+        method is tried and the first success is reported.
         """
         tenant = db.get_tenant(name)
         if not tenant:
@@ -1924,26 +1938,42 @@ def create_app(db_path: str = None) -> Flask:
         if not tenant.get("tenant_id") or not tenant.get("client_id"):
             return _json_error("Set Tenant ID and Client ID first.")
 
+        wanted = (request.get_json(silent=True) or {}).get("method")
+        if wanted and wanted not in ("certificate", "client_secret"):
+            return _json_error("method must be 'certificate' or 'client_secret' "
+                               "(device code and interactive are tested by signing in on the Import page)")
+
+        def _try_cert():
+            if not tenant.get("certificate_path"):
+                raise RuntimeError("No certificate uploaded for this tenant.")
+            client_credentials_token_cert(
+                tenant["tenant_id"], tenant["client_id"],
+                tenant["certificate_path"],
+                tenant.get("certificate_thumbprint", ""))
+
+        def _try_secret():
+            if not tenant.get("client_secret"):
+                raise RuntimeError("No client secret configured for this tenant.")
+            client_credentials_token(
+                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"])
+
+        attempts = {"certificate": _try_cert, "client_secret": _try_secret}
+        methods = [wanted] if wanted else [
+            m for m in ("certificate", "client_secret")
+            if db.auth_method_enabled(tenant, m)]
+        if not methods:
+            return _json_error("All app-only authentication methods are disabled for this tenant.")
+
         errors = []
-        if tenant.get("certificate_path"):
+        for m in methods:
+            if not wanted and not db.auth_method_enabled(tenant, m):
+                continue
             try:
-                client_credentials_token_cert(
-                    tenant["tenant_id"], tenant["client_id"],
-                    tenant["certificate_path"],
-                    tenant.get("certificate_thumbprint", ""))
-                return jsonify({"ok": True, "method": "certificate"})
+                attempts[m]()
+                return jsonify({"ok": True, "method": m,
+                                "enabled": db.auth_method_enabled(tenant, m)})
             except Exception as e:
-                errors.append(f"Certificate: {e}")
-        if tenant.get("client_secret"):
-            try:
-                client_credentials_token(
-                    tenant["tenant_id"], tenant["client_id"], tenant["client_secret"])
-                return jsonify({"ok": True, "method": "client_secret"})
-            except Exception as e:
-                errors.append(f"Client secret: {e}")
-        if not errors:
-            return _json_error(
-                "No app-only credentials configured. Upload a certificate or set a client secret.")
+                errors.append(f"{m.replace('_', ' ')}: {e}")
         return jsonify({"ok": False, "error": " | ".join(errors)}), 400
 
     @app.route("/api/tenants/<name>/certificate", methods=["POST"])

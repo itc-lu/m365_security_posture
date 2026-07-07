@@ -54,8 +54,10 @@ def find_pwsh(config: dict = None) -> str | None:
 
 
 def _acquire_app_token(tenant: dict) -> str:
-    """Get an app-only Graph token for a tenant (certificate first, then secret)."""
+    """Get an app-only Graph token for a tenant (certificate first, then
+    secret), honouring the tenant's enabled auth methods."""
     from .graph_api import client_credentials_token, client_credentials_token_cert
+    from .database import Database
 
     tenant_id = tenant.get("tenant_id", "")
     client_id = tenant.get("client_id", "")
@@ -64,20 +66,21 @@ def _acquire_app_token(tenant: dict) -> str:
             "Tenant needs tenant_id and client_id configured for unattended runs.")
 
     cert_path = tenant.get("certificate_path", "")
-    if cert_path:
+    if cert_path and Database.auth_method_enabled(tenant, "certificate"):
         result = client_credentials_token_cert(
             tenant_id, client_id, cert_path,
             tenant.get("certificate_thumbprint", ""))
         return result["access_token"]
 
     client_secret = tenant.get("client_secret", "")
-    if client_secret:
+    if client_secret and Database.auth_method_enabled(tenant, "client_secret"):
         result = client_credentials_token(tenant_id, client_id, client_secret)
         return result["access_token"]
 
     raise RuntimeError(
-        "Tenant needs a certificate or client secret for unattended runs. "
-        "Configure one under Control Plane > Tenant Config.")
+        "Tenant needs an enabled app-only auth method (certificate or client "
+        "secret) for unattended runs. Configure one under Control Plane > "
+        "Tenant Config.")
 
 
 def run_secure_score(db: Database, tenant_name: str) -> dict:
@@ -110,12 +113,54 @@ def _run_powershell(pwsh: str, command: str, timeout: int = 3600) -> subprocess.
     )
 
 
-def _tail(text: str, lines: int = 25) -> str:
+def _tail(text: str, lines: int = 60) -> str:
     return "\n".join((text or "").strip().splitlines()[-lines:])
 
 
+def _proc_failure_detail(label: str, proc) -> str:
+    """Readable failure report: exit code plus the tail of both streams."""
+    parts = [f"{label} failed (exit {proc.returncode})."]
+    err = _tail(proc.stderr)
+    out = _tail(proc.stdout)
+    if err:
+        parts.append("--- stderr (last lines) ---\n" + err)
+    if out:
+        parts.append("--- stdout (last lines) ---\n" + out)
+    if not err and not out:
+        parts.append("(no output captured)")
+    return "\n".join(parts)
+
+
+def _module_import_prefix(module_path: str, module_name: str) -> str:
+    """PowerShell snippet importing a module from a local folder (a git
+    checkout or extracted release) instead of the installed module."""
+    if not module_path:
+        return ""
+    p = module_path.rstrip("/\\")
+    # Accept either the repo root (ScubaGear checkout has PowerShell/ScubaGear
+    # inside) or the module folder itself.
+    candidates = [
+        os.path.join(p, "PowerShell", module_name),
+        os.path.join(p, module_name),
+        p,
+    ]
+    for c in candidates:
+        if (os.path.isfile(os.path.join(c, f"{module_name}.psd1"))
+                or os.path.isfile(os.path.join(c, f"{module_name}.psm1"))):
+            return f"Import-Module '{c}' -Force; "
+    raise RuntimeError(
+        f"No {module_name} module found under '{module_path}'. Point the "
+        f"folder setting at the {module_name} checkout (containing "
+        f"PowerShell/{module_name}) or at the module folder itself.")
+
+
 def run_scuba(db: Database, tenant_name: str) -> dict:
-    """Run ScubaGear and import the resulting report."""
+    """Run ScubaGear with the tenant's uploaded YAML config and import the report.
+
+    Everything about the run (products, tenant, auth, environment) comes from
+    the ScubaGear config file; only -OutPath is overridden so the results can
+    be collected and imported.
+    """
     tenant = db.get_tenant(tenant_name)
     if not tenant:
         raise RuntimeError(f"Tenant '{tenant_name}' not found")
@@ -124,40 +169,33 @@ def run_scuba(db: Database, tenant_name: str) -> dict:
     pwsh = find_pwsh(ps_cfg)
     if not pwsh:
         raise RuntimeError(
-            "PowerShell not found. Install PowerShell 7 (pwsh) and the ScubaGear "
-            "module, or set the PowerShell path in the tool configuration.")
+            "PowerShell not found. Install PowerShell 7 (pwsh), or set the "
+            "PowerShell path in the tool configuration.")
+
+    config_yaml = (cfg.get("config_yaml") or "").strip()
+    if not config_yaml:
+        raise RuntimeError(
+            "No ScubaGear config file uploaded. Upload a YAML config on the "
+            "Automation page — it defines products, organization, auth "
+            "(certificate/app for unattended runs) and all other options.")
+
+    import_prefix = _module_import_prefix(
+        (cfg.get("scubagear_path") or "").strip(), "ScubaGear")
 
     out_dir = tempfile.mkdtemp(prefix="scuba_run_")
     try:
-        config_yaml = cfg.get("config_yaml", "").strip()
-        if config_yaml:
-            # User-provided ScubaGear config file drives the run
-            cfg_file = os.path.join(out_dir, "scuba_config.yaml")
-            with open(cfg_file, "w") as f:
-                f.write(config_yaml)
-            cmd = (f"Invoke-SCuBA -ConfigFilePath '{cfg_file}' "
-                   f"-OutPath '{out_dir}' -Quiet $true")
-        else:
-            products = cfg.get("products") or ["aad", "exo", "teams"]
-            prod_list = ",".join(f"'{p}'" for p in products)
-            cmd = f"Invoke-SCuBA -ProductNames @({prod_list}) -OutPath '{out_dir}' -Quiet $true"
-            # App-only (certificate) auth so scheduled runs work unattended
-            thumb = (tenant.get("certificate_thumbprint") or "").strip()
-            org = cfg.get("organization", "").strip()
-            if thumb and tenant.get("client_id") and org:
-                cmd += (f" -CertificateThumbprint '{thumb}'"
-                        f" -AppID '{tenant['client_id']}'"
-                        f" -Organization '{org}'")
-        extra = cfg.get("extra_args", "").strip()
-        if extra:
-            cmd += " " + extra
+        cfg_file = os.path.join(out_dir, "scuba_config.yaml")
+        with open(cfg_file, "w") as f:
+            f.write(config_yaml)
+        # Command-line parameters override config-file values in ScubaGear,
+        # so -OutPath reliably lands the report where we can pick it up.
+        cmd = (f"{import_prefix}Invoke-SCuBA -ConfigFilePath '{cfg_file}' "
+               f"-OutPath '{out_dir}' -Quiet $true")
 
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
                                timeout=int(cfg.get("timeout", 3600)))
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"Invoke-SCuBA failed (exit {proc.returncode}):\n"
-                f"{_tail(proc.stderr) or _tail(proc.stdout)}")
+            raise RuntimeError(_proc_failure_detail("Invoke-SCuBA", proc))
 
         # ScubaGear writes a M365BaselineConformance_* directory below OutPath
         report_dirs = sorted(glob.glob(os.path.join(out_dir, "M365BaselineConformance*")))
@@ -166,7 +204,7 @@ def run_scuba(db: Database, tenant_name: str) -> dict:
         if not results:
             raise RuntimeError(
                 "ScubaGear finished but no ScubaResults*.json was produced.\n"
-                + _tail(proc.stdout))
+                "--- stdout (last lines) ---\n" + _tail(proc.stdout))
 
         zip_path = os.path.join(out_dir, "scuba_report.zip")
         _zip_directory(report_dir, zip_path)
@@ -197,18 +235,19 @@ def run_zero_trust(db: Database, tenant_name: str) -> dict:
             "ZeroTrustAssessment module, or set the PowerShell path in the "
             "tool configuration.")
 
+    import_prefix = _module_import_prefix(
+        (cfg.get("module_path") or "").strip(), "ZeroTrustAssessment")
+
     out_dir = tempfile.mkdtemp(prefix="zt_run_")
     try:
-        cmd = f"Invoke-ZTAssessment -Path '{out_dir}'"
+        cmd = f"{import_prefix}Invoke-ZTAssessment -Path '{out_dir}'"
         extra = cfg.get("extra_args", "").strip()
         if extra:
             cmd += " " + extra
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
                                timeout=int(cfg.get("timeout", 3600)))
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"Invoke-ZTAssessment failed (exit {proc.returncode}):\n"
-                f"{_tail(proc.stderr) or _tail(proc.stdout)}")
+            raise RuntimeError(_proc_failure_detail("Invoke-ZTAssessment", proc))
 
         reports = glob.glob(os.path.join(out_dir, "**", "ZeroTrustAssessmentReport*.json"),
                             recursive=True)
@@ -217,7 +256,7 @@ def run_zero_trust(db: Database, tenant_name: str) -> dict:
         if not reports and not htmls:
             raise RuntimeError(
                 "Zero Trust Assessment finished but produced no report files.\n"
-                + _tail(proc.stdout))
+                "--- stdout (last lines) ---\n" + _tail(proc.stdout))
 
         zip_path = os.path.join(tempfile.gettempdir(),
                                 f"zt_report_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip")

@@ -1387,12 +1387,40 @@ async function doDashboardCompare() {
   closeModal();
   // Hide dashboard topbar buttons during comparison
   document.getElementById('topbar-actions').innerHTML = '';
-  const [r, actionCmp] = await Promise.all([
+  const [r, actionCmp, ...tenantActionLists] = await Promise.all([
     api.post('/api/compare', {tenants}),
-    api.post('/api/compare-actions', {tenants})
+    api.post('/api/compare-actions', {tenants}),
+    ...tenants.map(t => api.get(`/api/tenants/${t}/actions`)),
   ]);
-  _cmpContext = {type: 'tenants', tenants, data: r, actionCmp};
+  const actionsByTenant = {};
+  tenants.forEach((t,i) => actionsByTenant[t] = tenantActionLists[i] || []);
+  _cmpContext = {type: 'tenants', tenants, data: r, actionCmp, actionsByTenant};
   const c = document.getElementById('content');
+
+  // Status distribution per workload per tenant (e.g. Defender: 5 N/A,
+  // 8 Risk Accepted, 50 ToDo, 20 In Progress for Tenant A vs Tenant B)
+  const _stOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const _stShort = {'ToDo':'ToDo','In Progress':'In Prog.','In Planning':'Planning','Warning':'Warn','Completed':'Done','Risk Accepted':'Risk Acc.','Not Applicable':'N/A','Third Party':'3rd Party'};
+  const wlStatus = {};
+  for(const t of tenants) {
+    for(const a of actionsByTenant[t]) {
+      const wl = a.workload || 'General';
+      wlStatus[wl] = wlStatus[wl] || {};
+      wlStatus[wl][t] = wlStatus[wl][t] || {};
+      wlStatus[wl][t][a.status] = (wlStatus[wl][t][a.status]||0) + 1;
+    }
+  }
+  const _stColor = {'Completed':'success','In Progress':'info','In Planning':'purple','Warning':'warning','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
+  const wlStatusRows = Object.keys(wlStatus).sort().map(wl => {
+    const cells = tenants.map(t => {
+      const counts = wlStatus[wl][t];
+      if(!counts) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">—</td>';
+      const pills = _stOrder.filter(s=>counts[s]).map(s =>
+        `<span class="badge badge-${_stColor[s]||'gray'}" style="margin:1px 4px 1px 0;white-space:nowrap" title="${esc(s)}">${_stShort[s]}&nbsp;${counts[s]}</span>`).join('');
+      return `<td style="font-size:11px">${pills}</td>`;
+    }).join('');
+    return `<tr><td style="font-weight:600">${esc(wl)}</td>${cells}</tr>`;
+  }).join('');
 
   let rows = tenants.map(t => {
     const d = r.overall[t]||{};
@@ -1443,17 +1471,30 @@ async function doDashboardCompare() {
         <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
+      <div class="card-header">Status Distribution by Workload
+        <button class="btn btn-sm" style="margin-left:8px" onclick="exportWlStatusExcel()">Export Excel</button>
+      </div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">How each workload's actions are distributed across statuses, side by side per tenant.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Workload</th>${tenants.map(t=>`<th>${esc(state.tenants.find(x=>x.name===t)?.display_name||t)}</th>`).join('')}</tr></thead>
+        <tbody>${wlStatusRows||'<tr><td colspan="99" style="color:var(--text-light)">No data</td></tr>'}</tbody>
+      </table></div>
+    </div>
+    <div class="card mb-16">
       <div class="card-header">Action Differences <span class="badge badge-danger">${actionCmp.differing||0} differ</span> <span class="badge badge-success">${sameActions.length} same</span></div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or an action exists in one tenant but not another. Click a status to see the tenant-specific details inline.</div>
       <div class="filter-bar" style="margin-bottom:8px">
         <input type="text" id="cmpdiff-search" placeholder="Search action..." oninput="renderCompareDiffRows()">
         <select id="cmpdiff-workload" onchange="renderCompareDiffRows()"><option value="">All Workloads</option></select>
         <select id="cmpdiff-mode" onchange="renderCompareDiffRows()">
-          <option value="differ">Differing only</option>
+          <option value="differ">Differing (incl. missing)</option>
+          <option value="differ-present">Differing (hide missing)</option>
           <option value="missing">Missing in a tenant</option>
           <option value="all">All actions</option>
         </select>
         <button class="btn btn-sm" onclick="exportCompareDiffExcel()">Export Excel</button>
+        <button class="btn btn-sm" onclick="exportCompareDiffJson()">Export JSON</button>
+        <button class="btn btn-sm btn-primary" id="cmpdiff-plan-btn" onclick="cmpAddSelectedToPlan()" disabled>Add Selected to Plan</button>
       </div>
       <div id="cmpdiff-table"></div>
     </div>
@@ -1489,19 +1530,24 @@ function renderCompareDiffRows() {
       if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
       return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Details for ${esc(t)} — score ${d.score??'—'}/${d.max_score??'—'}">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>
+    return `<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="cmpdiff-cb" value="${esc(a.source_id||'')}" onchange="cmpUpdatePlanBtn()"></td>
+      <td style="font-size:12px">${esc(a.title||'')}</td>
       <td style="font-size:11px;color:var(--text-light)">${esc(anyD.workload||'')}</td>
       ${cells}</tr>
-      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+2}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+3}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
   el.innerHTML = body ? `
     <div class="table-wrap" style="max-height:520px;overflow-y:auto">
-      <table><thead><tr><th>Action</th><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead>
+      <table><thead><tr>
+        <th style="width:32px"><input type="checkbox" onchange="document.querySelectorAll('.cmpdiff-cb').forEach(c=>c.checked=this.checked);cmpUpdatePlanBtn()"></th>
+        <th>Action</th><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead>
       <tbody>${body}</tbody></table>
     </div>
     <div style="font-size:12px;color:var(--text-light);padding:6px">${shown.length}${rows.length>shown.length?` of ${rows.length}`:''} action(s) shown</div>`
     : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions match the current filters.</div>';
+  cmpUpdatePlanBtn();
 }
 
 function _filteredCompareDiff(q, wl, mode) {
@@ -1509,10 +1555,105 @@ function _filteredCompareDiff(q, wl, mode) {
   const tenants = ctx.tenants;
   let rows = (ctx.actionCmp.actions||[]);
   if(mode === 'differ') rows = rows.filter(a => a.differs);
+  else if(mode === 'differ-present') rows = rows.filter(a => a.differs && tenants.every(t => a.tenants[t]));
   else if(mode === 'missing') rows = rows.filter(a => tenants.some(t => !a.tenants[t]));
   if(q) rows = rows.filter(a => (a.title||'').toLowerCase().includes(q) || (a.source_id||'').toLowerCase().includes(q));
   if(wl) rows = rows.filter(a => Object.values(a.tenants).some(d => d && d.workload === wl));
   return rows;
+}
+
+function _currentCompareDiffRows() {
+  const q = (document.getElementById('cmpdiff-search')?.value||'').toLowerCase();
+  const wl = document.getElementById('cmpdiff-workload')?.value||'';
+  const mode = document.getElementById('cmpdiff-mode')?.value||'differ';
+  return _filteredCompareDiff(q, wl, mode);
+}
+
+function exportWlStatusExcel() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionsByTenant) return;
+  const stOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const wlStatus = {};
+  for(const t of ctx.tenants) {
+    for(const a of ctx.actionsByTenant[t]) {
+      const wl = a.workload || 'General';
+      wlStatus[wl] = wlStatus[wl] || {};
+      wlStatus[wl][t] = wlStatus[wl][t] || {};
+      wlStatus[wl][t][a.status] = (wlStatus[wl][t][a.status]||0) + 1;
+    }
+  }
+  const headers = ['Workload', 'Tenant', ...stOrder, 'Total'];
+  const rows = [];
+  for(const wl of Object.keys(wlStatus).sort()) {
+    for(const t of ctx.tenants) {
+      const counts = wlStatus[wl][t] || {};
+      const vals = stOrder.map(s => counts[s]||0);
+      rows.push([wl, t, ...vals, vals.reduce((a,b)=>a+b,0)]);
+    }
+  }
+  exportTableExcel(`workload_status_${ctx.tenants.join('_')}`.substring(0,60), 'Workload Status', headers, rows);
+}
+
+function cmpUpdatePlanBtn() {
+  const n = document.querySelectorAll('.cmpdiff-cb:checked').length;
+  const btn = document.getElementById('cmpdiff-plan-btn');
+  if(!btn) return;
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `Add ${n} Selected to Plan` : 'Add Selected to Plan';
+}
+
+function exportCompareDiffJson() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionCmp) return;
+  const rows = _currentCompareDiffRows().map(a => ({
+    title: a.title || '',
+    source_id: a.source_id || '',
+    differs: !!a.differs,
+    tenants: Object.fromEntries(ctx.tenants.map(t => [t, a.tenants[t] ? {
+      id: a.tenants[t].id, status: a.tenants[t].status, priority: a.tenants[t].priority,
+      workload: a.tenants[t].workload, score: a.tenants[t].score, max_score: a.tenants[t].max_score,
+    } : null])),
+  }));
+  if(!rows.length) return toast('Nothing to export with current filters','error');
+  const blob = new Blob([JSON.stringify(rows, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `comparison_${ctx.tenants.join('_')}.json`.substring(0,80);
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast(`${rows.length} action(s) exported as JSON`, 'success');
+}
+
+function cmpAddSelectedToPlan() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionCmp) return;
+  const selectedIds = new Set([...document.querySelectorAll('.cmpdiff-cb:checked')].map(c=>c.value));
+  if(!selectedIds.size) return toast('Select at least one action', 'error');
+  const rows = _currentCompareDiffRows().filter(a => selectedIds.has(a.source_id||''));
+  const tenantOpts = ctx.tenants.map(t => {
+    const present = rows.filter(a => a.tenants[t]).length;
+    const disp = state.tenants.find(x=>x.name===t)?.display_name || t;
+    return `<option value="${esc(t)}">${esc(disp)} — ${present} of ${rows.length} selected action(s) exist here</option>`;
+  }).join('');
+  openModal('Add Selected Actions to a Plan', `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+      Plans belong to one tenant. Choose which tenant's plan to add the selected actions to —
+      actions that don't exist in that tenant are skipped.
+    </p>
+    <div class="form-group"><label>Tenant</label><select id="cmp-plan-tenant">${tenantOpts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="cmpAddToPlanForTenant()">Continue</button>`);
+  window._cmpPlanRows = rows;
+}
+
+async function cmpAddToPlanForTenant() {
+  const tenant = document.getElementById('cmp-plan-tenant')?.value;
+  const rows = window._cmpPlanRows || [];
+  if(!tenant) return;
+  const ids = rows.map(a => a.tenants[tenant]?.id).filter(Boolean);
+  const skipped = rows.length - ids.length;
+  if(!ids.length) return toast('None of the selected actions exist in that tenant', 'error');
+  if(skipped) toast(`${skipped} action(s) skipped — not present in ${tenant}`, 'info');
+  await showAddToPlan(ids, tenant);
 }
 
 function exportCompareDiffExcel() {
@@ -2603,15 +2744,17 @@ async function submitBatchStatus() {
 }
 
 let _addToPlanIds = [];
+let _addToPlanTenant = null;
 
-async function showAddToPlan(actionIds) {
+async function showAddToPlan(actionIds, tenantName) {
   if(!actionIds) {
     actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   }
   if(!actionIds.length) return toast('No actions selected', 'error');
   _addToPlanIds = actionIds;
+  _addToPlanTenant = tenantName || state.activeTenant.name;
 
-  const t = state.activeTenant.name;
+  const t = _addToPlanTenant;
   const plans = await api.get(`/api/tenants/${t}/plans`);
   const hasPlans = plans.length > 0;
 
@@ -2673,7 +2816,7 @@ async function addToPlanSubmit() {
   const actionIds = _addToPlanIds;
   if(!actionIds.length) return toast('No actions to add', 'error');
   const mode = document.querySelector('input[name="plan-mode"]:checked')?.value;
-  const t = state.activeTenant.name;
+  const t = _addToPlanTenant || state.activeTenant.name;
 
   if(mode === 'new') {
     const name = document.getElementById('atp-new-name').value;
@@ -3267,27 +3410,39 @@ async function renderImport() {
         <div id="graph-result" style="margin-top:12px"></div>
       </div>`;
   } else {
-    const hasSecret = !!(state.activeTenant.client_secret);
-    const hasCert = !!(state.activeTenant.certificate_path);
+    // Respect the tenant's enabled authentication methods
+    let _am = {};
+    try { _am = JSON.parse(state.activeTenant.auth_methods||'{}')||{}; } catch(e) {}
+    const mOn = m => _am[m] !== false;
+    const hasSecret = !!(state.activeTenant.client_secret) && mOn('client_secret');
+    const hasCert = !!(state.activeTenant.certificate_path) && mOn('certificate');
+    const canInteractive = mOn('interactive');
+    const canDeviceCode = mOn('device_code');
     const appOnlyButtons = `
       ${hasSecret ? `<button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>` : ''}
       ${hasCert ? `<button class="btn ${hasSecret?'':'btn-primary'}" id="graph-cert-auth-btn" onclick="startCertAuth()">Sign in with Certificate</button>` : ''}
     `;
+    const delegatedButtons = `
+      ${canInteractive ? `<button class="btn ${(hasSecret||hasCert)?'':'btn-primary'}" onclick="startInteractiveAuth()">Sign in with Browser${(hasSecret||hasCert)?'':' (Recommended)'}</button>` : ''}
+      ${canDeviceCode ? `<button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>` : ''}
+    `;
+    const anyMethod = hasSecret || hasCert || canInteractive || canDeviceCode;
     graphSection = `
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
-        ${(hasSecret || hasCert) ? `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">App-only credentials detected. Requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent, or sign in interactively.</p>
+        ${!anyMethod ? `
+        <p style="font-size:13px;color:var(--danger);margin-bottom:8px">All authentication methods are disabled or unconfigured for this tenant.</p>
+        <button class="btn btn-sm" onclick="navigate('cp-tenants')">Open Tenant Config</button>
+        ` : (hasSecret || hasCert) ? `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">App-only credentials available. Requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent${(canInteractive||canDeviceCode)?', or sign in interactively':''}.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           ${appOnlyButtons}
-          <button class="btn" onclick="startInteractiveAuth()">Sign in with Browser</button>
-          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+          ${delegatedButtons}
         </div>
         ` : `
         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. Uses Global Reader permissions. No secrets stored.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn btn-primary" onclick="startInteractiveAuth()">Sign in with Browser (Recommended)</button>
-          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+          ${delegatedButtons}
         </div>
         `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
@@ -3760,10 +3915,11 @@ async function renderAutomation() {
   const schedMap = {};
   (ov.schedules||[]).forEach(s => schedMap[s.task_type] = s);
 
+  _scubaCfgCache = cfgs.scuba || {};
   const taskMeta = {
     secure_score: {name:'Secure Score Import', desc:'Imports Microsoft Secure Score via the Graph API using the tenant’s app-only credentials (certificate or client secret). Fully unattended.', needs: env.app_credentials ? '' : 'Requires app-only credentials — configure a certificate or client secret in Tenant Config.'},
-    scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s configuration and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ScubaGear module on this machine.'},
-    zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module on this machine.'},
+    scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s uploaded YAML config and imports the report automatically.', needs: !env.pwsh_found ? 'Requires PowerShell 7 (pwsh) and the ScubaGear module (or a ScubaGear folder configured below).' : (!(cfgs.scuba||{}).config_yaml ? 'Upload a ScubaGear YAML config file below before running.' : '')},
+    zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module (or a module folder configured below).'},
   };
   const freqOpts = f => ['manual','daily','weekly','monthly'].map(v=>`<option value="${v}" ${v===f?'selected':''}>${v==='manual'?'Manual only':v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join('');
 
@@ -3794,25 +3950,26 @@ async function renderAutomation() {
   const scuba = cfgs.scuba || {};
   const zt = cfgs.zero_trust || {};
   const ps = cfgs.powershell || {};
-  const scubaProducts = ['aad','defender','exo','sharepoint','teams','powerplatform'];
-  const prodChecks = scubaProducts.map(p =>
-    `<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 12px 2px 0;font-size:13px;cursor:pointer">
-      <input type="checkbox" class="scuba-prod" value="${p}" ${(scuba.products||['aad','exo','teams']).includes(p)?'checked':''}> ${p}
-    </label>`).join('');
 
   const runRows = (ov.runs||[]).map(r => {
     const dur = r.finished_at ? Math.max(1, Math.round((new Date(r.finished_at)-new Date(r.started_at))/1000))+'s' : '—';
     const st = r.status==='success' ? '<span class="badge badge-success">success</span>'
              : r.status==='error' ? '<span class="badge badge-danger">error</span>'
              : '<span class="badge badge-info">running…</span>';
-    return `<tr>
+    const detail = r.detail || '';
+    const firstLine = detail.split('\n')[0].substring(0, 90);
+    const hasMore = detail.length > firstLine.length;
+    return `<tr onclick="document.getElementById('run-detail-${r.id}').classList.toggle('hidden')" style="cursor:pointer" title="Click to show the full output">
       <td style="font-size:12px"><code>${esc((r.started_at||'').substring(0,19).replace('T',' '))}</code></td>
       <td>${esc(taskMeta[r.task_type]?.name||r.task_type)}</td>
       <td><span class="badge badge-gray" style="font-size:10px">${esc(r.trigger||'')}</span></td>
       <td>${st}</td>
       <td>${dur}</td>
-      <td style="font-size:12px;max-width:420px;white-space:pre-wrap">${esc(r.detail||'')}</td>
-    </tr>`;
+      <td style="font-size:12px">${esc(firstLine)}${hasMore?' <span style="color:var(--primary);font-size:11px">&#8230; more</span>':''}</td>
+    </tr>
+    <tr id="run-detail-${r.id}" class="hidden"><td colspan="6" style="padding:0">
+      <pre style="margin:0;padding:12px 16px;background:#1e293b;color:#e2e8f0;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto">${esc(detail||'(no output recorded)')}</pre>
+    </td></tr>`;
   }).join('');
 
   document.getElementById('content').innerHTML = `
@@ -3829,18 +3986,34 @@ async function renderAutomation() {
     <div class="grid grid-2 mb-16">
       <div class="card">
         <div class="card-header">SCuBA Configuration</div>
-        <div class="form-group"><label>Products</label><div>${prodChecks}</div></div>
-        <div class="form-group"><label>Organization (initial domain, e.g. contoso.onmicrosoft.com — required for unattended certificate auth)</label>
-          <input id="scuba-org" value="${esc(scuba.organization||'')}" placeholder="contoso.onmicrosoft.com"></div>
-        <div class="form-group"><label>ScubaGear config file (YAML, optional — overrides products/auth above)</label>
-          <textarea id="scuba-yaml" rows="5" style="font-family:monospace;font-size:12px" placeholder="ProductNames: [aad, exo]&#10;Organization: contoso.onmicrosoft.com&#10;...">${esc(scuba.config_yaml||'')}</textarea></div>
-        <div class="form-group"><label>Extra Invoke-SCuBA arguments (optional)</label>
-          <input id="scuba-extra" value="${esc(scuba.extra_args||'')}" placeholder="-M365Environment gcc"></div>
-        <button class="btn btn-primary btn-sm" onclick="saveToolConfig('scuba')">Save SCuBA Config</button>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+          The run is driven entirely by a <a href="https://github.com/cisagov/ScubaGear/blob/main/docs/configuration/configuration.md" target="_blank">ScubaGear YAML config file</a>:
+          products, organization, M365 environment and auth (use certificate/AppID parameters for unattended scheduled runs) all live in that file.
+        </p>
+        ${scuba.config_yaml ? `
+          <div style="font-size:13px;margin-bottom:8px">
+            <span class="badge badge-success">Config uploaded</span>
+            <span style="font-size:12px;color:var(--text-light);margin-left:6px">${esc(scuba.config_filename||'scuba_config.yaml')} · ${(scuba.config_yaml||'').split('\\n').length} lines</span>
+            <button class="btn btn-sm" style="margin-left:8px" onclick="document.getElementById('scuba-yaml-preview').classList.toggle('hidden')">View</button>
+            <button class="btn btn-sm btn-danger" onclick="removeScubaConfig()">Remove</button>
+          </div>
+          <pre id="scuba-yaml-preview" class="hidden" style="font-size:11px;background:var(--bg);padding:10px;border-radius:6px;max-height:260px;overflow-y:auto;white-space:pre-wrap">${esc(scuba.config_yaml)}</pre>
+        ` : `
+          <div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:6px;padding:6px 10px;margin-bottom:8px">&#9888; No config file uploaded yet — SCuBA runs will fail until one is provided.</div>
+        `}
+        <div class="flex gap-8 items-center" style="flex-wrap:wrap;margin-bottom:12px">
+          <input type="file" id="scuba-config-file" accept=".yaml,.yml,.txt" style="max-width:260px;font-size:12px">
+          <button class="btn btn-sm btn-primary" onclick="uploadScubaConfig()">${scuba.config_yaml?'Replace':'Upload'} Config File</button>
+        </div>
+        <div class="form-group"><label>ScubaGear folder (optional — path to a ScubaGear checkout or module folder; leave empty when the module is installed via Install-Module)</label>
+          <input id="scuba-module-path" value="${esc(scuba.scubagear_path||'')}" placeholder="/opt/ScubaGear or C:\\tools\\ScubaGear"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveToolConfig('scuba')">Save</button>
       </div>
       <div>
         <div class="card mb-16">
           <div class="card-header">Zero Trust Assessment Configuration</div>
+          <div class="form-group"><label>ZeroTrustAssessment folder (optional — path to a checkout/module folder; empty = installed module)</label>
+            <input id="zt-module-path" value="${esc(zt.module_path||'')}" placeholder="/opt/ZeroTrustAssessment"></div>
           <div class="form-group"><label>Extra Invoke-ZTAssessment arguments (optional)</label>
             <input id="zt-extra" value="${esc(zt.extra_args||'')}" placeholder="-Days 30"></div>
           <button class="btn btn-primary btn-sm" onclick="saveToolConfig('zero_trust')">Save ZT Config</button>
@@ -3901,24 +4074,57 @@ async function runTaskNow(task) {
   renderAutomation();
 }
 
+let _scubaCfgCache = null;
+
 async function saveToolConfig(tool) {
   const t = state.activeTenant.name;
   let config = {};
   if(tool === 'scuba') {
+    // Keep the uploaded YAML, only update the module path
+    const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
     config = {
-      products: [...document.querySelectorAll('.scuba-prod:checked')].map(c=>c.value),
-      organization: document.getElementById('scuba-org').value.trim(),
-      config_yaml: document.getElementById('scuba-yaml').value,
-      extra_args: document.getElementById('scuba-extra').value.trim(),
+      ...cur,
+      scubagear_path: document.getElementById('scuba-module-path').value.trim(),
     };
   } else if(tool === 'zero_trust') {
-    config = {extra_args: document.getElementById('zt-extra').value.trim()};
+    config = {
+      module_path: document.getElementById('zt-module-path').value.trim(),
+      extra_args: document.getElementById('zt-extra').value.trim(),
+    };
   } else if(tool === 'powershell') {
     config = {pwsh_path: document.getElementById('ps-path').value.trim()};
   }
   const r = await api.put(`/api/tenants/${t}/tool-config/${tool}`, {config});
   if(r.error) return toast(r.error, 'error');
   toast('Configuration saved', 'success');
+}
+
+async function uploadScubaConfig() {
+  const input = document.getElementById('scuba-config-file');
+  const file = input?.files?.[0];
+  if(!file) return toast('Choose a YAML file first', 'error');
+  const text = await file.text();
+  if(!text.trim()) return toast('The file is empty', 'error');
+  if(!/^[^#\n]*\w+\s*:/m.test(text)) return toast('This does not look like a YAML config (no "key: value" entries found)', 'error');
+  const t = state.activeTenant.name;
+  const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
+  const config = {...cur, config_yaml: text, config_filename: file.name,
+    scubagear_path: document.getElementById('scuba-module-path')?.value.trim() ?? cur.scubagear_path ?? ''};
+  const r = await api.put(`/api/tenants/${t}/tool-config/scuba`, {config});
+  if(r.error) return toast(r.error, 'error');
+  toast(`ScubaGear config "${file.name}" stored`, 'success');
+  renderAutomation();
+}
+
+async function removeScubaConfig() {
+  if(!await showConfirm('Remove Config', 'Remove the stored ScubaGear config file? SCuBA runs will fail until a new one is uploaded.')) return;
+  const t = state.activeTenant.name;
+  const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
+  const config = {...cur, config_yaml: '', config_filename: ''};
+  const r = await api.put(`/api/tenants/${t}/tool-config/scuba`, {config});
+  if(r.error) return toast(r.error, 'error');
+  toast('Config removed', 'success');
+  renderAutomation();
 }
 
 // ── Plans ──
@@ -7053,9 +7259,39 @@ async function showCpTenantDetail(tenantName) {
         <div class="flex gap-8 items-center" style="margin-top:8px;flex-wrap:wrap">
           <input type="file" id="cpt-cert-file" accept=".pem,.crt,.key,.txt" style="max-width:260px;font-size:12px">
           <button class="btn btn-sm btn-primary" onclick="uploadTenantCert('${tenantName}')">${tenant.certificate_path?'Replace':'Upload'} Certificate</button>
-          <button class="btn btn-sm" onclick="testTenantGraph('${tenantName}')" title="Verify the app-only credentials work against Microsoft Graph">Test Connection</button>
         </div>
-        <div id="cpt-cert-result" style="margin-top:8px;font-size:13px"></div>
+      </div>
+      <div class="ga-detail-section">
+        <h4 style="margin-bottom:8px">Authentication Methods</h4>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+          Enable only the sign-in methods this tenant should allow. Disabled methods are hidden on the
+          Import page and rejected by the API. App-only methods (certificate, client secret) can be tested here;
+          device code and interactive are tested by signing in on the Import page.
+        </p>
+        ${(() => {
+          let am = {};
+          try { am = JSON.parse(tenant.auth_methods||'{}')||{}; } catch(e) {}
+          const on = m => am[m] !== false;
+          const rows = [
+            {key:'certificate', label:'Certificate (app-only)', testable:true,
+             hint: tenant.certificate_path ? '' : 'no certificate uploaded'},
+            {key:'client_secret', label:'Client Secret (app-only)', testable:true,
+             hint: tenant.client_secret ? '' : 'no secret configured'},
+            {key:'device_code', label:'Device Code (delegated)', testable:false, hint:''},
+            {key:'interactive', label:'Browser Sign-in (delegated, PKCE)', testable:false, hint:''},
+          ];
+          return rows.map(m => `
+            <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+              <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;flex:1">
+                <input type="checkbox" class="cpt-auth-method" data-method="${m.key}" ${on(m.key)?'checked':''}
+                       onchange="saveAuthMethods('${tenantName}')" style="width:16px;height:16px">
+                ${m.label}
+                ${m.hint?`<span style="font-size:11px;color:var(--text-light)">(${m.hint})</span>`:''}
+              </label>
+              ${m.testable?`<button class="btn btn-sm" onclick="testTenantGraph('${tenantName}','${m.key}')">Test</button>`:''}
+            </div>`).join('');
+        })()}
+        <div id="cpt-cert-result" style="margin-top:10px;font-size:13px"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -7136,15 +7372,28 @@ async function deleteTenantCert(tenantName) {
   showCpTenantDetail(tenantName);
 }
 
-async function testTenantGraph(tenantName) {
+async function testTenantGraph(tenantName, method) {
   const el = document.getElementById('cpt-cert-result');
-  if(el) el.innerHTML = '<span style="color:var(--text-light)">Testing app-only authentication against Microsoft Graph…</span>';
-  const r = await api.post(`/api/tenants/${tenantName}/graph/test`, {});
+  const label = method ? method.replace('_',' ') : 'app-only';
+  if(el) el.innerHTML = `<span style="color:var(--text-light)">Testing ${esc(label)} authentication against Microsoft Graph…</span>`;
+  const r = await api.post(`/api/tenants/${tenantName}/graph/test`, method ? {method} : {});
   if(!el) return;
   if(r.ok) {
-    el.innerHTML = `<span style="color:var(--success)">&#10003; Authentication succeeded using ${r.method === 'certificate' ? 'the certificate' : 'the client secret'}.</span>`;
+    const enabledNote = r.enabled === false ? ' <span style="color:var(--warning)">(note: this method is currently disabled for the tenant)</span>' : '';
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Authentication succeeded using ${r.method === 'certificate' ? 'the certificate' : 'the client secret'}.</span>${enabledNote}`;
   } else {
     el.innerHTML = `<span style="color:var(--danger)">&#10007; ${esc(r.error||'Authentication failed')}</span>`;
+  }
+}
+
+async function saveAuthMethods(tenantName) {
+  const methods = {};
+  document.querySelectorAll('.cpt-auth-method').forEach(cb => { methods[cb.dataset.method] = cb.checked; });
+  const r = await api.put(`/api/tenants/${tenantName}`, {auth_methods: methods});
+  if(r.error) return toast(r.error, 'error');
+  toast('Authentication methods updated', 'success');
+  if(state.activeTenant?.name === tenantName) {
+    state.activeTenant = await api.get('/api/active-tenant');
   }
 }
 

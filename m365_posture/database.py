@@ -601,6 +601,9 @@ class Database:
                 ("graph_enabled_services", "TEXT", "''"),
                 ("graph_comparative_scores", "TEXT", "''"),
                 ("certificate_thumbprint", "TEXT", "''"),
+                # JSON map of enabled Graph auth methods, e.g.
+                # {"certificate":true,"client_secret":false,...}. Empty = all enabled.
+                ("auth_methods", "TEXT", "''"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -1025,10 +1028,27 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    AUTH_METHODS = ("certificate", "client_secret", "device_code", "interactive")
+
+    @staticmethod
+    def auth_method_enabled(tenant: dict, method: str) -> bool:
+        """Whether a Graph auth method is enabled for a tenant.
+        An empty/unset auth_methods map means everything is enabled."""
+        raw = (tenant or {}).get("auth_methods") or ""
+        if not raw:
+            return True
+        try:
+            methods = json.loads(raw)
+        except (ValueError, TypeError):
+            return True
+        return bool(methods.get(method, True))
+
     def update_tenant(self, name: str, **kwargs) -> Optional[dict]:
         allowed = {"tenant_id", "display_name", "client_id", "client_secret",
                     "certificate_path", "certificate_thumbprint",
-                    "use_interactive", "notes"}
+                    "use_interactive", "notes", "auth_methods"}
+        if isinstance(kwargs.get("auth_methods"), dict):
+            kwargs["auth_methods"] = json.dumps(kwargs["auth_methods"])
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             return self.get_tenant(name)
