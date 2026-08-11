@@ -25,9 +25,11 @@ For production-style use, set a stable session key: `SECRET_KEY=<random> m365-po
 The tool is managed entirely through the web UI. The CLI only launches it and migrates old data:
 
 ```bash
-m365-posture web [-p PORT] [--no-browser] [--db PATH]
+m365-posture web [-p PORT] [--host ADDR] [--no-browser] [--db PATH]
 m365-posture migrate-from-json [--data-dir DIR] [--db PATH] [--tenant NAME] [--dry-run]
 ```
+
+The server binds to `127.0.0.1` by default (local-first). Use `--host 0.0.0.0` (or the `HOST` env var) to expose it on the network deliberately — set `SECRET_KEY` and `COOKIE_SECURE=true` behind HTTPS in that case.
 
 `migrate-from-json` imports tenant data from the legacy JSON file layout (`data/<tenant>/actions.json`, …) used by pre-SQLite versions of this tool.
 
@@ -120,14 +122,16 @@ Everything lives in one SQLite database, by default `data/m365_posture.db` (over
 
 ## Security Notes
 
+- The server binds to `127.0.0.1` by default; exposing it on a network is an explicit opt-in (`--host`).
 - All API routes require a logged-in session; state-changing requests carry an `X-Requested-With` header as CSRF protection.
-- The `viewer` role is enforced read-only across the whole API; tenant deletion and certificate management require `admin`.
+- The `viewer` role is enforced read-only across the whole API. User management, tenant credentials (tenant/client IDs, secrets, certificates, auth methods), automation tool configuration, tenant deletion and certificate management all require `admin`.
 - Login is rate-limited (10 attempts / 5 minutes / IP).
 - Passwords are stored as PBKDF2-SHA256 hashes; minimum length 12.
 - Set `SECRET_KEY` (session signing) and `COOKIE_SECURE=true` (HTTPS deployments) via environment variables.
 - Tenant `client_secret` values are never returned by the API (redacted as `***`) and only admins may change them. Uploaded certificates are stored under `data/certs/` with `0600` permissions.
 - Graph sessions are per tenant and can be signed out individually; changing a tenant's credentials invalidates its cached tokens.
-- Security-relevant operations (user management, credential changes, tool runs, tenant deletion) are written to an audit log.
+- Uploaded report ZIPs are checked against decompression bombs (size/count limits) before extraction; generated GitLab shell scripts quote all report-derived values.
+- Security-relevant operations (user management, credential changes, tool runs and their configuration, tenant deletion) are written to an audit log.
 
 ## Project Structure
 
@@ -152,7 +156,23 @@ m365_posture/
 ├── storage.py           # Legacy JSON storage (read by migrate-from-json)
 └── seed_data/           # E8 mappings, Secure Score control seeds
 powershell/              # Collection scripts for the source tools
+tests/                   # Pytest suite (parsers, engines, database, web API)
+docs/                    # Vision & competitive GAP analysis
 ```
+
+## Development & Tests
+
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/ -q
+```
+
+The suite covers all report parsers, the scoring/planning/correlation/compliance/E8 engines, the database merge & protection semantics, and the web API (auth, CSRF, RBAC, redaction, imports). CI runs it on every push (`.github/workflows/tests.yml`).
+
+## Documentation
+
+- [Vision & Mission](docs/VISION.md) — what this tool is (and isn't), with an alignment assessment.
+- [GAP analysis vs. Maester](docs/GAP_ANALYSIS_MAESTER.md) — competitive review and roadmap recommendations.
 
 ## License
 
