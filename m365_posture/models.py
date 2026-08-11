@@ -112,6 +112,18 @@ class GlobalActionReviewStatus(str, Enum):
     REVIEWED = "Reviewed"
 
 
+class RiskReasonCategory(str, Enum):
+    """Why an accepted risk cannot (yet) be remediated — the axis management
+    reports aggregate on ("12 critical risks accepted for licensing reasons")."""
+    LICENSING = "Licensing"
+    BUDGET = "Budget"
+    RESOURCES = "Resources"
+    SKILLS = "Skills"
+    TECHNICAL = "Technical"
+    BUSINESS = "Business"
+    OTHER = "Other"
+
+
 @dataclass
 class Action:
     """A single security recommendation/action item."""

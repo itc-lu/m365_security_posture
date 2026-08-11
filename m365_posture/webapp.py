@@ -21,7 +21,7 @@ from .models import (
     Action, TenantConfig, ActionStatus, Priority, RiskLevel,
     UserImpact, ImplementationEffort, SourceTool, Workload,
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
-    GlobalAction, UserRole,
+    GlobalAction, UserRole, RiskReasonCategory,
 )
 from .parsers import load_seed_controls, parse_graph_control_profiles
 from .essential_eight import apply_e8_mapping, get_e8_summary
@@ -197,6 +197,7 @@ def create_app(db_path: str = None) -> Flask:
             "compliance_frameworks": [f.value for f in ComplianceFramework],
             "clouds": [{"id": k, "label": v.get("label", k)}
                        for k, v in CLOUD_ENDPOINTS.items()],
+            "risk_reason_categories": [c.value for c in RiskReasonCategory],
         })
 
     # ── Tenant endpoints ──
@@ -250,6 +251,17 @@ def create_app(db_path: str = None) -> Flask:
         "certificate_path", "certificate_thumbprint", "auth_methods", "cloud",
     }
 
+    def _validate_excluded_workloads(value):
+        """excluded_workloads must be a list of known workload names."""
+        if not isinstance(value, list):
+            return "excluded_workloads must be a list"
+        valid = {w.value for w in Workload}
+        bad = [w for w in value if w not in valid]
+        if bad:
+            return (f"Unknown workload(s): {', '.join(map(str, bad))}. "
+                    f"Valid: {', '.join(sorted(valid))}")
+        return None
+
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
@@ -260,6 +272,10 @@ def create_app(db_path: str = None) -> Flask:
         if "cloud" in data and data["cloud"] not in CLOUD_ENDPOINTS:
             return _json_error(
                 f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
+        if "excluded_workloads" in data:
+            err = _validate_excluded_workloads(data["excluded_workloads"])
+            if err:
+                return _json_error(err)
         tenant = db.update_tenant(name, **data)
         # Invalidate any cached Graph auth tokens for this tenant when the
         # credentials they were obtained against may have changed -- otherwise
@@ -408,6 +424,10 @@ def create_app(db_path: str = None) -> Flask:
         # so the change history cannot be attributed to someone else.
         changed_by = session.get("username") or data.pop("changed_by", "")
         data.pop("changed_by", None)
+        # A structured risk reason must exist in the catalog (empty clears it)
+        if data.get("risk_reason_id"):
+            if not db.get_risk_reason(data["risk_reason_id"]):
+                return _json_error("Unknown risk reason")
         action = db.update_action(action_id, data, changed_by)
         if not action:
             return _json_error("Action not found", 404)
@@ -1739,6 +1759,106 @@ def create_app(db_path: str = None) -> Flask:
         result = auto_map_compliance(db, name, frameworks)
         return jsonify(result)
 
+    # ── Risk Reasons (structured acceptance reasons) ──
+
+    @app.route("/api/risk-reasons", methods=["GET"])
+    def api_list_risk_reasons():
+        include_inactive = request.args.get("include_inactive") == "1"
+        return jsonify(db.list_risk_reasons(include_inactive=include_inactive))
+
+    @app.route("/api/risk-reasons", methods=["POST"])
+    @require_role("admin")
+    def api_create_risk_reason():
+        data = request.get_json() or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return _json_error("name is required")
+        category = data.get("category") or RiskReasonCategory.OTHER.value
+        if category not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        try:
+            reason = db.create_risk_reason(name, category,
+                                           data.get("description", ""))
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.create", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason["id"], detail=name)
+        return jsonify(reason), 201
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["PUT"])
+    @require_role("admin")
+    def api_update_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        data = request.get_json() or {}
+        if "category" in data and data["category"] not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        if "name" in data and not (data.get("name") or "").strip():
+            return _json_error("name cannot be empty")
+        try:
+            reason = db.update_risk_reason(reason_id, **data)
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.update", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id)
+        return jsonify(reason)
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["DELETE"])
+    @require_role("admin")
+    def api_delete_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        result = db.delete_risk_reason(reason_id)
+        db.audit("risk_reason.delete", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id,
+                 detail="deactivated" if result.get("deactivated") else "deleted")
+        return jsonify(result)
+
+    @app.route("/api/tenants/<name>/risk-analysis", methods=["GET"])
+    def api_risk_analysis(name):
+        """Accepted risks grouped by structured reason — the management view
+        of what is parked behind which constraint and what resolving it
+        would unlock."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_risk_analysis(name))
+
+    @app.route("/api/control-plane/risk-analysis", methods=["GET"])
+    def api_cp_risk_analysis():
+        """Cross-tenant rollup: per reason, how many risks each tenant has
+        accepted and the combined unlock potential."""
+        tenants = [t["name"] for t in db.list_tenants()]
+        rollup: dict = {}
+        totals = {"total_accepted": 0, "score_potential": 0.0}
+        for tenant in tenants:
+            analysis = db.get_risk_analysis(tenant)
+            totals["total_accepted"] += analysis["total_accepted"]
+            groups = analysis["by_reason"] + (
+                [analysis["unassigned"]] if analysis["unassigned"]["count"] else [])
+            for g in groups:
+                key = g["reason_id"] or "__unassigned__"
+                entry = rollup.setdefault(key, {
+                    "reason_id": g["reason_id"], "name": g["name"],
+                    "category": g["category"], "count": 0,
+                    "critical_high": 0, "score_potential": 0.0,
+                    "by_tenant": {},
+                })
+                entry["count"] += g["count"]
+                entry["critical_high"] += (g["by_priority"].get("Critical", 0)
+                                           + g["by_priority"].get("High", 0))
+                entry["score_potential"] = round(
+                    entry["score_potential"] + g["score_potential"], 2)
+                entry["by_tenant"][tenant] = {
+                    "count": g["count"],
+                    "score_potential": g["score_potential"],
+                }
+                totals["score_potential"] = round(
+                    totals["score_potential"] + g["score_potential"], 2)
+        reasons = sorted(rollup.values(), key=lambda r: -r["score_potential"])
+        return jsonify({"tenants": tenants, "reasons": reasons, "totals": totals})
+
     # ── Risk Acceptance endpoints ──
 
     @app.route("/api/actions/<action_id>/accept-risk", methods=["POST"])
@@ -1750,11 +1870,19 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("justification is required")
         if not risk_owner:
             return _json_error("risk_owner is required")
+        reason_id = (data.get("reason_id") or "").strip() or None
+        if reason_id:
+            reason = db.get_risk_reason(reason_id)
+            if not reason:
+                return _json_error("Unknown risk reason")
+            if not reason.get("is_active", True):
+                return _json_error("This risk reason has been deactivated")
         result = db.accept_risk(
             action_id, justification, risk_owner,
             review_date=data.get("review_date"),
             expiry_date=data.get("expiry_date"),
-            changed_by=data.get("changed_by", ""),
+            changed_by=session.get("username") or data.get("changed_by", ""),
+            reason_id=reason_id,
         )
         if not result:
             return _json_error("Action not found", 404)
@@ -2677,6 +2805,8 @@ def create_app(db_path: str = None) -> Flask:
                 page_ga_ids,
             ).fetchall()
 
+        # Per-tenant workload exclusions apply to the cross-tenant matrix too
+        exclusions = {t: set(db.get_excluded_workloads(t)) for t in tenants}
         by_ga: dict = {}
         for r in rows:
             d = dict(r)
@@ -2687,7 +2817,7 @@ def create_app(db_path: str = None) -> Flask:
                     "workload": d["workload"], "review_status": d["review_status"],
                     "tenant_status": {},
                 }
-            if d["tenant_name"]:
+            if d["tenant_name"] and d["workload"] not in exclusions.get(d["tenant_name"], set()):
                 by_ga[gid]["tenant_status"][d["tenant_name"]] = {
                     "status": d["status"], "action_id": d["action_id"],
                 }

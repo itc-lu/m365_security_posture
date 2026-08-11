@@ -24,6 +24,41 @@ from .models import (
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "m365_posture.db"
 
+# Seeded once into the risk_reasons catalog (admins can edit/extend it).
+# (name, category, description)
+_DEFAULT_RISK_REASONS = [
+    ("Entra ID P1 licence required", "Licensing",
+     "Remediation needs Entra ID P1 (e.g. Conditional Access) which is not licensed for all users."),
+    ("Entra ID P2 licence required", "Licensing",
+     "Remediation needs Entra ID P2 (e.g. PIM, risk-based policies) which is not licensed for all users."),
+    ("Microsoft 365 E5 licence required", "Licensing",
+     "Remediation needs an E5-level licence that is not available."),
+    ("Defender for Office 365 licence required", "Licensing",
+     "Remediation needs Microsoft Defender for Office 365 (Safe Links/Attachments etc.)."),
+    ("Defender for Endpoint licence required", "Licensing",
+     "Remediation needs Microsoft Defender for Endpoint."),
+    ("Intune licence required", "Licensing",
+     "Remediation needs Microsoft Intune device management licensing."),
+    ("Purview / compliance licence required", "Licensing",
+     "Remediation needs Microsoft Purview / compliance add-on licensing."),
+    ("Budget not approved", "Budget",
+     "The required investment has not been approved."),
+    ("No staff capacity available", "Resources",
+     "The team has no free capacity to implement this at the moment."),
+    ("No time allocated yet", "Resources",
+     "Implementation has not been scheduled/prioritized yet."),
+    ("Skills or training missing", "Skills",
+     "The team lacks the expertise to implement this safely; training or external help needed."),
+    ("Legacy system constraint", "Technical",
+     "A legacy application or system prevents enabling this control."),
+    ("Third-party dependency", "Technical",
+     "An external vendor or third-party system blocks the change."),
+    ("Business process conflict", "Business",
+     "The control conflicts with a current business process or workflow."),
+    ("Management decision", "Business",
+     "Management explicitly decided to accept this risk."),
+]
+
 
 def _generate_id() -> str:
     return str(uuid.uuid4())[:8]
@@ -529,6 +564,17 @@ class Database:
                     detail TEXT DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_notif_log ON notification_log(tenant_name, event, timestamp);
+
+                -- Structured reasons for risk acceptances (shared catalog).
+                -- Powers "N critical risks accepted due to <reason>" reporting.
+                CREATE TABLE IF NOT EXISTS risk_reasons (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    category TEXT NOT NULL DEFAULT 'Other',
+                    description TEXT DEFAULT '',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT
+                );
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -610,11 +656,24 @@ class Database:
             for col, coltype, default in [
                 ("import_suggested_status", "TEXT", "''"),
                 ("last_seen_in_report", "TEXT", "NULL"),
+                # Structured reason for a risk acceptance (FK into risk_reasons)
+                ("risk_reason_id", "TEXT", "NULL"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE actions ADD COLUMN {col} {coltype} DEFAULT {default}")
                 except sqlite3.OperationalError:
                     pass
+
+            # Seed the default risk-reason catalog once (editable afterwards)
+            if not conn.execute("SELECT 1 FROM risk_reasons LIMIT 1").fetchone():
+                now = datetime.utcnow().isoformat()
+                conn.executemany(
+                    """INSERT OR IGNORE INTO risk_reasons
+                       (id, name, category, description, is_active, created_at)
+                       VALUES (?,?,?,?,1,?)""",
+                    [(_generate_id(), name, category, desc, now)
+                     for name, category, desc in _DEFAULT_RISK_REASONS],
+                )
 
             # The responsible_persons / action_responsible tables were removed;
             # responsibility is now expressed as a User Management user reference
@@ -644,6 +703,9 @@ class Database:
                 ("auth_methods", "TEXT", "''"),
                 # National cloud: global | usgov | usgovdod | china
                 ("cloud", "TEXT", "'global'"),
+                # JSON list of workloads hidden from all dashboards, reports,
+                # lists and scores for this tenant (imports still update them).
+                ("excluded_workloads", "TEXT", "'[]'"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -1245,9 +1307,12 @@ class Database:
     def update_tenant(self, name: str, **kwargs) -> Optional[dict]:
         allowed = {"tenant_id", "display_name", "client_id", "client_secret",
                     "certificate_path", "certificate_thumbprint",
-                    "use_interactive", "notes", "auth_methods", "cloud"}
+                    "use_interactive", "notes", "auth_methods", "cloud",
+                    "excluded_workloads"}
         if isinstance(kwargs.get("auth_methods"), dict):
             kwargs["auth_methods"] = json.dumps(kwargs["auth_methods"])
+        if isinstance(kwargs.get("excluded_workloads"), list):
+            kwargs["excluded_workloads"] = json.dumps(kwargs["excluded_workloads"])
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             return self.get_tenant(name)
@@ -1292,6 +1357,16 @@ class Database:
                        "tier", "action_type", "remediation_impact", "reference_id"):
             if field not in d:
                 d[field] = None
+        # Resolve the structured risk-reason label (register/report display)
+        d["risk_reason_name"] = ""
+        d["risk_reason_category"] = ""
+        if conn and d.get("risk_reason_id"):
+            rr = conn.execute(
+                "SELECT name, category FROM risk_reasons WHERE id=?",
+                (d["risk_reason_id"],)).fetchone()
+            if rr:
+                d["risk_reason_name"] = rr["name"]
+                d["risk_reason_category"] = rr["category"]
         if conn:
             history = conn.execute(
                 "SELECT * FROM action_history WHERE action_id=? ORDER BY timestamp",
@@ -1364,8 +1439,23 @@ class Database:
             d["was_compliant"] = d.get("status") == ActionStatus.COMPLETED.value
         return d
 
+    def get_excluded_workloads(self, tenant_name: str) -> list[str]:
+        """Workloads this tenant hides from all dashboards, reports and lists."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT excluded_workloads FROM tenants WHERE name=?",
+                (tenant_name,)).fetchone()
+        if not row:
+            return []
+        try:
+            value = json.loads(row["excluded_workloads"] or "[]")
+            return [w for w in value if isinstance(w, str)] if isinstance(value, list) else []
+        except ValueError:
+            return []
+
     def get_actions(self, tenant_name: str, filters: dict = None,
-                    allowed_workloads: list = None) -> list[dict]:
+                    allowed_workloads: list = None,
+                    include_excluded: bool = False) -> list[dict]:
         filters = filters or {}
         where = ["tenant_name=?"]
         params = [tenant_name]
@@ -1381,6 +1471,17 @@ class Database:
             placeholders = ",".join("?" * len(allowed_workloads))
             where.append(f"workload IN ({placeholders})")
             params.extend(allowed_workloads)
+
+        # Tenant-level workload exclusions apply everywhere by default:
+        # scores, dashboards, lists, exports and analyses all flow through
+        # this method. Imports write via merge_actions, so hidden workloads
+        # keep receiving updates and reappear intact when re-included.
+        if not include_excluded:
+            excluded = self.get_excluded_workloads(tenant_name)
+            if excluded:
+                placeholders = ",".join("?" * len(excluded))
+                where.append(f"workload NOT IN ({placeholders})")
+                params.extend(excluded)
         if filters.get("search"):
             where.append("(title LIKE ? OR description LIKE ?)")
             term = f"%{filters['search']}%"
@@ -1478,7 +1579,7 @@ class Database:
                 "category", "subcategory", "planned_date", "responsible",
                 "notes", "reference_url", "correlation_group_id",
                 "risk_justification", "risk_owner", "risk_review_date",
-                "risk_expiry_date", "risk_accepted_at",
+                "risk_expiry_date", "risk_accepted_at", "risk_reason_id",
                 "pinned_priority", "import_suggested_status", "last_seen_in_report",
             }
             updates = {}
@@ -1866,7 +1967,8 @@ class Database:
         against old-style source_id (ss_<controlname>) and by matching titles
         that are controlName slugs vs profile titles for the same control.
         """
-        actions = self.get_actions(tenant_name)
+        # Data hygiene must also cover workloads hidden from the UI
+        actions = self.get_actions(tenant_name, include_excluded=True)
         if source_tool:
             actions = [a for a in actions if a["source_tool"] == source_tool]
 
@@ -2157,9 +2259,12 @@ class Database:
                    AND dep_a.status NOT IN ('Completed', 'Risk Accepted', 'Not Applicable')""",
                 (tenant_name,),
             ).fetchall()
+        excluded = set(self.get_excluded_workloads(tenant_name))
         by_action: dict = {}
         for r in rows:
             d = dict(r)
+            if d.get("workload") in excluded:
+                continue
             entry = by_action.setdefault(d["id"], {
                 "id": d["id"], "title": d["title"], "status": d["status"],
                 "priority": d["priority"], "workload": d["workload"],
@@ -2217,7 +2322,7 @@ class Database:
                 params_legacy.append(framework)
             global_rows = conn.execute(
                 f"""SELECT gcm.framework, gcm.control_id, gcm.control_name, gcm.control_family,
-                           a.id as action_id, a.title, a.status, a.priority
+                           a.id as action_id, a.title, a.status, a.priority, a.workload
                       FROM global_compliance_mappings gcm
                       JOIN actions a ON a.global_action_id = gcm.global_action_id
                      WHERE a.tenant_name=?{framework_clause_global}
@@ -2226,7 +2331,7 @@ class Database:
             ).fetchall()
             legacy_rows = conn.execute(
                 f"""SELECT cm.framework, cm.control_id, cm.control_name, cm.control_family,
-                           a.id as action_id, a.title, a.status, a.priority
+                           a.id as action_id, a.title, a.status, a.priority, a.workload
                       FROM compliance_mappings cm
                       JOIN actions a ON cm.action_id = a.id
                      WHERE a.tenant_name=? AND a.global_action_id IS NULL{framework_clause_legacy}
@@ -2234,6 +2339,10 @@ class Database:
                 params_legacy,
             ).fetchall()
             rows = list(global_rows) + list(legacy_rows)
+            # Tenant-level workload exclusions apply to compliance rollups too
+            excluded_wl = set(self.get_excluded_workloads(tenant_name))
+            if excluded_wl:
+                rows = [r for r in rows if dict(r).get("workload") not in excluded_wl]
             # If the tenant has explicitly subscribed to a set of frameworks,
             # only show those. If no subscription is configured, show all.
             if allowed_frameworks and not framework:
@@ -2320,30 +2429,210 @@ class Database:
                     (tenant_name,),
                 )
 
+    # ── Risk Reasons (structured acceptance reasons) ──
+
+    def list_risk_reasons(self, include_inactive: bool = False) -> list[dict]:
+        """Catalog of risk-acceptance reasons with usage counts."""
+        with self._conn() as conn:
+            where = "" if include_inactive else "WHERE r.is_active=1"
+            rows = conn.execute(
+                f"""SELECT r.*,
+                           (SELECT COUNT(*) FROM actions a
+                             WHERE a.risk_reason_id=r.id
+                               AND a.status='Risk Accepted') AS active_usage,
+                           (SELECT COUNT(*) FROM actions a
+                             WHERE a.risk_reason_id=r.id) AS total_usage
+                      FROM risk_reasons r {where}
+                     ORDER BY r.category, r.name""",
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["is_active"] = bool(d.get("is_active", 1))
+            result.append(d)
+        return result
+
+    def get_risk_reason(self, reason_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM risk_reasons WHERE id=?", (reason_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["is_active"] = bool(d.get("is_active", 1))
+        return d
+
+    def create_risk_reason(self, name: str, category: str,
+                           description: str = "") -> dict:
+        rid = _generate_id()
+        try:
+            with self._conn() as conn:
+                conn.execute(
+                    """INSERT INTO risk_reasons (id, name, category, description,
+                       is_active, created_at) VALUES (?,?,?,?,1,?)""",
+                    (rid, name.strip(), category, description,
+                     datetime.utcnow().isoformat()),
+                )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"A risk reason named '{name.strip()}' already exists")
+        return self.get_risk_reason(rid)
+
+    def update_risk_reason(self, reason_id: str, **kwargs) -> dict | None:
+        allowed = {"name", "category", "description", "is_active"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if "name" in updates:
+            updates["name"] = str(updates["name"]).strip()
+        if "is_active" in updates:
+            updates["is_active"] = 1 if updates["is_active"] else 0
+        if updates:
+            sets = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [reason_id]
+            try:
+                with self._conn() as conn:
+                    conn.execute(f"UPDATE risk_reasons SET {sets} WHERE id=?", vals)
+            except sqlite3.IntegrityError:
+                raise ValueError(f"A risk reason named '{updates.get('name')}' already exists")
+        return self.get_risk_reason(reason_id)
+
+    def delete_risk_reason(self, reason_id: str) -> dict:
+        """Hard-delete an unused reason; deactivate one that is referenced so
+        historical acceptances keep their label."""
+        with self._conn() as conn:
+            used = conn.execute(
+                "SELECT 1 FROM actions WHERE risk_reason_id=? LIMIT 1",
+                (reason_id,)).fetchone()
+            if used:
+                conn.execute(
+                    "UPDATE risk_reasons SET is_active=0 WHERE id=?", (reason_id,))
+                return {"deleted": False, "deactivated": True}
+            conn.execute("DELETE FROM risk_reasons WHERE id=?", (reason_id,))
+            return {"deleted": True, "deactivated": False}
+
+    def get_risk_analysis(self, tenant_name: str) -> dict:
+        """Group this tenant's accepted risks by structured reason.
+
+        The management view: how many risks (by priority) are parked behind
+        each constraint, and how much score/ROI resolving that constraint
+        would unlock.
+        """
+        from .planner import calculate_action_roi
+
+        accepted = self.get_actions(tenant_name, {"status": ActionStatus.RISK_ACCEPTED.value})
+        reasons = {r["id"]: r for r in self.list_risk_reasons(include_inactive=True)}
+        total_max = self.get_scores(tenant_name).get("total_max", 0) or 0
+
+        def _empty_group(reason: dict | None) -> dict:
+            return {
+                "reason_id": reason["id"] if reason else None,
+                "name": reason["name"] if reason else "No reason assigned",
+                "category": reason["category"] if reason else "Unassigned",
+                "description": (reason or {}).get("description", ""),
+                "count": 0,
+                "by_priority": {},
+                "by_risk_level": {},
+                "score_potential": 0.0,
+                "score_potential_pct": 0.0,
+                "roi_total": 0.0,
+                "workloads": {},
+                "actions": [],
+            }
+
+        groups: dict = {}
+        unassigned = _empty_group(None)
+        for a in accepted:
+            reason = reasons.get(a.get("risk_reason_id") or "")
+            group = groups.setdefault(reason["id"], _empty_group(reason)) if reason else unassigned
+            potential = (a.get("max_score") or 0) - (a.get("score") or 0)
+            roi = calculate_action_roi(a)
+            group["count"] += 1
+            group["by_priority"][a.get("priority") or "Medium"] = \
+                group["by_priority"].get(a.get("priority") or "Medium", 0) + 1
+            group["by_risk_level"][a.get("risk_level") or "Medium"] = \
+                group["by_risk_level"].get(a.get("risk_level") or "Medium", 0) + 1
+            group["score_potential"] += potential
+            group["roi_total"] += roi
+            wl = a.get("workload") or "General"
+            group["workloads"][wl] = group["workloads"].get(wl, 0) + 1
+            group["actions"].append({
+                "id": a["id"], "title": a.get("title", ""),
+                "priority": a.get("priority", ""), "risk_level": a.get("risk_level", ""),
+                "workload": wl, "source_tool": a.get("source_tool", ""),
+                "score": a.get("score"), "max_score": a.get("max_score"),
+                "score_potential": round(potential, 2), "roi": roi,
+                "risk_owner": a.get("risk_owner", ""),
+                "risk_expiry_date": a.get("risk_expiry_date"),
+            })
+
+        by_reason = list(groups.values())
+        for g in by_reason + [unassigned]:
+            g["score_potential"] = round(g["score_potential"], 2)
+            g["roi_total"] = round(g["roi_total"], 2)
+            g["score_potential_pct"] = round(
+                g["score_potential"] / total_max * 100, 2) if total_max > 0 else 0
+            g["actions"].sort(key=lambda x: -(x.get("roi") or 0))
+        by_reason.sort(key=lambda g: (-g["score_potential"], -g["count"]))
+
+        by_category: dict = {}
+        for g in by_reason:
+            cat = by_category.setdefault(g["category"], {
+                "category": g["category"], "count": 0, "reasons": 0,
+                "score_potential": 0.0,
+                "critical_high": 0,
+            })
+            cat["count"] += g["count"]
+            cat["reasons"] += 1
+            cat["score_potential"] = round(cat["score_potential"] + g["score_potential"], 2)
+            cat["critical_high"] += (g["by_priority"].get("Critical", 0)
+                                     + g["by_priority"].get("High", 0))
+
+        return {
+            "tenant": tenant_name,
+            "total_accepted": len(accepted),
+            "assigned": len(accepted) - unassigned["count"],
+            "unassigned": unassigned,
+            "by_reason": by_reason,
+            "by_category": sorted(by_category.values(),
+                                  key=lambda c: -c["score_potential"]),
+            "total_max": round(total_max, 2),
+            "total_score_potential": round(
+                sum(g["score_potential"] for g in by_reason)
+                + unassigned["score_potential"], 2),
+        }
+
     # ── Risk Acceptance ──
 
     def accept_risk(self, action_id: str, justification: str, risk_owner: str,
                     review_date: str = None, expiry_date: str = None,
-                    changed_by: str = "") -> Optional[dict]:
+                    changed_by: str = "", reason_id: str = None) -> Optional[dict]:
         """Record a risk acceptance decision on an action."""
         existing = self.get_action(action_id)
         if not existing:
             return None
+        reason_name = ""
+        if reason_id:
+            reason = self.get_risk_reason(reason_id)
+            if not reason:
+                raise ValueError("Unknown risk reason")
+            reason_name = reason["name"]
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
             conn.execute(
                 """UPDATE actions SET status='Risk Accepted',
                    risk_justification=?, risk_owner=?, risk_review_date=?,
-                   risk_expiry_date=?, risk_accepted_at=?, updated_at=?
+                   risk_expiry_date=?, risk_accepted_at=?, risk_reason_id=?,
+                   updated_at=?
                    WHERE id=?""",
-                (justification, risk_owner, review_date, expiry_date, now, now, action_id),
+                (justification, risk_owner, review_date, expiry_date, now,
+                 reason_id or None, now, action_id),
             )
+            note = (f"Risk accepted. Owner: {risk_owner}. "
+                    f"Expiry: {expiry_date or 'None'}"
+                    + (f". Reason: {reason_name}" if reason_name else ""))
             conn.execute(
                 """INSERT INTO action_history (action_id, timestamp, old_status,
                    new_status, changed_by, notes)
                    VALUES (?, ?, ?, 'Risk Accepted', ?, ?)""",
-                (action_id, now, existing["status"], changed_by,
-                 f"Risk accepted. Owner: {risk_owner}. Expiry: {expiry_date or 'None'}"),
+                (action_id, now, existing["status"], changed_by, note),
             )
         return self.get_action(action_id)
 
