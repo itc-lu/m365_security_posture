@@ -1449,14 +1449,29 @@ class Database:
                         and _import_status != ActionStatus.COMPLETED.value
                     )
 
-                    # Always sync max_score (factual metadata from source tool)
-                    changes["max_score"] = action.max_score
+                    # Sync max_score (factual metadata from source tool), but
+                    # never wipe a known max with an empty one: Graph imports
+                    # without control profiles report max_score 0 for every
+                    # control, and that must not zero out previously imported
+                    # values. A drop to 0 is only meaningful when the source
+                    # explicitly marks the item Not Applicable (e.g. ZT tests).
+                    _existing_max = existing.get("max_score") or 0
+                    if action.max_score is None:
+                        pass  # keep existing max_score
+                    elif (action.max_score == 0 and _existing_max > 0
+                            and action.status != ActionStatus.NOT_APPLICABLE.value):
+                        pass  # keep existing max_score
+                    else:
+                        changes["max_score"] = action.max_score
+
+                    # Effective max after the guard above (import value if it
+                    # was accepted, else the preserved existing value).
+                    _effective_max = changes.get("max_score", _existing_max) or 0
 
                     if _score_protected:
                         # Keep score at max_score to reflect the completed state
-                        max_s = action.max_score or existing.get("max_score") or 0
-                        changes["score"] = max_s
-                        changes["score_percentage"] = 100.0 if max_s > 0 else 0
+                        changes["score"] = _effective_max
+                        changes["score_percentage"] = 100.0 if _effective_max > 0 else 0
                     else:
                         # Sync score from import
                         if action.score is not None and action.score != existing.get("score"):
@@ -1467,9 +1482,9 @@ class Database:
                                  existing.get("score"), action.score, source_file),
                             )
                         changes["score"] = action.score
-                        if action.max_score and action.max_score > 0:
+                        if _effective_max > 0 and action.score is not None:
                             changes["score_percentage"] = round(
-                                (action.score / action.max_score) * 100, 2)
+                                (action.score / _effective_max) * 100, 2)
                         else:
                             changes["score_percentage"] = 0
 
@@ -1695,6 +1710,11 @@ class Database:
         groups = {}
         for a in actions:
             sid = a.get("source_id", "")
+            if not sid:
+                # Actions without a source_id (manual entries) are never
+                # duplicates of each other — grouping them under one empty
+                # key would delete all but one of them.
+                continue
             # Normalize: strip ss_ prefix, lowercase
             key = sid.lower()
             if key.startswith("ss_"):
@@ -2477,8 +2497,11 @@ class Database:
             by_status[st] = by_status.get(st, 0) + 1
             by_priority[pr] = by_priority.get(pr, 0) + 1
 
-        # Use Graph API authoritative scores for Secure Score tool breakdown only
-        if graph_max and graph_max > 0:
+        # Use Graph API authoritative scores for Secure Score tool breakdown only.
+        # Skip when N/A / Risk Accepted actions are excluded: the Graph totals
+        # include every control, so substituting them would silently undo the
+        # exclusion for the Secure Score portion of the adjusted score.
+        if graph_max and graph_max > 0 and not excluded_statuses:
             ss_key = "Microsoft Secure Score"
             if ss_key in by_tool:
                 # Replace action-summed scores with Graph API authoritative scores

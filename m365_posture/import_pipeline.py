@@ -223,11 +223,19 @@ def process_file_import(db, tenant_name: str, source: str,
     (unless force_tenant is set)."""
     parser_cls, source_tool = PARSER_MAP[source]
     parser = parser_cls()
+    import_started = datetime.utcnow().isoformat()
     actions = parser.parse_file(file_path)
 
     # Guard against importing a report into the wrong tenant.
     if not force_tenant:
-        _verify_report_tenant(db, tenant_name, parser)
+        try:
+            _verify_report_tenant(db, tenant_name, parser)
+        except TenantMismatchError:
+            # The rejected upload must not leave its extracted ZIP behind.
+            extract_dir = getattr(parser, "_extract_dir", None)
+            if extract_dir:
+                shutil.rmtree(extract_dir, ignore_errors=True)
+            raise
 
     actions = apply_e8_mapping(actions)
     actions = enrich_actions_from_controls(db, actions)
@@ -253,13 +261,15 @@ def process_file_import(db, tenant_name: str, source: str,
 
     protected_actions = [d for d in updated_details if d.get("status_protected")]
 
-    # Stale actions: same source_tool but not touched by this import
+    # Stale actions: same source_tool but not touched by this import.
+    # Everything present in the report was stamped with a fresh
+    # last_seen_in_report during merge, so anything older than the import
+    # start no longer appears in the tool's latest report.
     all_tenant_actions = db.get_actions(tenant_name)
-    import_ts = datetime.utcnow().isoformat()
     stale_actions = []
     for a in all_tenant_actions:
         if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
-            if a["last_seen_in_report"] < import_ts[:10]:
+            if a["last_seen_in_report"] < import_started:
                 stale_actions.append({
                     "id": a["id"], "title": a["title"],
                     "status": a["status"],
