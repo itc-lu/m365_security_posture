@@ -3812,10 +3812,12 @@ async function renderImport() {
       <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import into "${esc(displayName)}"</button>
     </div>
     <div id="imp-result"></div>
-    <div id="zt-reports-section"></div>`;
+    <div id="zt-reports-section"></div>
+    <div id="maester-reports-section"></div>`;
 
-  // Load ZT reports if any exist
+  // Load stored reports if any exist
   loadZtReports(t);
+  loadMaesterReports(t);
 }
 
 // ── Graph API Auth ──
@@ -4202,6 +4204,10 @@ function onSourceChange() {
     hint.style.display = 'block';
     hint.innerHTML = 'Upload the ScubaGear report directory as a <strong>ZIP file</strong> (containing BaselineReports.html, ScubaResults JSON, etc.), or just the ScubaResults JSON/CSV file.';
     uploadHint.textContent = 'ZIP file (recommended), JSON, or CSV file';
+  } else if(src === 'maester') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the <strong>Invoke-Maester output folder as a ZIP</strong> (keeps the HTML report browsable in-app), or just the test-results JSON file. Covers the Maester, EIDSCA, CISA, CIS and ORCA test suites.';
+    uploadHint.textContent = 'ZIP file (recommended) or JSON file';
   } else {
     hint.style.display = 'none';
     uploadHint.textContent = 'JSON or CSV file';
@@ -4250,6 +4256,50 @@ async function loadZtReports(tenantName) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+async function loadMaesterReports(tenantName) {
+  const el = document.getElementById('maester-reports-section');
+  if(!el) return;
+  const reports = await api.get(`/api/tenants/${tenantName}/maester-reports`);
+  if(!Array.isArray(reports) || !reports.length) { el.innerHTML = ''; return; }
+
+  const rows = reports.map(r => {
+    const date = r.imported_at ? new Date(r.imported_at).toLocaleString() : '';
+    const execDate = r.executed_at ? new Date(r.executed_at).toLocaleString() : '';
+    const counted = (r.total_tests||0) - (r.skipped_tests||0);
+    const pct = counted > 0 ? Math.round(r.passed_tests / counted * 100) : 0;
+    const clr = pct >= 60 ? 'var(--success)' : pct >= 30 ? 'var(--warning)' : 'var(--danger)';
+    const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/maester-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+    return `<tr>
+      <td>${date}</td>
+      <td>${execDate}</td>
+      <td>${esc(r.report_tenant_name || r.report_tenant_id || '')}</td>
+      <td style="color:${clr};font-weight:600">${r.passed_tests}/${counted} (${pct}%)</td>
+      <td style="font-size:12px">${r.failed_tests} failed · ${r.skipped_tests} skipped</td>
+      <td>${esc(r.tool_version || '')}</td>
+      <td>${htmlBtn}
+        <button class="btn btn-sm btn-danger" onclick="deleteMaesterReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">Maester Reports</div>
+      <table class="data-table">
+        <thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Pass Rate</th><th>Breakdown</th><th>Version</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function deleteMaesterReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this Maester report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source if the import was a mistake.')) return;
+  const r = await api.del(`/api/maester-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  loadMaesterReports(state.activeTenant.name);
 }
 
 async function deleteZtReport(reportId) {
@@ -4324,10 +4374,11 @@ async function renderAutomation() {
     secure_score: {name:'Secure Score Import', desc:'Imports Microsoft Secure Score via the Graph API using the tenant’s app-only credentials (certificate or client secret). Fully unattended.', needs: env.app_credentials ? '' : 'Requires app-only credentials — configure a certificate or client secret in Tenant Config.'},
     scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s uploaded YAML config and imports the report automatically.', needs: !env.pwsh_found ? 'Requires PowerShell 7 (pwsh) and the ScubaGear module (or a ScubaGear folder configured below).' : (!(cfgs.scuba||{}).config_yaml ? 'Upload a ScubaGear YAML config file below before running.' : '')},
     zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module (or a module folder configured below).'},
+    maester: {name:'Maester Run + Import', desc:'Runs Maester (Invoke-Maester — the MT, EIDSCA, CISA, CIS and ORCA test suites) and imports the results automatically.', needs: env.pwsh_found ? ((cfgs.maester||{}).connect_command ? '' : 'Configure a connect command below (e.g. Connect-MgGraph with app-only credentials) for unattended runs.') : 'Requires PowerShell 7 (pwsh) and the Maester module (Install-Module Maester, or a module folder configured below).'},
   };
   const freqOpts = f => ['manual','daily','weekly','monthly'].map(v=>`<option value="${v}" ${v===f?'selected':''}>${v==='manual'?'Manual only':v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join('');
 
-  const taskCards = ['secure_score','scuba','zero_trust'].map(task => {
+  const taskCards = ['secure_score','scuba','zero_trust','maester'].map(task => {
     const m = taskMeta[task];
     const s = schedMap[task] || {frequency:'manual', enabled:0};
     const lastBadge = s.last_status
@@ -4353,7 +4404,9 @@ async function renderAutomation() {
 
   const scuba = cfgs.scuba || {};
   const zt = cfgs.zero_trust || {};
+  const maester = cfgs.maester || {};
   const ps = cfgs.powershell || {};
+  const notif = ov.notifications || null;  // present for admins only
 
   const runRows = (ov.runs||[]).map(r => {
     const dur = r.finished_at ? Math.max(1, Math.round((new Date(r.finished_at)-new Date(r.started_at))/1000))+'s' : '—';
@@ -4422,6 +4475,21 @@ async function renderAutomation() {
             <input id="zt-extra" value="${esc(zt.extra_args||'')}" placeholder="-Days 30"></div>
           <button class="btn btn-primary btn-sm" onclick="saveToolConfig('zero_trust')">Save ZT Config</button>
         </div>
+        <div class="card mb-16">
+          <div class="card-header">Maester Configuration</div>
+          <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+            Maester needs an authenticated Graph session. For unattended runs, provide a
+            <em>connect command</em> executed before Invoke-Maester — e.g.
+            <code>Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …</code>.
+          </p>
+          <div class="form-group"><label>Maester folder (optional — path to a checkout/module folder; empty = installed module)</label>
+            <input id="maester-module-path" value="${esc(maester.module_path||'')}" placeholder="/opt/Maester"></div>
+          <div class="form-group"><label>Connect command (PowerShell, runs before Invoke-Maester; admin-only)</label>
+            <input id="maester-connect" value="${esc(maester.connect_command||'')}" placeholder="Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …"></div>
+          <div class="form-group"><label>Extra Invoke-Maester arguments (optional)</label>
+            <input id="maester-extra" value="${esc(maester.extra_args||'')}" placeholder="-Tag CA,MFA"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveToolConfig('maester')">Save Maester Config</button>
+        </div>
         <div class="card">
           <div class="card-header">PowerShell</div>
           <div class="form-group"><label>Path to pwsh (optional — auto-detected when empty)</label>
@@ -4431,6 +4499,15 @@ async function renderAutomation() {
       </div>
     </div>
 
+    ${notif !== null ? renderNotificationsCard(notif) : `
+    <div class="card mb-16">
+      <div class="card-header">Notifications</div>
+      <p style="font-size:13px;color:var(--text-light)">
+        ${ov.notifications_enabled ? 'Notifications are enabled for this tenant.' : 'Notifications are not configured.'}
+        Configuring channels (email / Teams / Slack) requires the admin role.
+      </p>
+    </div>`}
+
     <div class="card">
       <div class="card-header">Run History</div>
       <div class="table-wrap"><table>
@@ -4438,6 +4515,8 @@ async function renderAutomation() {
         <tbody>${runRows||'<tr><td colspan="6" class="text-center" style="padding:24px;color:var(--text-light)">No runs yet. Use "Run now" or enable a schedule.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+
+  if(notif !== null) loadSmtpSettings();
 
   // While a run is active, refresh the page periodically to show progress
   if((ov.runs||[]).some(r => r.status==='running')) {
@@ -4449,6 +4528,122 @@ async function renderAutomation() {
         renderAutomation();
       }
     }, 3000);
+  }
+}
+
+function renderNotificationsCard(notif) {
+  const events = [
+    ['run_failure', 'Automation run failures'],
+    ['score_regression', 'Score regressions after imports'],
+    ['new_findings', 'New findings imported'],
+    ['risk_expiry', 'Risk acceptances expiring (daily digest)'],
+  ];
+  const eventChecks = events.map(([key, label]) => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0;cursor:pointer">
+      <input type="checkbox" class="notif-event" data-event="${key}" ${notif.events?.[key] !== false ? 'checked' : ''}> ${label}
+    </label>`).join('');
+  return `
+    <div class="card mb-16" id="notifications-card">
+      <div class="card-header flex justify-between items-center">
+        <span>Notifications</span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0;cursor:pointer">
+          <input type="checkbox" id="notif-enabled" ${notif.enabled ? 'checked' : ''}> Enabled for this tenant
+        </label>
+      </div>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Alerts are sent when automation runs fail, imports regress the score, new findings arrive,
+        or accepted risks approach expiry. Email uses the global SMTP settings below; Teams and Slack
+        use per-tenant incoming-webhook URLs.</p>
+      <div class="grid grid-2">
+        <div>
+          <div class="form-group"><label>Recipient emails (comma-separated)</label>
+            <input id="notif-emails" value="${esc((notif.emails||[]).join(', '))}" placeholder="soc@example.com, ciso@example.com"></div>
+          <div class="form-group"><label>Teams incoming-webhook URL (optional)</label>
+            <input id="notif-teams" value="${esc(notif.teams_webhook||'')}" placeholder="https://…webhook.office.com/…"></div>
+          <div class="form-group"><label>Slack incoming-webhook URL (optional)</label>
+            <input id="notif-slack" value="${esc(notif.slack_webhook||'')}" placeholder="https://hooks.slack.com/services/…"></div>
+          <div class="form-group"><label>Regression threshold (percentage points)</label>
+            <input id="notif-threshold" type="number" step="0.1" min="0" value="${esc(String(notif.regression_threshold ?? 1.0))}" style="max-width:120px"></div>
+          <div><strong style="font-size:13px">Events</strong>${eventChecks}</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="saveNotificationConfig()">Save Notification Settings</button>
+            <button class="btn btn-sm" onclick="sendTestNotification()">Send Test Notification</button>
+          </div>
+          <div id="notif-test-result" style="margin-top:8px;font-size:13px"></div>
+        </div>
+        <div>
+          <div class="card" style="background:var(--bg)">
+            <div class="card-header" style="font-size:13px">Global SMTP Settings (all tenants)</div>
+            <div id="smtp-settings-body" style="color:var(--text-light);font-size:13px">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadSmtpSettings() {
+  const body = document.getElementById('smtp-settings-body');
+  if(!body) return;
+  const s = await api.get('/api/notifications/smtp');
+  if(s.error) { body.textContent = s.error; return; }
+  body.innerHTML = `
+    <div class="form-row">
+      <div class="form-group"><label>SMTP host</label><input id="smtp-host" value="${esc(s.host||'')}" placeholder="smtp.example.com"></div>
+      <div class="form-group"><label>Port</label><input id="smtp-port" type="number" value="${esc(String(s.port||587))}" style="max-width:100px"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Username (optional)</label><input id="smtp-user" value="${esc(s.username||'')}" autocomplete="off"></div>
+      <div class="form-group"><label>Password</label><input id="smtp-pass" type="password" value="${esc(s.password||'')}" placeholder="Leave *** to keep current" autocomplete="new-password"></div>
+    </div>
+    <div class="form-group"><label>From address</label><input id="smtp-from" value="${esc(s.from_addr||'')}" placeholder="m365-posture@example.com"></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:10px">
+      <input type="checkbox" id="smtp-tls" ${s.use_tls !== false ? 'checked' : ''}> Use STARTTLS
+    </label>
+    <button class="btn btn-primary btn-sm" onclick="saveSmtpSettings()">Save SMTP Settings</button>`;
+}
+
+async function saveSmtpSettings() {
+  const payload = {
+    host: document.getElementById('smtp-host').value.trim(),
+    port: document.getElementById('smtp-port').value.trim() || 587,
+    username: document.getElementById('smtp-user').value.trim(),
+    password: document.getElementById('smtp-pass').value,
+    from_addr: document.getElementById('smtp-from').value.trim(),
+    use_tls: document.getElementById('smtp-tls').checked,
+  };
+  const r = await api.put('/api/notifications/smtp', payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('SMTP settings saved', 'success');
+}
+
+async function saveNotificationConfig() {
+  const t = state.activeTenant.name;
+  const events = {};
+  document.querySelectorAll('.notif-event').forEach(cb => { events[cb.dataset.event] = cb.checked; });
+  const payload = {
+    enabled: document.getElementById('notif-enabled').checked,
+    emails: document.getElementById('notif-emails').value.split(',').map(e=>e.trim()).filter(Boolean),
+    teams_webhook: document.getElementById('notif-teams').value.trim(),
+    slack_webhook: document.getElementById('notif-slack').value.trim(),
+    regression_threshold: parseFloat(document.getElementById('notif-threshold').value) || 1.0,
+    events,
+  };
+  const r = await api.put(`/api/tenants/${t}/notifications`, payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('Notification settings saved', 'success');
+}
+
+async function sendTestNotification() {
+  const t = state.activeTenant.name;
+  const el = document.getElementById('notif-test-result');
+  el.textContent = 'Sending…';
+  const r = await api.post(`/api/tenants/${t}/notifications/test`, {});
+  if(r.errors && r.errors.length) {
+    el.innerHTML = `<span style="color:var(--danger)">Sent to ${r.sent||0} channel(s); errors: ${esc(r.errors.join(' | '))}</span>`;
+  } else if(r.sent) {
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Test notification sent to ${r.sent} channel(s)</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--danger)">${esc(r.error || (r.errors||[]).join(' | ') || 'No channels configured')}</span>`;
   }
 }
 
@@ -4494,6 +4689,12 @@ async function saveToolConfig(tool) {
     config = {
       module_path: document.getElementById('zt-module-path').value.trim(),
       extra_args: document.getElementById('zt-extra').value.trim(),
+    };
+  } else if(tool === 'maester') {
+    config = {
+      module_path: document.getElementById('maester-module-path').value.trim(),
+      connect_command: document.getElementById('maester-connect').value.trim(),
+      extra_args: document.getElementById('maester-extra').value.trim(),
     };
   } else if(tool === 'powershell') {
     config = {pwsh_path: document.getElementById('ps-path').value.trim()};
@@ -5928,7 +6129,7 @@ async function renderExport() {
       <div class="card-header">Data Export (CSV / JSON)</div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Full action data with all tracked fields — for Excel, Power BI, or your own scripts.</p>
       <div class="form-row">
-        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option></select></div>
+        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option><option value="md">Markdown (.md)</option></select></div>
         <div class="form-group"><label>Status</label><select id="dexp-status">${dStatusOpts}</select></div>
         <div class="form-group"><label>Source Tool</label><select id="dexp-source">${srcOpts}</select></div>
         <div class="form-group"><label>Workload</label><select id="dexp-workload">${wlOpts}</select></div>
@@ -7650,6 +7851,12 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
         <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
       </div>
+      <div class="form-group"><label>Cloud environment (login &amp; Graph endpoints)</label>
+        <select id="cpt-cloud" style="max-width:320px">
+          ${(state.enums.clouds||[{id:'global',label:'Global (Commercial / GCC)'}]).map(c =>
+            `<option value="${esc(c.id)}" ${c.id===(tenant.cloud||'global')?'selected':''}>${esc(c.label)}</option>`).join('')}
+        </select>
+      </div>
       <div class="ga-detail-section" style="margin-top:4px">
         <h4 style="margin-bottom:8px">Certificate (app-only auth)</h4>
         ${tenant.certificate_path ? `
@@ -7752,12 +7959,18 @@ async function showCpTenantDetail(tenantName) {
 async function saveTenantConfigCp(tenantName) {
   const payload = {
     display_name: document.getElementById('cpt-display').value,
-    tenant_id: document.getElementById('cpt-tid').value,
-    client_id: document.getElementById('cpt-cid').value,
     notes: document.getElementById('cpt-notes').value,
   };
-  const secret = document.getElementById('cpt-secret').value;
-  if(secret && secret !== '***') payload.client_secret = secret;
+  // Credential-bearing fields require the admin role server-side — only
+  // include them for admins so a non-admin can still save name/notes.
+  if(_authUser && _authUser.role === 'admin') {
+    payload.tenant_id = document.getElementById('cpt-tid').value;
+    payload.client_id = document.getElementById('cpt-cid').value;
+    const cloudSel = document.getElementById('cpt-cloud');
+    if(cloudSel) payload.cloud = cloudSel.value;
+    const secret = document.getElementById('cpt-secret').value;
+    if(secret && secret !== '***') payload.client_secret = secret;
+  }
   const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
   toast('Tenant updated','success');

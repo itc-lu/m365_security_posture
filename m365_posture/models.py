@@ -60,6 +60,7 @@ class Workload(str, Enum):
     DEFENDER = "Defender"
     INTUNE = "Intune"
     PURVIEW = "Purview"
+    COPILOT = "Copilot & AI"
     GENERAL = "General"
 
 
@@ -70,6 +71,7 @@ class SourceTool(str, Enum):
     ZERO_TRUST_REPORT = "Zero Trust Report"
     SCT = "Security Compliance Toolkit"
     M365_ASSESS = "M365-Assess"
+    MAESTER = "Maester"
     MANUAL = "Manual"
 
 
@@ -218,6 +220,8 @@ class TenantConfig:
     certificate_path: str = ""
     certificate_thumbprint: str = ""
     use_interactive: bool = False
+    # National cloud: global | usgov | usgovdod | china
+    cloud: str = "global"
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

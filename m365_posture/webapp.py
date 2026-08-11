@@ -34,6 +34,7 @@ from .graph_api import (
     fetch_control_profiles, client_credentials_token,
     client_credentials_token_cert, thumbprint_from_pem,
     start_interactive_auth, exchange_auth_code,
+    CLOUD_ENDPOINTS,
 )
 from .import_pipeline import (
     PARSER_MAP, TenantMismatchError, process_file_import,
@@ -194,6 +195,8 @@ def create_app(db_path: str = None) -> Flask:
             "e8_maturities": [m.value for m in EssentialEightMaturity],
             "import_sources": list(PARSER_MAP.keys()),
             "compliance_frameworks": [f.value for f in ComplianceFramework],
+            "clouds": [{"id": k, "label": v.get("label", k)}
+                       for k, v in CLOUD_ENDPOINTS.items()],
         })
 
     # ── Tenant endpoints ──
@@ -213,6 +216,10 @@ def create_app(db_path: str = None) -> Flask:
         existing = db.get_tenant(name)
         if existing:
             return _json_error(f"Tenant '{name}' already exists")
+        cloud = data.get("cloud", "global")
+        if cloud not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
         config = TenantConfig(
             tenant_id=data.get("tenant_id", ""),
             tenant_name=name,
@@ -222,6 +229,7 @@ def create_app(db_path: str = None) -> Flask:
             certificate_path=data.get("certificate_path", ""),
             certificate_thumbprint=data.get("certificate_thumbprint", ""),
             use_interactive=data.get("use_interactive", False),
+            cloud=cloud,
             notes=data.get("notes", ""),
         )
         tenant = db.create_tenant(name, config)
@@ -235,11 +243,11 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(_redact_tenant(tenant))
 
     # Credential-bearing tenant fields only admins may change: they control
-    # which Entra app/certificate the tool authenticates with, so letting a
-    # non-admin repoint them is an escalation path.
+    # which Entra app/certificate the tool authenticates with (and against
+    # which cloud), so letting a non-admin repoint them is an escalation path.
     _TENANT_CREDENTIAL_FIELDS = {
         "tenant_id", "client_id", "client_secret",
-        "certificate_path", "certificate_thumbprint", "auth_methods",
+        "certificate_path", "certificate_thumbprint", "auth_methods", "cloud",
     }
 
     @app.route("/api/tenants/<name>", methods=["PUT"])
@@ -249,6 +257,9 @@ def create_app(db_path: str = None) -> Flask:
         data = request.get_json() or {}
         if (_TENANT_CREDENTIAL_FIELDS & set(data.keys())) and session.get("role") != "admin":
             return _json_error("Admin role required to update tenant credentials", 403)
+        if "cloud" in data and data["cloud"] not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
         tenant = db.update_tenant(name, **data)
         # Invalidate any cached Graph auth tokens for this tenant when the
         # credentials they were obtained against may have changed -- otherwise
@@ -801,6 +812,44 @@ def create_app(db_path: str = None) -> Flask:
         import mimetypes
         mime = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
         return send_file(str(full_path), mimetype=mime)
+
+    # ── Maester report endpoints ──
+
+    @app.route("/api/tenants/<name>/maester-reports", methods=["GET"])
+    def api_maester_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_maester_reports(name))
+
+    @app.route("/api/maester-reports/<report_id>", methods=["GET"])
+    def api_maester_report_detail(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        return jsonify(report)
+
+    @app.route("/api/maester-reports/<report_id>", methods=["DELETE"])
+    def api_maester_report_delete(report_id):
+        """Remove a stored Maester report record and its files (imported
+        actions are kept — clean those up via the Actions page if needed)."""
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_maester_report(report_id)
+        db.audit("maester_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/maester-reports/<report_id>/html", methods=["GET"])
+    def api_maester_report_html(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path or not Path(html_path).exists():
+            return _json_error("HTML report file not found", 404)
+        return send_file(html_path, mimetype="text/html")
 
     # ── Import history ──
 
@@ -1526,7 +1575,42 @@ def create_app(db_path: str = None) -> Flask:
                 f"attachment; filename=actions_{name}_{stamp}.xlsx"
             return resp
 
-        return _json_error("format must be 'csv', 'json' or 'xlsx'")
+        if fmt == "md":
+            tenant = db.get_tenant(name)
+            scores = db.get_scores(name)
+
+            def _cell(value):
+                # Keep Markdown table structure intact regardless of content
+                return str(value if value is not None else "").replace(
+                    "|", "\\|").replace("\n", " ").strip()
+
+            lines = [
+                f"# Security Actions — {tenant.get('display_name') or name}",
+                "",
+                f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+                + (f" · Filters: {', '.join(f'{k}={v}' for k, v in filters.items())}"
+                   if filters else ""),
+                "",
+                f"**Overall score:** {scores.get('percentage', 0)}% · "
+                f"**Actions exported:** {len(actions)} · "
+                f"**Completed:** {sum(1 for a in actions if a.get('status') == 'Completed')}",
+                "",
+                "| Title | Status | Priority | Workload | Source | Score |",
+                "|---|---|---|---|---|---|",
+            ]
+            for a in actions:
+                score = (f"{a.get('score', 0) or 0:g}/{a.get('max_score', 0) or 0:g}"
+                         if a.get("max_score") is not None else "—")
+                lines.append(
+                    f"| {_cell(a.get('title'))[:120]} | {_cell(a.get('status'))} "
+                    f"| {_cell(a.get('priority'))} | {_cell(a.get('workload'))} "
+                    f"| {_cell(a.get('source_tool'))} | {score} |")
+            resp = Response("\n".join(lines) + "\n", mimetype="text/markdown")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.md"
+            return resp
+
+        return _json_error("format must be 'csv', 'json', 'xlsx' or 'md'")
 
     # ── Export endpoint ──
 
@@ -1746,12 +1830,14 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = start_device_code_flow(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            result = start_device_code_flow(tenant_id, client_id, cloud=cloud)
             # Store the flow for polling
             _device_flows[name] = {
                 "device_code": result["device_code"],
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "expires_at": datetime.utcnow().timestamp() + result.get("expires_in", 900),
             }
             return jsonify({
@@ -1775,7 +1861,9 @@ def create_app(db_path: str = None) -> Flask:
             _device_flows.pop(name, None)
             return _json_error("Device code expired. Please start a new flow.")
 
-        result = poll_for_token(flow["tenant_id"], flow["client_id"], flow["device_code"])
+        result = poll_for_token(flow["tenant_id"], flow["client_id"],
+                                flow["device_code"],
+                                cloud=flow.get("cloud", "global"))
 
         if "access_token" in result:
             # Store token temporarily, remove device code
@@ -1809,7 +1897,10 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            result = import_secure_scores_with_token(db, name, flow["access_token"])
+            tenant = db.get_tenant(name) or {}
+            result = import_secure_scores_with_token(
+                db, name, flow["access_token"],
+                cloud=tenant.get("cloud") or "global")
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")
@@ -1829,7 +1920,9 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            profiles_data = fetch_control_profiles(flow["access_token"])
+            tenant = db.get_tenant(name) or {}
+            profiles_data = fetch_control_profiles(
+                flow["access_token"], cloud=tenant.get("cloud") or "global")
             controls = parse_graph_control_profiles(profiles_data)
             result = db.seed_controls(controls)
             return jsonify(result)
@@ -1874,7 +1967,9 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = client_credentials_token(tenant_id, client_id, client_secret)
+            result = client_credentials_token(
+                tenant_id, client_id, client_secret,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1914,7 +2009,8 @@ def create_app(db_path: str = None) -> Flask:
 
         try:
             result = client_credentials_token_cert(
-                tenant_id, client_id, cert_path, thumbprint)
+                tenant_id, client_id, cert_path, thumbprint,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1957,10 +2053,12 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            auth_data = start_interactive_auth(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            auth_data = start_interactive_auth(tenant_id, client_id, cloud=cloud)
             _interactive_flows[name] = {
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "state": auth_data["state"],
                 "code_verifier": auth_data["code_verifier"],
                 "redirect_uri": auth_data["redirect_uri"],
@@ -2008,7 +2106,8 @@ def create_app(db_path: str = None) -> Flask:
         try:
             token_result = exchange_auth_code(
                 flow["tenant_id"], flow["client_id"],
-                code, flow["code_verifier"], flow["redirect_uri"])
+                code, flow["code_verifier"], flow["redirect_uri"],
+                cloud=flow.get("cloud", "global"))
 
             expires_in = token_result.get("expires_in", 3600)
             _device_flows[tenant_name] = {
@@ -2069,19 +2168,22 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("method must be 'certificate' or 'client_secret' "
                                "(device code and interactive are tested by signing in on the Import page)")
 
+        _cloud = tenant.get("cloud") or "global"
+
         def _try_cert():
             if not tenant.get("certificate_path"):
                 raise RuntimeError("No certificate uploaded for this tenant.")
             client_credentials_token_cert(
                 tenant["tenant_id"], tenant["client_id"],
                 tenant["certificate_path"],
-                tenant.get("certificate_thumbprint", ""))
+                tenant.get("certificate_thumbprint", ""), cloud=_cloud)
 
         def _try_secret():
             if not tenant.get("client_secret"):
                 raise RuntimeError("No client secret configured for this tenant.")
             client_credentials_token(
-                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"])
+                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"],
+                cloud=_cloud)
 
         attempts = {"certificate": _try_cert, "client_secret": _try_secret}
         methods = [wanted] if wanted else [
@@ -2167,6 +2269,96 @@ def create_app(db_path: str = None) -> Flask:
                  entity_type="tenant", entity_id=name)
         return jsonify({"ok": True})
 
+    # ── Notifications ──
+
+    @app.route("/api/notifications/smtp", methods=["GET"])
+    @require_role("admin")
+    def api_get_smtp():
+        from .notifications import get_smtp_settings
+        settings = get_smtp_settings(db)
+        if settings.get("password"):
+            settings["password"] = "***"
+        return jsonify(settings)
+
+    @app.route("/api/notifications/smtp", methods=["PUT"])
+    @require_role("admin")
+    def api_set_smtp():
+        from .notifications import DEFAULT_SMTP, get_smtp_settings
+        data = request.get_json() or {}
+        settings = {k: data.get(k, v) for k, v in DEFAULT_SMTP.items()}
+        # "***" means "keep the stored password"
+        if settings.get("password") == "***":
+            settings["password"] = get_smtp_settings(db).get("password", "")
+        try:
+            settings["port"] = int(settings.get("port") or 587)
+        except (TypeError, ValueError):
+            return _json_error("port must be a number")
+        db.set_app_setting("smtp", settings)
+        db.audit("notifications.smtp_update", actor=session.get("username"),
+                 entity_type="settings", entity_id="smtp")
+        redacted = dict(settings)
+        if redacted.get("password"):
+            redacted["password"] = "***"
+        return jsonify(redacted)
+
+    @app.route("/api/tenants/<name>/notifications", methods=["GET"])
+    @require_role("admin")
+    def api_get_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import get_notification_config
+        return jsonify(get_notification_config(db, name))
+
+    @app.route("/api/tenants/<name>/notifications", methods=["PUT"])
+    @require_role("admin")
+    def api_set_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import DEFAULT_TENANT_CONFIG, EVENTS
+        data = request.get_json() or {}
+        config = {
+            "enabled": bool(data.get("enabled")),
+            "emails": [e.strip() for e in (data.get("emails") or [])
+                       if isinstance(e, str) and e.strip()],
+            "teams_webhook": (data.get("teams_webhook") or "").strip(),
+            "slack_webhook": (data.get("slack_webhook") or "").strip(),
+            "events": {e: bool((data.get("events") or {}).get(e, True))
+                       for e in EVENTS},
+        }
+        for url_key in ("teams_webhook", "slack_webhook"):
+            if config[url_key] and not config[url_key].lower().startswith("https://"):
+                return _json_error(f"{url_key} must start with https://")
+        try:
+            config["regression_threshold"] = float(
+                data.get("regression_threshold",
+                         DEFAULT_TENANT_CONFIG["regression_threshold"]))
+        except (TypeError, ValueError):
+            return _json_error("regression_threshold must be a number")
+        db.set_tool_config(name, "notifications", config)
+        db.audit("notifications.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify(config)
+
+    @app.route("/api/tenants/<name>/notifications/test", methods=["POST"])
+    @require_role("admin")
+    def api_test_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import send_test_notification
+        result = send_test_notification(db, name)
+        db.audit("notifications.test", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        status = 200 if result.get("sent") else 400
+        return jsonify(result), status
+
+    @app.route("/api/tenants/<name>/notifications/log", methods=["GET"])
+    @require_role("admin")
+    def api_notification_log(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 30, type=int)
+        return jsonify(db.get_notification_log(name, limit))
+
     # ── Automation: schedules, tool configs, runs ──
 
     @app.route("/api/tenants/<name>/automation", methods=["GET"])
@@ -2176,13 +2368,16 @@ def create_app(db_path: str = None) -> Flask:
         from .runner import find_pwsh
         ps_cfg = db.get_tool_config(name, "powershell")
         tenant = db.get_tenant(name)
-        return jsonify({
+        is_admin = session.get("role") == "admin"
+        tool_configs = {
+            "scuba": db.get_tool_config(name, "scuba"),
+            "zero_trust": db.get_tool_config(name, "zero_trust"),
+            "maester": db.get_tool_config(name, "maester"),
+            "powershell": ps_cfg,
+        }
+        overview = {
             "schedules": db.get_schedules(name),
-            "tool_configs": {
-                "scuba": db.get_tool_config(name, "scuba"),
-                "zero_trust": db.get_tool_config(name, "zero_trust"),
-                "powershell": ps_cfg,
-            },
+            "tool_configs": tool_configs,
             "runs": db.get_tool_runs(name),
             "environment": {
                 "pwsh_found": bool(find_pwsh(ps_cfg)),
@@ -2191,7 +2386,16 @@ def create_app(db_path: str = None) -> Flask:
                     tenant.get("tenant_id") and tenant.get("client_id")
                     and (tenant.get("client_secret") or tenant.get("certificate_path"))),
             },
-        })
+        }
+        # Notification config contains webhook URLs (channel secrets) —
+        # only admins receive it; others get a boolean so the UI can hint.
+        from .notifications import get_notification_config
+        notif = get_notification_config(db, name)
+        if is_admin:
+            overview["notifications"] = notif
+        else:
+            overview["notifications_enabled"] = bool(notif.get("enabled"))
+        return jsonify(overview)
 
     @app.route("/api/tenants/<name>/schedules/<task_type>", methods=["PUT"])
     def api_set_schedule(name, task_type):
@@ -2217,7 +2421,7 @@ def create_app(db_path: str = None) -> Flask:
         # the host when a run starts.
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
-        if tool not in ("scuba", "zero_trust", "powershell"):
+        if tool not in ("scuba", "zero_trust", "maester", "powershell"):
             return _json_error("Unknown tool")
         data = request.get_json() or {}
         db.audit("tool_config.update", actor=session.get("username"),

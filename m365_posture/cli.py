@@ -35,6 +35,72 @@ def cmd_web(args):
                host=args.host)
 
 
+def cmd_run(args):
+    """Run one automation task headlessly and exit with a CI-friendly code.
+
+    Exit codes: 0 = success, 1 = run failed, 2 = success but the score
+    regressed (only with --fail-on-regression), 3 = configuration error.
+    """
+    import json as _json
+
+    from .database import Database
+    from .runner import execute_task, TASK_TYPES
+
+    db = Database(args.db_path)
+    tenant = db.get_tenant(args.tenant)
+    if not tenant:
+        print(f"Error: tenant '{args.tenant}' not found. "
+              f"Known tenants: {', '.join(t['name'] for t in db.list_tenants()) or '(none)'}")
+        sys.exit(3)
+    if args.task not in TASK_TYPES:
+        print(f"Error: unknown task '{args.task}'. Valid: {', '.join(TASK_TYPES)}")
+        sys.exit(3)
+
+    started = datetime.utcnow().isoformat()
+    run_id = execute_task(db, args.tenant, args.task, trigger="cli")
+    run = next((r for r in db.get_tool_runs(args.tenant, 50) if r["id"] == run_id), {})
+    status = run.get("status", "error")
+
+    # Drift reports written during this run reveal regressions
+    drifts = [d for d in db.get_drift_reports(args.tenant, 5)
+              if d.get("timestamp", "") >= started]
+    regressions = [r for d in drifts for r in (d.get("regressions") or [])]
+    score_delta = drifts[0].get("score_delta") if drifts else None
+    regressed = bool(regressions) or (score_delta is not None and score_delta < 0)
+
+    outcome = {
+        "task": args.task,
+        "tenant": args.tenant,
+        "run_id": run_id,
+        "status": status,
+        "detail": run.get("detail", ""),
+        "score_delta": score_delta,
+        "regressions": regressions,
+        "regressed": regressed,
+    }
+
+    if args.as_json:
+        print(_json.dumps(outcome, indent=2))
+    else:
+        print(f"Task:     {args.task} (tenant: {args.tenant}, run #{run_id})")
+        print(f"Status:   {status}")
+        if run.get("detail"):
+            print(f"Detail:   {run['detail'].splitlines()[0][:200]}")
+        if score_delta is not None:
+            print(f"Score:    {score_delta:+.2f}% since previous import")
+        if regressions:
+            print(f"Regressions ({len(regressions)}):")
+            for r in regressions[:10]:
+                print(f"  - {r.get('scope', '?')}: {r.get('old_value', '?')}% "
+                      f"-> {r.get('new_value', '?')}% ({r.get('delta', 0):+.2f}%)")
+
+    if status != "success":
+        sys.exit(1)
+    if args.fail_on_regression and regressed:
+        sys.exit(2)
+    sys.exit(0)
+
+
 def cmd_migrate_from_json(args):
     """Migrate legacy JSON-based tenant data into the SQLite database."""
     from .database import Database
@@ -234,6 +300,23 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--no-browser", action="store_true", help="Don't open browser automatically")
     web.add_argument("--db", dest="db_path", help="Path to SQLite database file")
     web.set_defaults(func=cmd_web)
+
+    run = sub.add_parser(
+        "run",
+        help="Run one automation task headlessly (for CI/CD pipelines)",
+        description="Executes a configured automation task and exits with a "
+                    "CI-friendly code: 0 success, 1 run failed, 2 regression "
+                    "detected (with --fail-on-regression), 3 config error.")
+    run.add_argument("task",
+                     choices=["secure_score", "scuba", "zero_trust", "maester"],
+                     help="Task type to execute")
+    run.add_argument("--tenant", required=True, help="Tenant name")
+    run.add_argument("--db", dest="db_path", help="Path to SQLite database file")
+    run.add_argument("--fail-on-regression", action="store_true",
+                     help="Exit 2 when the imported score regressed")
+    run.add_argument("--json", dest="as_json", action="store_true",
+                     help="Print the outcome as JSON")
+    run.set_defaults(func=cmd_run)
 
     migrate = sub.add_parser("migrate-from-json",
                              help="Migrate legacy JSON tenant data to the SQLite database")

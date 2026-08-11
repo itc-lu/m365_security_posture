@@ -491,6 +491,44 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp DESC);
                 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
+
+                -- Maester (maester.dev) report storage
+                CREATE TABLE IF NOT EXISTS maester_reports (
+                    id TEXT PRIMARY KEY,
+                    tenant_name TEXT NOT NULL REFERENCES tenants(name) ON DELETE CASCADE,
+                    imported_at TEXT NOT NULL,
+                    executed_at TEXT DEFAULT '',
+                    report_tenant_id TEXT DEFAULT '',
+                    report_tenant_name TEXT DEFAULT '',
+                    report_account TEXT DEFAULT '',
+                    tool_version TEXT DEFAULT '',
+                    total_tests INTEGER DEFAULT 0,
+                    passed_tests INTEGER DEFAULT 0,
+                    failed_tests INTEGER DEFAULT 0,
+                    skipped_tests INTEGER DEFAULT 0,
+                    source_file TEXT DEFAULT '',
+                    html_path TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_maester_reports_tenant ON maester_reports(tenant_name);
+
+                -- Application-wide settings (JSON values), e.g. SMTP config
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT DEFAULT '{}',
+                    updated_at TEXT
+                );
+
+                -- Outbound notification log (also used for digest dedup)
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    tenant_name TEXT,
+                    event TEXT NOT NULL,
+                    channel TEXT DEFAULT '',
+                    status TEXT DEFAULT '',
+                    detail TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_notif_log ON notification_log(tenant_name, event, timestamp);
             """)
 
             # Add risk acceptance columns to actions (idempotent)
@@ -604,6 +642,8 @@ class Database:
                 # JSON map of enabled Graph auth methods, e.g.
                 # {"certificate":true,"client_secret":false,...}. Empty = all enabled.
                 ("auth_methods", "TEXT", "''"),
+                # National cloud: global | usgov | usgovdod | china
+                ("cloud", "TEXT", "'global'"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE tenants ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -860,6 +900,129 @@ class Database:
         with self._conn() as conn:
             conn.execute("DELETE FROM scuba_reports WHERE id=?", (report_id,))
 
+    # ── Maester Reports ──
+
+    def store_maester_report(self, tenant_name: str, report_data: dict) -> str:
+        """Store a Maester report record. Returns the report ID."""
+        report_id = report_data.get("id") or str(uuid.uuid4())[:8]
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO maester_reports
+                   (id, tenant_name, imported_at, executed_at, report_tenant_id,
+                    report_tenant_name, report_account, tool_version,
+                    total_tests, passed_tests, failed_tests, skipped_tests,
+                    source_file, html_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (report_id, tenant_name,
+                 report_data.get("imported_at", datetime.utcnow().isoformat()),
+                 report_data.get("executed_at", ""),
+                 report_data.get("report_tenant_id", ""),
+                 report_data.get("report_tenant_name", ""),
+                 report_data.get("report_account", ""),
+                 report_data.get("tool_version", ""),
+                 report_data.get("total_tests", 0),
+                 report_data.get("passed_tests", 0),
+                 report_data.get("failed_tests", 0),
+                 report_data.get("skipped_tests", 0),
+                 report_data.get("source_file", ""),
+                 report_data.get("html_path", "")),
+            )
+        return report_id
+
+    def get_maester_reports(self, tenant_name: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM maester_reports WHERE tenant_name=? ORDER BY imported_at DESC",
+                (tenant_name,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_maester_report(self, report_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM maester_reports WHERE id=?", (report_id,)).fetchone()
+            return dict(row) if row else None
+
+    def delete_maester_report(self, report_id: str):
+        """Delete a Maester report record and its stored files."""
+        report = self.get_maester_report(report_id)
+        if not report:
+            return
+        import shutil as _shutil
+        p = report.get("html_path") or ""
+        if p:
+            report_dir = Path(p)
+            while report_dir.name and report_dir.name != report_id:
+                report_dir = report_dir.parent
+            if report_dir.name == report_id and report_dir.exists():
+                _shutil.rmtree(report_dir, ignore_errors=True)
+        with self._conn() as conn:
+            conn.execute("DELETE FROM maester_reports WHERE id=?", (report_id,))
+
+    # ── App settings (key/value JSON) ──
+
+    def get_app_setting(self, key: str, default: dict | None = None) -> dict:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+        if not row:
+            return dict(default or {})
+        try:
+            value = json.loads(row["value"] or "{}")
+            return value if isinstance(value, dict) else dict(default or {})
+        except ValueError:
+            return dict(default or {})
+
+    def set_app_setting(self, key: str, value: dict):
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO app_settings (key, value, updated_at) VALUES (?,?,?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                       updated_at=excluded.updated_at""",
+                (key, json.dumps(value or {}), datetime.utcnow().isoformat()),
+            )
+
+    # ── Notification log ──
+
+    def add_notification_log(self, tenant_name: str, event: str, channel: str,
+                             status: str, detail: str = ""):
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO notification_log
+                   (timestamp, tenant_name, event, channel, status, detail)
+                   VALUES (?,?,?,?,?,?)""",
+                (datetime.utcnow().isoformat(), tenant_name, event, channel,
+                 status, (detail or "")[:2000]),
+            )
+
+    def was_recently_notified(self, tenant_name: str, event: str,
+                              hours: int = 20) -> bool:
+        """True when a successful notification for this tenant+event exists
+        within the window (used to de-duplicate digests)."""
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM notification_log
+                    WHERE tenant_name=? AND event=? AND status='sent'
+                      AND timestamp >= ? LIMIT 1""",
+                (tenant_name, event, cutoff),
+            ).fetchone()
+        return row is not None
+
+    def get_notification_log(self, tenant_name: str = None, limit: int = 50) -> list[dict]:
+        with self._conn() as conn:
+            if tenant_name:
+                rows = conn.execute(
+                    """SELECT * FROM notification_log WHERE tenant_name=?
+                       ORDER BY timestamp DESC LIMIT ?""",
+                    (tenant_name, limit)).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM notification_log ORDER BY timestamp DESC LIMIT ?",
+                    (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
     # ── GitLab Templates ──
 
     def get_gitlab_templates(self, tenant_name: str) -> list[dict]:
@@ -1035,12 +1198,13 @@ class Database:
             conn.execute(
                 """INSERT INTO tenants (name, tenant_id, display_name, client_id,
                    client_secret, certificate_path, certificate_thumbprint,
-                   use_interactive, notes, created_at, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                   use_interactive, cloud, notes, created_at, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (name, config.tenant_id, config.display_name or name,
                  config.client_id, config.client_secret, config.certificate_path,
                  config.certificate_thumbprint,
-                 1 if config.use_interactive else 0, config.notes,
+                 1 if config.use_interactive else 0,
+                 config.cloud or "global", config.notes,
                  datetime.utcnow().isoformat()),
             )
             # If no active tenant, set this one
@@ -1081,7 +1245,7 @@ class Database:
     def update_tenant(self, name: str, **kwargs) -> Optional[dict]:
         allowed = {"tenant_id", "display_name", "client_id", "client_secret",
                     "certificate_path", "certificate_thumbprint",
-                    "use_interactive", "notes", "auth_methods"}
+                    "use_interactive", "notes", "auth_methods", "cloud"}
         if isinstance(kwargs.get("auth_methods"), dict):
             kwargs["auth_methods"] = json.dumps(kwargs["auth_methods"])
         updates = {k: v for k, v in kwargs.items() if k in allowed}
@@ -3154,7 +3318,7 @@ class Database:
 
     # ── Automation: schedules, tool runs, tool configs ──
 
-    SCHEDULE_TASK_TYPES = ("secure_score", "scuba", "zero_trust")
+    SCHEDULE_TASK_TYPES = ("secure_score", "scuba", "zero_trust", "maester")
     SCHEDULE_FREQUENCIES = ("manual", "daily", "weekly", "monthly")
     _FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
