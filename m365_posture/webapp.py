@@ -8,10 +8,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import tempfile
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -22,35 +21,26 @@ from .models import (
     Action, TenantConfig, ActionStatus, Priority, RiskLevel,
     UserImpact, ImplementationEffort, SourceTool, Workload,
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
-    GlobalAction, UserRole,
+    GlobalAction, UserRole, RiskReasonCategory,
 )
-from .parsers import (
-    SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
-    SCTParser, M365AssessParser,
-    enrich_actions_from_controls, load_seed_controls, parse_graph_control_profiles,
-)
-from .essential_eight import apply_e8_mapping, get_e8_summary, get_e8_controls_data
+from .parsers import load_seed_controls, parse_graph_control_profiles
+from .essential_eight import apply_e8_mapping, get_e8_summary
+from .compliance import auto_map_compliance
 from .correlation import auto_correlate, get_correlation_summary
 from .planner import simulate_plan, suggest_phases, get_prioritized_actions
 from .gitlab_export import export_to_gitlab_csv, export_to_gitlab_json, generate_gitlab_script
-from .compliance import auto_map_compliance
-from .drift import detect_drift
 from .graph_api import (
-    start_device_code_flow, poll_for_token, fetch_secure_scores,
+    start_device_code_flow, poll_for_token,
     fetch_control_profiles, client_credentials_token,
-    client_credentials_token_cert,
+    client_credentials_token_cert, thumbprint_from_pem,
     start_interactive_auth, exchange_auth_code,
+    CLOUD_ENDPOINTS,
+)
+from .import_pipeline import (
+    PARSER_MAP, TenantMismatchError, process_file_import,
+    import_secure_scores_with_token,
 )
 from .web_frontend import get_spa_html
-
-PARSER_MAP = {
-    "secure-score": (SecureScoreParser, SourceTool.SECURE_SCORE.value),
-    "scuba": (ScubaParser, SourceTool.SCUBA.value),
-    "zero-trust": (ZeroTrustParser, SourceTool.ZERO_TRUST.value),
-    "zero-trust-report": (ZeroTrustReportParser, SourceTool.ZERO_TRUST_REPORT.value),
-    "sct": (SCTParser, SourceTool.SCT.value),
-    "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
-}
 
 # Simple in-memory login rate limiter
 _login_attempts: dict = {}
@@ -62,6 +52,11 @@ def _check_login_rate_limit(ip: str) -> bool:
     now = time.time()
     window = 300  # 5 minutes
     max_attempts = 10
+    # Prune stale IPs so the map cannot grow without bound
+    if len(_login_attempts) > 1000:
+        for key in [k for k, v in _login_attempts.items()
+                    if not v or now - v[-1] >= window]:
+            _login_attempts.pop(key, None)
     attempts = _login_attempts.get(ip, [])
     attempts = [t for t in attempts if now - t < window]
     if len(attempts) >= max_attempts:
@@ -92,6 +87,18 @@ def create_app(db_path: str = None) -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = 28800  # 8 hours
     app.json.sort_keys = False
     db = Database(db_path)
+
+    # Seed the Secure Score control reference table on first run so imported
+    # actions carry descriptions and remediation steps even before a Graph
+    # API fetch refreshes them.
+    with db._conn() as conn:
+        _has_controls = conn.execute(
+            "SELECT COUNT(*) AS c FROM secure_score_controls").fetchone()["c"]
+    if not _has_controls:
+        _seeds = load_seed_controls()
+        if _seeds:
+            result = db.seed_controls(_seeds)
+            print(f"[INFO] Seeded {result['total']} Secure Score reference controls.", flush=True)
 
     def login_required(f):
         @wraps(f)
@@ -157,6 +164,10 @@ def create_app(db_path: str = None) -> Flask:
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if request.endpoint not in ("api_auth_login",) and not request.headers.get("X-Requested-With"):
                 return jsonify({"error": "CSRF check failed"}), 403
+            # Viewers are read-only everywhere except their own auth actions
+            if session.get("role") == "viewer" and request.endpoint not in (
+                    "api_auth_login", "api_auth_logout", "api_auth_change_password"):
+                return jsonify({"error": "Read-only role: viewers cannot modify data"}), 403
         # Force password-change: restrict access until the flag is cleared
         if session.get("must_change_password"):
             if request.endpoint not in _PASSWORD_RESET_ALLOWED:
@@ -184,6 +195,9 @@ def create_app(db_path: str = None) -> Flask:
             "e8_maturities": [m.value for m in EssentialEightMaturity],
             "import_sources": list(PARSER_MAP.keys()),
             "compliance_frameworks": [f.value for f in ComplianceFramework],
+            "clouds": [{"id": k, "label": v.get("label", k)}
+                       for k, v in CLOUD_ENDPOINTS.items()],
+            "risk_reason_categories": [c.value for c in RiskReasonCategory],
         })
 
     # ── Tenant endpoints ──
@@ -203,6 +217,10 @@ def create_app(db_path: str = None) -> Flask:
         existing = db.get_tenant(name)
         if existing:
             return _json_error(f"Tenant '{name}' already exists")
+        cloud = data.get("cloud", "global")
+        if cloud not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
         config = TenantConfig(
             tenant_id=data.get("tenant_id", ""),
             tenant_name=name,
@@ -212,6 +230,7 @@ def create_app(db_path: str = None) -> Flask:
             certificate_path=data.get("certificate_path", ""),
             certificate_thumbprint=data.get("certificate_thumbprint", ""),
             use_interactive=data.get("use_interactive", False),
+            cloud=cloud,
             notes=data.get("notes", ""),
         )
         tenant = db.create_tenant(name, config)
@@ -224,14 +243,39 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         return jsonify(_redact_tenant(tenant))
 
+    # Credential-bearing tenant fields only admins may change: they control
+    # which Entra app/certificate the tool authenticates with (and against
+    # which cloud), so letting a non-admin repoint them is an escalation path.
+    _TENANT_CREDENTIAL_FIELDS = {
+        "tenant_id", "client_id", "client_secret",
+        "certificate_path", "certificate_thumbprint", "auth_methods", "cloud",
+    }
+
+    def _validate_excluded_workloads(value):
+        """excluded_workloads must be a list of known workload names."""
+        if not isinstance(value, list):
+            return "excluded_workloads must be a list"
+        valid = {w.value for w in Workload}
+        bad = [w for w in value if w not in valid]
+        if bad:
+            return (f"Unknown workload(s): {', '.join(map(str, bad))}. "
+                    f"Valid: {', '.join(sorted(valid))}")
+        return None
+
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         data = request.get_json() or {}
-        # Only admins may update client_secret
-        if "client_secret" in data and session.get("role") != "admin":
-            return _json_error("Admin role required to update client_secret", 403)
+        if (_TENANT_CREDENTIAL_FIELDS & set(data.keys())) and session.get("role") != "admin":
+            return _json_error("Admin role required to update tenant credentials", 403)
+        if "cloud" in data and data["cloud"] not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
+        if "excluded_workloads" in data:
+            err = _validate_excluded_workloads(data["excluded_workloads"])
+            if err:
+                return _json_error(err)
         tenant = db.update_tenant(name, **data)
         # Invalidate any cached Graph auth tokens for this tenant when the
         # credentials they were obtained against may have changed -- otherwise
@@ -245,23 +289,89 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(_redact_tenant(tenant))
 
     @app.route("/api/tenants/<name>", methods=["DELETE"])
+    @require_role("admin")
     def api_delete_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         db.delete_tenant(name)
+        db.audit("tenant.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
         return jsonify({"deleted": True})
 
     @app.route("/api/tenants/<name>/activate", methods=["POST"])
     def api_activate_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
+        # The active tenant is per user session. The DB flag is only kept as
+        # the fallback default for fresh sessions — a tenant switch in one
+        # session must never retarget another user's (or tab's) imports.
+        session["active_tenant"] = name
         db.set_active_tenant(name)
         return jsonify({"active": name})
 
     @app.route("/api/active-tenant", methods=["GET"])
     def api_active_tenant():
-        tenant = db.get_active_tenant()
-        return jsonify(tenant or {})
+        selected = session.get("active_tenant")
+        if selected:
+            tenant = db.get_tenant(selected)
+            if tenant:
+                return jsonify(_redact_tenant(tenant))
+        return jsonify(_redact_tenant(db.get_active_tenant() or {}))
+
+    # ── Global dashboard (all tenants) ──
+
+    @app.route("/api/global-dashboard", methods=["GET"])
+    def api_global_dashboard():
+        """Fleet overview: per-tenant scores, adjusted scores, 7/30-day
+        progress, tool/workload breakdowns and status distribution, plus
+        aggregate totals. Feeds the landing page and the management report."""
+        def _progress(snapshots, current_pct, days):
+            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            older = [s for s in snapshots if s["timestamp"] <= cutoff]
+            baseline = older[0] if older else (snapshots[-1] if snapshots else None)
+            if not baseline or baseline.get("percentage") is None:
+                return None
+            return round(current_pct - baseline["percentage"], 2)
+
+        tenants_out = []
+        for t in db.list_tenants():
+            name = t["name"]
+            scores = db.get_scores(name)
+            adj = db.get_scores(name, exclude_na=True, exclude_ra=True)
+            snapshots = db.get_score_snapshots(name, limit=200)
+            pct = scores.get("percentage", 0)
+            by_status = scores.get("by_status", {})
+            tenants_out.append({
+                "name": name,
+                "display_name": t.get("display_name") or name,
+                "tenant_id": t.get("tenant_id", ""),
+                "percentage": pct,
+                "adj_percentage": adj.get("percentage", 0),
+                "total_actions": scores.get("total_actions", 0),
+                "completed_actions": scores.get("completed_actions", 0),
+                "progress_7d": _progress(snapshots, pct, 7),
+                "progress_30d": _progress(snapshots, pct, 30),
+                "snapshot_count": len(snapshots),
+                "by_tool": scores.get("by_tool", {}),
+                "by_workload": scores.get("by_workload", {}),
+                "by_status": by_status,
+                "risk_accepted": by_status.get("Risk Accepted", 0),
+                "not_applicable": by_status.get("Not Applicable", 0),
+                "blocked_count": len(db.get_blocked_actions(name)),
+            })
+
+        with_actions = [t for t in tenants_out if t["total_actions"] > 0]
+        totals = {
+            "tenant_count": len(tenants_out),
+            "avg_percentage": round(sum(t["percentage"] for t in with_actions) / len(with_actions), 2) if with_actions else 0,
+            "avg_adj_percentage": round(sum(t["adj_percentage"] for t in with_actions) / len(with_actions), 2) if with_actions else 0,
+            "total_actions": sum(t["total_actions"] for t in tenants_out),
+            "completed_actions": sum(t["completed_actions"] for t in tenants_out),
+            "risk_accepted": sum(t["risk_accepted"] for t in tenants_out),
+            "blocked": sum(t["blocked_count"] for t in tenants_out),
+        }
+        return jsonify({"tenants": tenants_out, "totals": totals,
+                        "generated_at": datetime.utcnow().isoformat()})
 
     # ── Action endpoints ──
 
@@ -310,7 +420,14 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/actions/<action_id>", methods=["PUT"])
     def api_update_action(action_id):
         data = request.get_json() or {}
-        changed_by = data.pop("changed_by", "")
+        # Prefer the authenticated session identity over a client-supplied name
+        # so the change history cannot be attributed to someone else.
+        changed_by = session.get("username") or data.pop("changed_by", "")
+        data.pop("changed_by", None)
+        # A structured risk reason must exist in the catalog (empty clears it)
+        if data.get("risk_reason_id"):
+            if not db.get_risk_reason(data["risk_reason_id"]):
+                return _json_error("Unknown risk reason")
         action = db.update_action(action_id, data, changed_by)
         if not action:
             return _json_error("Action not found", 404)
@@ -336,10 +453,6 @@ def create_app(db_path: str = None) -> Flask:
                 db.delete_action(aid)
                 deleted += 1
         return jsonify({"deleted": deleted, "total_requested": len(action_ids)})
-
-    @app.route("/api/actions/<action_id>/history", methods=["GET"])
-    def api_action_history(action_id):
-        return jsonify(db.get_action_history(action_id))
 
     @app.route("/api/actions/<action_id>/implementation", methods=["PUT"])
     def api_update_action_implementation(action_id):
@@ -388,11 +501,12 @@ def create_app(db_path: str = None) -> Flask:
         if peer_ids is not None:
             peer_id_set = set(peer_ids)
             targets = [p for p in targets if p["id"] in peer_id_set]
+        changed_by = session.get("username") or data.get("changed_by", "peer-sync")
         updated = 0
         for p in targets:
-            db.update_action(p["id"], status=action.status)
+            db.update_action(p["id"], {"status": action["status"]}, changed_by=changed_by)
             updated += 1
-        return jsonify({"updated": updated, "status": action.status})
+        return jsonify({"updated": updated, "status": action["status"]})
 
     @app.route("/api/tenants/<name>/peer-disagreements", methods=["GET"])
     def api_tenant_peer_disagreements(name):
@@ -418,136 +532,6 @@ def create_app(db_path: str = None) -> Flask:
 
     # ── Import endpoint ──
 
-    def _store_zt_report(db, tenant_name, filename, tmp_path, parser, actions):
-        """Store ZT report HTML and data files, save metadata to DB."""
-        reports_dir = Path(db.db_path).parent / "zt_reports" / tenant_name
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        import uuid as _uuid
-        report_id = str(_uuid.uuid4())[:8]
-        report_dir = reports_dir / report_id
-        report_dir.mkdir(exist_ok=True)
-
-        html_path = ""
-        data_dir = ""
-
-        if Path(tmp_path).suffix.lower() == ".zip":
-            # Extract ZIP contents to report directory
-            extract_dir = getattr(parser, "_extract_dir", None)
-            if extract_dir and Path(extract_dir).exists():
-                # Move extracted files to permanent storage
-                for item in Path(extract_dir).iterdir():
-                    dest = report_dir / item.name
-                    if item.is_dir():
-                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(str(item), str(dest))
-                shutil.rmtree(extract_dir, ignore_errors=True)
-
-            # Find HTML file
-            for html_file in report_dir.rglob("*.html"):
-                html_path = str(html_file)
-                break
-
-            # Find zt-export data dir
-            for candidate in report_dir.rglob("zt-export"):
-                if candidate.is_dir():
-                    data_dir = str(candidate)
-                    break
-        else:
-            # Single JSON file - copy it
-            shutil.copy2(tmp_path, str(report_dir / filename))
-
-        # Count statuses
-        from collections import Counter
-        status_counts = Counter(a.status for a in actions)
-
-        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
-        report_data = {
-            "id": report_id,
-            "imported_at": datetime.utcnow().isoformat(),
-            "executed_at": metadata.get("executed_at", ""),
-            "report_tenant_id": metadata.get("tenant_id", ""),
-            "report_tenant_name": metadata.get("tenant_name", ""),
-            "report_domain": metadata.get("domain", ""),
-            "report_account": metadata.get("account", ""),
-            "tool_version": metadata.get("tool_version", ""),
-            "test_result_summary": getattr(parser, "test_result_summary", {}),
-            "tenant_info": getattr(parser, "tenant_info", {}),
-            "html_path": html_path,
-            "data_dir": data_dir,
-            "total_tests": len(actions),
-            "passed_tests": status_counts.get("Completed", 0),
-            "failed_tests": status_counts.get("ToDo", 0),
-            "source_file": filename,
-        }
-        return db.store_zt_report(tenant_name, report_data)
-
-    def _store_scuba_report(db, tenant_name, filename, tmp_path, parser, actions):
-        """Store SCuBA report HTML and data files, save metadata to DB."""
-        reports_dir = Path(db.db_path).parent / "scuba_reports" / tenant_name
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        import uuid as _uuid
-        report_id = str(_uuid.uuid4())[:8]
-        report_dir = reports_dir / report_id
-        report_dir.mkdir(exist_ok=True)
-
-        html_path = ""
-
-        if Path(tmp_path).suffix.lower() == ".zip":
-            # Extract ZIP contents to report directory
-            extract_dir = getattr(parser, "_extract_dir", None)
-            if extract_dir and Path(extract_dir).exists():
-                for item in Path(extract_dir).iterdir():
-                    dest = report_dir / item.name
-                    if item.is_dir():
-                        shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(str(item), str(dest))
-                shutil.rmtree(extract_dir, ignore_errors=True)
-
-            # Find BaselineReports.html (main ScubaGear report)
-            for html_file in report_dir.rglob("BaselineReports.html"):
-                html_path = str(html_file)
-                break
-            # Fall back to any HTML
-            if not html_path:
-                for html_file in report_dir.rglob("*.html"):
-                    html_path = str(html_file)
-                    break
-        else:
-            # Single JSON/CSV file - copy it
-            shutil.copy2(tmp_path, str(report_dir / filename))
-
-        # Count statuses
-        from collections import Counter
-        status_counts = Counter(a.status for a in actions)
-
-        metadata = parser.report_metadata if hasattr(parser, "report_metadata") else {}
-        product_summary = parser.product_summary if hasattr(parser, "product_summary") else {}
-
-        report_data = {
-            "id": report_id,
-            "imported_at": datetime.utcnow().isoformat(),
-            "executed_at": metadata.get("timestamp", ""),
-            "report_tenant_id": metadata.get("tenant_id", ""),
-            "report_tenant_name": metadata.get("tenant_name", ""),
-            "report_domain": metadata.get("domain", ""),
-            "tool_version": metadata.get("tool_version", ""),
-            "report_uuid": metadata.get("report_uuid", ""),
-            "products_assessed": metadata.get("products_assessed", []),
-            "product_summary": product_summary,
-            "total_controls": len(actions),
-            "passed_controls": status_counts.get("Completed", 0),
-            "failed_controls": status_counts.get("ToDo", 0),
-            "warning_controls": status_counts.get("In Planning", 0),
-            "manual_controls": status_counts.get("Not Applicable", 0),
-            "source_file": filename,
-            "html_path": html_path,
-        }
-        return db.store_scuba_report(tenant_name, report_data)
-
     @app.route("/api/tenants/<name>/import", methods=["POST"])
     def api_import(name):
         if not db.get_tenant(name):
@@ -566,94 +550,53 @@ def create_app(db_path: str = None) -> Flask:
             file.save(tmp)
             tmp_path = tmp.name
 
+        force_tenant = request.form.get("force") == "1"
         try:
-            parser_cls, source_tool = PARSER_MAP[source]
-            parser = parser_cls()
-            actions = parser.parse_file(tmp_path)
-            actions = apply_e8_mapping(actions)
-
-            # Enrich actions from the reference control table
-            actions = enrich_actions_from_controls(db, actions)
-
-            new_count, updated_count, updated_details, imported_ids = db.merge_actions(name, actions, source_tool, file.filename)
-
-            # Auto-link imported actions to global actions (single transaction)
-            link_result = db.bulk_auto_link_imported(imported_ids)
-            unlinked_actions = link_result["unlinked"]
-
-            # For Zero Trust Report: store HTML report and metadata
-            zt_report_id = None
-            if source == "zero-trust-report":
-                zt_report_id = _store_zt_report(db, name, file.filename, tmp_path, parser, actions)
-
-            # For SCuBA: store report metadata
-            scuba_report_id = None
-            if source == "scuba":
-                scuba_report_id = _store_scuba_report(db, name, file.filename, tmp_path, parser, actions)
-
-            # Auto-correlate after import
-            corr = auto_correlate(db, name)
-
-            # Auto-map compliance frameworks
-            compliance = auto_map_compliance(db, name)
-
-            # Take score snapshot for trending
-            snapshot = db.take_score_snapshot(name, trigger=f"import:{source}")
-
-            # Expire any risk acceptances past their date
-            expired = db.expire_risk_acceptances(name)
-
-            # Detect drift vs previous snapshot
-            drift = detect_drift(db, name, source_tool)
-
-            # Count actions whose status was protected during import
-            protected_actions = [d for d in updated_details if d.get("status_protected")]
-
-            # Find stale actions: same source_tool but not in this import
-            all_tenant_actions = db.get_actions(name)
-            import_ts = datetime.utcnow().isoformat()
-            stale_actions = []
-            for a in all_tenant_actions:
-                if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
-                    # If last_seen is significantly older than this import, it's stale
-                    if a["last_seen_in_report"] < import_ts[:10]:
-                        stale_actions.append({
-                            "id": a["id"], "title": a["title"],
-                            "status": a["status"],
-                            "last_seen": a["last_seen_in_report"],
-                        })
-
-            result = {
-                "success": True,
-                "source": source,
-                "file": file.filename,
-                "total_parsed": len(actions),
-                "new_actions": new_count,
-                "updated_actions": updated_count,
-                "updated_details": updated_details,
-                "protected_actions": protected_actions,
-                "stale_actions": stale_actions,
-                "correlation": corr,
-                "compliance": compliance,
-                "drift": drift,
-                "expired_risk_acceptances": len(expired),
-                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
-            }
-            if zt_report_id:
-                result["zt_report_id"] = zt_report_id
-            if scuba_report_id:
-                result["scuba_report_id"] = scuba_report_id
-            result["unlinked_actions"] = unlinked_actions
+            result = process_file_import(db, name, source, tmp_path, file.filename,
+                                         force_tenant=force_tenant)
+            db.audit("import.file", actor=session.get("username"),
+                     entity_type="tenant", entity_id=name,
+                     detail=f"{source}:{file.filename}"
+                            + (" (tenant check overridden)" if force_tenant else ""))
             return jsonify(result)
+        except TenantMismatchError as e:
+            return jsonify({"error": e.payload["message"], **e.payload}), 409
         except Exception as e:
             return _json_error(f"Import failed: {str(e)}")
         finally:
             os.unlink(tmp_path)
 
-    # ── Zero Trust Report endpoints ──
+    # ── Import status conflicts (DB status vs. last imported status) ──
 
-    def _zt_reports_dir():
-        return Path(db.db_path).parent / "zt_reports"
+    @app.route("/api/tenants/<name>/import-status-conflicts", methods=["GET"])
+    def api_import_status_conflicts(name):
+        """Actions whose protected status differs from what the last import
+        reported. The user decides per item (or in bulk) which side wins."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_import_status_conflicts(name))
+
+    @app.route("/api/tenants/<name>/import-status-conflicts/resolve", methods=["POST"])
+    def api_resolve_import_status_conflicts(name):
+        """Resolve import/DB status conflicts.
+
+        Body: {"resolution": "use_import"|"keep_mine",
+               "action_ids": [...]}          # omit action_ids to resolve all
+        - use_import: set the action status to the status the import reported.
+        - keep_mine:  keep the DB status and dismiss the conflict.
+        """
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        resolution = data.get("resolution")
+        if resolution not in ("use_import", "keep_mine"):
+            return _json_error("resolution must be 'use_import' or 'keep_mine'")
+        changed_by = session.get("username") or data.get("changed_by", "import-sync")
+        result = db.resolve_import_status_conflicts(
+            name, resolution, data.get("action_ids"), changed_by)
+        return jsonify(result)
+
+    # ── Zero Trust Report endpoints ──
 
     @app.route("/api/tenants/<name>/zt-reports", methods=["GET"])
     def api_zt_reports(name):
@@ -672,6 +615,19 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Report not found", 404)
         return jsonify(report)
 
+    @app.route("/api/zt-reports/<report_id>", methods=["DELETE"])
+    def api_zt_report_delete(report_id):
+        """Remove a stored ZT report record and its files (imported actions
+        are kept — clean those up via the Actions page if needed)."""
+        report = db.get_zt_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_zt_report(report_id)
+        db.audit("zt_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
+
     @app.route("/api/zt-reports/<report_id>/html", methods=["GET"])
     def api_zt_report_html(report_id):
         report = db.get_zt_report(report_id)
@@ -681,26 +637,6 @@ def create_app(db_path: str = None) -> Flask:
         if not html_path or not Path(html_path).exists():
             return _json_error("HTML report file not found", 404)
         return send_file(html_path, mimetype="text/html")
-
-    @app.route("/api/zt-reports/<report_id>/data/<path:filepath>", methods=["GET"])
-    def api_zt_report_data(report_id, filepath):
-        """Serve files from the report's zt-export data directory."""
-        report = db.get_zt_report(report_id)
-        if not report:
-            return _json_error("Report not found", 404)
-        data_dir = report.get("data_dir", "")
-        if not data_dir:
-            return _json_error("No data directory for this report", 404)
-        full_path = Path(data_dir) / filepath
-        # Security: ensure path stays within data_dir
-        try:
-            full_path.resolve().relative_to(Path(data_dir).resolve())
-        except ValueError:
-            return _json_error("Invalid path", 400)
-        if not full_path.exists():
-            return _json_error("File not found", 404)
-        mime = "application/json" if full_path.suffix == ".json" else "application/octet-stream"
-        return send_file(str(full_path), mimetype=mime)
 
     # ── Scores endpoint ──
 
@@ -817,6 +753,19 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Report not found", 404)
         return jsonify(report)
 
+    @app.route("/api/scuba-reports/<report_id>", methods=["DELETE"])
+    def api_scuba_report_delete(report_id):
+        """Remove a stored SCuBA report record and its files (imported
+        actions are kept — clean those up via the Actions page if needed)."""
+        report = db.get_scuba_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_scuba_report(report_id)
+        db.audit("scuba_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
+
     @app.route("/api/scuba-reports/<report_id>/html", methods=["GET"])
     @app.route("/api/scuba-reports/<report_id>/html/<path:subpath>", methods=["GET"])
     def api_scuba_report_html(report_id, subpath=None):
@@ -884,6 +833,44 @@ def create_app(db_path: str = None) -> Flask:
         mime = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
         return send_file(str(full_path), mimetype=mime)
 
+    # ── Maester report endpoints ──
+
+    @app.route("/api/tenants/<name>/maester-reports", methods=["GET"])
+    def api_maester_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_maester_reports(name))
+
+    @app.route("/api/maester-reports/<report_id>", methods=["GET"])
+    def api_maester_report_detail(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        return jsonify(report)
+
+    @app.route("/api/maester-reports/<report_id>", methods=["DELETE"])
+    def api_maester_report_delete(report_id):
+        """Remove a stored Maester report record and its files (imported
+        actions are kept — clean those up via the Actions page if needed)."""
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_maester_report(report_id)
+        db.audit("maester_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/maester-reports/<report_id>/html", methods=["GET"])
+    def api_maester_report_html(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path or not Path(html_path).exists():
+            return _json_error("HTML report file not found", 404)
+        return send_file(html_path, mimetype="text/html")
+
     # ── Import history ──
 
     @app.route("/api/tenants/<name>/history", methods=["GET"])
@@ -911,6 +898,26 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         result = auto_correlate(db, name)
         return jsonify(result)
+
+    @app.route("/api/tenants/<name>/suggested-links", methods=["GET"])
+    def api_suggested_links(name):
+        """Cross-tool action pairs that likely represent the same control
+        (title similarity), so linking them lets one fix validate all tools."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .correlation import suggest_action_links
+        return jsonify(suggest_action_links(db, name))
+
+    @app.route("/api/tenants/<name>/suggested-links/dismiss", methods=["POST"])
+    def api_dismiss_suggested_link(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        a, b = data.get("action_a_id"), data.get("action_b_id")
+        if not a or not b:
+            return _json_error("action_a_id and action_b_id required")
+        db.dismiss_link_suggestion(name, a, b)
+        return jsonify({"dismissed": True})
 
     @app.route("/api/correlation-groups", methods=["GET"])
     def api_correlation_groups():
@@ -1350,24 +1357,6 @@ def create_app(db_path: str = None) -> Flask:
         db.unlink_actions(aid, tid)
         return jsonify({"ok": True})
 
-    # ── Pin/unpin actions on dashboard ──
-
-    @app.route("/api/actions/<action_id>/pin", methods=["POST"])
-    def api_pin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 1})
-        return jsonify({"pinned": True})
-
-    @app.route("/api/actions/<action_id>/unpin", methods=["POST"])
-    def api_unpin_action(action_id):
-        action = db.get_action(action_id)
-        if not action:
-            return _json_error("Action not found", 404)
-        db.update_action(action_id, {"pinned_priority": 0})
-        return jsonify({"pinned": False})
-
     # ── Batch status update ──
 
     @app.route("/api/actions/batch-status", methods=["POST"])
@@ -1378,9 +1367,9 @@ def create_app(db_path: str = None) -> Flask:
         if not action_ids or not status:
             return _json_error("action_ids and status required")
         updated = 0
+        changed_by = session.get("username") or data.get("changed_by", "batch")
         for aid in action_ids:
-            result = db.update_action(aid, {"status": status},
-                                       changed_by=data.get("changed_by", "batch"))
+            result = db.update_action(aid, {"status": status}, changed_by=changed_by)
             if result:
                 updated += 1
         return jsonify({"updated": updated})
@@ -1521,6 +1510,128 @@ def create_app(db_path: str = None) -> Flask:
             "issues": issues,
         })
 
+    # ── Generic table → Excel export ──
+
+    @app.route("/api/export-xlsx", methods=["POST"])
+    def api_export_xlsx():
+        """Turn posted table data into an Excel file.
+
+        Body: {"filename": "...", "sheet": "...", "headers": [...], "rows": [[...], ...]}
+        Used by the 'Export Excel' buttons throughout the UI.
+        """
+        from .xlsx import make_xlsx
+        data = request.get_json() or {}
+        headers = data.get("headers") or []
+        rows = data.get("rows") or []
+        if not headers:
+            return _json_error("headers required")
+        if len(rows) > 50000:
+            return _json_error("Too many rows (max 50000)")
+        fname = re.sub(r"[^A-Za-z0-9._-]", "_", data.get("filename") or "export")[:80]
+        content = make_xlsx(headers, rows, data.get("sheet") or "Export")
+        resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp.headers["Content-Disposition"] = f"attachment; filename={fname}.xlsx"
+        return resp
+
+    # ── Data export (raw actions as CSV / JSON / Excel) ──
+
+    _EXPORT_COLUMNS = [
+        "id", "title", "status", "priority", "risk_level", "user_impact",
+        "implementation_effort", "workload", "source_tool", "source_id",
+        "reference_id", "category", "subcategory", "score", "max_score",
+        "score_percentage", "required_licence", "essential_eight_control",
+        "essential_eight_maturity", "responsible", "planned_date", "notes",
+        "risk_owner", "risk_justification", "risk_review_date", "risk_expiry_date",
+        "reference_url", "last_seen_in_report", "created_at", "updated_at",
+    ]
+
+    @app.route("/api/tenants/<name>/export-actions", methods=["GET"])
+    def api_export_actions(name):
+        """Download the tenant's actions as CSV or JSON, with optional
+        status / source_tool / workload filters."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        fmt = request.args.get("format", "csv").lower()
+        filters = {}
+        for key in ("status", "source_tool", "workload"):
+            val = request.args.get(key)
+            if val:
+                filters[key] = val
+        actions = db.get_actions(name, filters)
+        stamp = datetime.utcnow().strftime("%Y%m%d")
+
+        if fmt == "json":
+            rows = []
+            for a in actions:
+                row = {k: a.get(k) for k in _EXPORT_COLUMNS}
+                row["description"] = a.get("description", "")
+                row["implementation_steps"] = a.get("implementation_steps", "")
+                row["tags"] = a.get("tags", [])
+                rows.append(row)
+            resp = Response(json.dumps(rows, indent=2), mimetype="application/json")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.json"
+            return resp
+
+        if fmt == "csv":
+            import csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(_EXPORT_COLUMNS)
+            for a in actions:
+                writer.writerow([a.get(k) if a.get(k) is not None else "" for k in _EXPORT_COLUMNS])
+            resp = Response(buf.getvalue(), mimetype="text/csv")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.csv"
+            return resp
+
+        if fmt == "xlsx":
+            from .xlsx import make_xlsx
+            rows = [[a.get(k) for k in _EXPORT_COLUMNS] for a in actions]
+            content = make_xlsx(_EXPORT_COLUMNS, rows, "Actions")
+            resp = Response(content, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.xlsx"
+            return resp
+
+        if fmt == "md":
+            tenant = db.get_tenant(name)
+            scores = db.get_scores(name)
+
+            def _cell(value):
+                # Keep Markdown table structure intact regardless of content
+                return str(value if value is not None else "").replace(
+                    "|", "\\|").replace("\n", " ").strip()
+
+            lines = [
+                f"# Security Actions — {tenant.get('display_name') or name}",
+                "",
+                f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+                + (f" · Filters: {', '.join(f'{k}={v}' for k, v in filters.items())}"
+                   if filters else ""),
+                "",
+                f"**Overall score:** {scores.get('percentage', 0)}% · "
+                f"**Actions exported:** {len(actions)} · "
+                f"**Completed:** {sum(1 for a in actions if a.get('status') == 'Completed')}",
+                "",
+                "| Title | Status | Priority | Workload | Source | Score |",
+                "|---|---|---|---|---|---|",
+            ]
+            for a in actions:
+                score = (f"{a.get('score', 0) or 0:g}/{a.get('max_score', 0) or 0:g}"
+                         if a.get("max_score") is not None else "—")
+                lines.append(
+                    f"| {_cell(a.get('title'))[:120]} | {_cell(a.get('status'))} "
+                    f"| {_cell(a.get('priority'))} | {_cell(a.get('workload'))} "
+                    f"| {_cell(a.get('source_tool'))} | {score} |")
+            resp = Response("\n".join(lines) + "\n", mimetype="text/markdown")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.md"
+            return resp
+
+        return _json_error("format must be 'csv', 'json', 'xlsx' or 'md'")
+
     # ── Export endpoint ──
 
     @app.route("/api/tenants/<name>/export", methods=["POST"])
@@ -1563,11 +1674,18 @@ def create_app(db_path: str = None) -> Flask:
             else:
                 return _json_error(f"Unknown format: {fmt}")
 
-            return send_file(tmp_path, mimetype=mime, as_attachment=True,
-                             download_name=fname)
+            # Read into memory so the temp file can be removed immediately
+            # instead of accumulating in the temp directory.
+            with open(tmp_path, "rb") as f:
+                content = f.read()
+            resp = Response(content, mimetype=mime)
+            resp.headers["Content-Disposition"] = f"attachment; filename={fname}"
+            return resp
         finally:
-            # Cleanup will happen after response
-            pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     # ── Score Trending endpoints ──
 
@@ -1616,25 +1734,12 @@ def create_app(db_path: str = None) -> Flask:
         db.remove_dependency(action_id, depends_on_id)
         return jsonify({"removed": True})
 
-    @app.route("/api/tenants/<name>/dependency-graph", methods=["GET"])
-    def api_dependency_graph(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        return jsonify(db.get_dependency_graph(name))
-
     @app.route("/api/tenants/<name>/blocked-actions", methods=["GET"])
     def api_blocked_actions(name):
+        """Open actions waiting on incomplete dependencies."""
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         return jsonify(db.get_blocked_actions(name))
-
-    @app.route("/api/tenants/<name>/implementation-order", methods=["POST"])
-    def api_implementation_order(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        action_ids = data.get("action_ids")
-        return jsonify(db.get_implementation_order(name, action_ids))
 
     # ── Compliance endpoints ──
 
@@ -1654,9 +1759,105 @@ def create_app(db_path: str = None) -> Flask:
         result = auto_map_compliance(db, name, frameworks)
         return jsonify(result)
 
-    @app.route("/api/actions/<action_id>/compliance", methods=["GET"])
-    def api_action_compliance(action_id):
-        return jsonify(db.get_action_compliance(action_id))
+    # ── Risk Reasons (structured acceptance reasons) ──
+
+    @app.route("/api/risk-reasons", methods=["GET"])
+    def api_list_risk_reasons():
+        include_inactive = request.args.get("include_inactive") == "1"
+        return jsonify(db.list_risk_reasons(include_inactive=include_inactive))
+
+    @app.route("/api/risk-reasons", methods=["POST"])
+    @require_role("admin")
+    def api_create_risk_reason():
+        data = request.get_json() or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return _json_error("name is required")
+        category = data.get("category") or RiskReasonCategory.OTHER.value
+        if category not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        try:
+            reason = db.create_risk_reason(name, category,
+                                           data.get("description", ""))
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.create", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason["id"], detail=name)
+        return jsonify(reason), 201
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["PUT"])
+    @require_role("admin")
+    def api_update_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        data = request.get_json() or {}
+        if "category" in data and data["category"] not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        if "name" in data and not (data.get("name") or "").strip():
+            return _json_error("name cannot be empty")
+        try:
+            reason = db.update_risk_reason(reason_id, **data)
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.update", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id)
+        return jsonify(reason)
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["DELETE"])
+    @require_role("admin")
+    def api_delete_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        result = db.delete_risk_reason(reason_id)
+        db.audit("risk_reason.delete", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id,
+                 detail="deactivated" if result.get("deactivated") else "deleted")
+        return jsonify(result)
+
+    @app.route("/api/tenants/<name>/risk-analysis", methods=["GET"])
+    def api_risk_analysis(name):
+        """Accepted risks grouped by structured reason — the management view
+        of what is parked behind which constraint and what resolving it
+        would unlock."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_risk_analysis(name))
+
+    @app.route("/api/control-plane/risk-analysis", methods=["GET"])
+    def api_cp_risk_analysis():
+        """Cross-tenant rollup: per reason, how many risks each tenant has
+        accepted and the combined unlock potential."""
+        tenants = [t["name"] for t in db.list_tenants()]
+        rollup: dict = {}
+        totals = {"total_accepted": 0, "score_potential": 0.0}
+        for tenant in tenants:
+            analysis = db.get_risk_analysis(tenant)
+            totals["total_accepted"] += analysis["total_accepted"]
+            groups = analysis["by_reason"] + (
+                [analysis["unassigned"]] if analysis["unassigned"]["count"] else [])
+            for g in groups:
+                key = g["reason_id"] or "__unassigned__"
+                entry = rollup.setdefault(key, {
+                    "reason_id": g["reason_id"], "name": g["name"],
+                    "category": g["category"], "count": 0,
+                    "critical_high": 0, "score_potential": 0.0,
+                    "by_tenant": {},
+                })
+                entry["count"] += g["count"]
+                entry["critical_high"] += (g["by_priority"].get("Critical", 0)
+                                           + g["by_priority"].get("High", 0))
+                entry["score_potential"] = round(
+                    entry["score_potential"] + g["score_potential"], 2)
+                entry["by_tenant"][tenant] = {
+                    "count": g["count"],
+                    "score_potential": g["score_potential"],
+                }
+                totals["score_potential"] = round(
+                    totals["score_potential"] + g["score_potential"], 2)
+        reasons = sorted(rollup.values(), key=lambda r: -r["score_potential"])
+        return jsonify({"tenants": tenants, "reasons": reasons, "totals": totals})
 
     # ── Risk Acceptance endpoints ──
 
@@ -1669,11 +1870,19 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("justification is required")
         if not risk_owner:
             return _json_error("risk_owner is required")
+        reason_id = (data.get("reason_id") or "").strip() or None
+        if reason_id:
+            reason = db.get_risk_reason(reason_id)
+            if not reason:
+                return _json_error("Unknown risk reason")
+            if not reason.get("is_active", True):
+                return _json_error("This risk reason has been deactivated")
         result = db.accept_risk(
             action_id, justification, risk_owner,
             review_date=data.get("review_date"),
             expiry_date=data.get("expiry_date"),
-            changed_by=data.get("changed_by", ""),
+            changed_by=session.get("username") or data.get("changed_by", ""),
+            reason_id=reason_id,
         )
         if not result:
             return _json_error("Action not found", 404)
@@ -1719,18 +1928,15 @@ def create_app(db_path: str = None) -> Flask:
         limit = request.args.get("limit", 20, type=int)
         return jsonify(db.get_drift_reports(name, limit))
 
-    @app.route("/api/tenants/<name>/drift/detect", methods=["POST"])
-    def api_detect_drift(name):
-        if not db.get_tenant(name):
-            return _json_error("Tenant not found", 404)
-        data = request.get_json() or {}
-        result = detect_drift(db, name, data.get("source_tool"))
-        return jsonify(result)
-
     # ── Graph API (Device Code Auth) ──
 
     # In-memory store for pending device code flows (per-tenant)
     _device_flows = {}
+
+    def _method_disabled_error(method):
+        return _json_error(
+            f"The '{method.replace('_', ' ')}' authentication method is disabled "
+            f"for this tenant. Enable it in Control Plane > Tenant Config.", 403)
 
     @app.route("/api/tenants/<name>/graph/device-code", methods=["POST"])
     def api_graph_device_code(name):
@@ -1738,6 +1944,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "device_code"):
+            return _method_disabled_error("device_code")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1750,12 +1958,14 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = start_device_code_flow(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            result = start_device_code_flow(tenant_id, client_id, cloud=cloud)
             # Store the flow for polling
             _device_flows[name] = {
                 "device_code": result["device_code"],
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "expires_at": datetime.utcnow().timestamp() + result.get("expires_in", 900),
             }
             return jsonify({
@@ -1779,7 +1989,9 @@ def create_app(db_path: str = None) -> Flask:
             _device_flows.pop(name, None)
             return _json_error("Device code expired. Please start a new flow.")
 
-        result = poll_for_token(flow["tenant_id"], flow["client_id"], flow["device_code"])
+        result = poll_for_token(flow["tenant_id"], flow["client_id"],
+                                flow["device_code"],
+                                cloud=flow.get("cloud", "global"))
 
         if "access_token" in result:
             # Store token temporarily, remove device code
@@ -1813,58 +2025,11 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            # Fetch scores and control profiles for full enrichment
-            scores_data = fetch_secure_scores(flow["access_token"])
-            try:
-                profiles_data = fetch_control_profiles(flow["access_token"])
-            except Exception:
-                profiles_data = None
-
-            # If we got profiles, update the reference table too
-            if profiles_data:
-                try:
-                    controls = parse_graph_control_profiles(profiles_data)
-                    db.seed_controls(controls)
-                except Exception:
-                    pass  # Non-critical
-
-            parser = SecureScoreParser()
-            actions, overall_scores = parser.parse_graph_response(scores_data, profiles_data)
-            actions = apply_e8_mapping(actions)
-            actions = enrich_actions_from_controls(db, actions)
-
-            source_tool = SourceTool.SECURE_SCORE.value
-            new_count, updated_count, _, _imported_ids = db.merge_actions(name, actions, source_tool, "graph_api")
-
-            # Remove any duplicates from previous imports with different source_id formats
-            dedup = db.deduplicate_actions(name, source_tool)
-
-            # Store the authoritative overall scores from Graph API
-            if overall_scores.get("maxScore", 0) > 0:
-                db.store_graph_scores(name, overall_scores)
-
-            # Post-import processing
-            corr = auto_correlate(db, name)
-            compliance = auto_map_compliance(db, name)
-            snapshot = db.take_score_snapshot(name, trigger="import:graph-api")
-            expired = db.expire_risk_acceptances(name)
-            drift = detect_drift(db, name, source_tool)
-
-            return jsonify({
-                "success": True,
-                "source": "Microsoft Graph API",
-                "total_parsed": len(actions),
-                "new_actions": new_count,
-                "updated_actions": updated_count,
-                "correlation": corr,
-                "compliance": compliance,
-                "drift": drift,
-                "expired_risk_acceptances": len(expired),
-                "snapshot": {"id": snapshot.get("id"), "percentage": snapshot.get("percentage")},
-                "profiles_loaded": getattr(parser, '_profile_count', 0),
-                "unmatched_controls": getattr(parser, '_unmatched_controls', []),
-                "duplicates_removed": dedup.get("removed", 0),
-            })
+            tenant = db.get_tenant(name) or {}
+            result = import_secure_scores_with_token(
+                db, name, flow["access_token"],
+                cloud=tenant.get("cloud") or "global")
+            return jsonify(result)
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")
 
@@ -1883,7 +2048,9 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            profiles_data = fetch_control_profiles(flow["access_token"])
+            tenant = db.get_tenant(name) or {}
+            profiles_data = fetch_control_profiles(
+                flow["access_token"], cloud=tenant.get("cloud") or "global")
             controls = parse_graph_control_profiles(profiles_data)
             result = db.seed_controls(controls)
             return jsonify(result)
@@ -1915,6 +2082,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "client_secret"):
+            return _method_disabled_error("client_secret")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1926,7 +2095,9 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = client_credentials_token(tenant_id, client_id, client_secret)
+            result = client_credentials_token(
+                tenant_id, client_id, client_secret,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1951,6 +2122,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "certificate"):
+            return _method_disabled_error("certificate")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -1964,7 +2137,8 @@ def create_app(db_path: str = None) -> Flask:
 
         try:
             result = client_credentials_token_cert(
-                tenant_id, client_id, cert_path, thumbprint)
+                tenant_id, client_id, cert_path, thumbprint,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1991,6 +2165,8 @@ def create_app(db_path: str = None) -> Flask:
         tenant = db.get_tenant(name)
         if not tenant:
             return _json_error("Tenant not found", 404)
+        if not db.auth_method_enabled(tenant, "interactive"):
+            return _method_disabled_error("interactive")
 
         tenant_id = tenant.get("tenant_id", "")
         client_id = tenant.get("client_id", "")
@@ -2005,10 +2181,12 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            auth_data = start_interactive_auth(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            auth_data = start_interactive_auth(tenant_id, client_id, cloud=cloud)
             _interactive_flows[name] = {
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "state": auth_data["state"],
                 "code_verifier": auth_data["code_verifier"],
                 "redirect_uri": auth_data["redirect_uri"],
@@ -2023,15 +2201,19 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/auth/callback")
     def auth_callback():
         """Handle the OAuth2 redirect callback from Entra ID."""
+        from markupsafe import escape
+
         code = request.args.get("code")
         state = request.args.get("state")
         error = request.args.get("error")
         error_desc = request.args.get("error_description", "")
 
         if error:
+            # Query parameters are attacker-controllable — escape before
+            # embedding in HTML (reflected XSS otherwise).
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Authentication Failed</h2>
-                <p>{error}: {error_desc}</p>
+                <p>{escape(error)}: {escape(error_desc)}</p>
                 <p>You can close this window.</p></body></html>"""
 
         # Find which tenant this callback belongs to
@@ -2052,7 +2234,8 @@ def create_app(db_path: str = None) -> Flask:
         try:
             token_result = exchange_auth_code(
                 flow["tenant_id"], flow["client_id"],
-                code, flow["code_verifier"], flow["redirect_uri"])
+                code, flow["code_verifier"], flow["redirect_uri"],
+                cloud=flow.get("cloud", "global"))
 
             expires_in = token_result.get("expires_in", 3600)
             _device_flows[tenant_name] = {
@@ -2063,14 +2246,14 @@ def create_app(db_path: str = None) -> Flask:
 
             return f"""<html><body style="font-family:system-ui;padding:40px;text-align:center">
                 <h2 style="color:green">Authenticated Successfully</h2>
-                <p>You are now signed in for tenant <strong>{tenant_name}</strong>.</p>
+                <p>You are now signed in for tenant <strong>{escape(tenant_name)}</strong>.</p>
                 <p>Token expires in {expires_in // 60} minutes.</p>
                 <p>You can close this window and return to the application.</p>
                 <script>window.close()</script></body></html>"""
         except Exception as e:
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Token Exchange Failed</h2>
-                <p>{str(e)}</p></body></html>"""
+                <p>{escape(str(e))}</p></body></html>"""
 
     @app.route("/api/tenants/<name>/graph/interactive-status", methods=["GET"])
     def api_graph_interactive_status(name):
@@ -2082,6 +2265,316 @@ def create_app(db_path: str = None) -> Flask:
             remaining = int(flow["expires_at"] - datetime.utcnow().timestamp())
             return jsonify({"authenticated": True, "expires_in": remaining})
         return jsonify({"authenticated": False})
+
+    @app.route("/api/tenants/<name>/graph/logout", methods=["POST"])
+    def api_graph_logout(name):
+        """Sign out of the tenant's Graph session: discard cached tokens and
+        any pending auth flows for this tenant."""
+        had_session = name in _device_flows or name in _interactive_flows
+        _device_flows.pop(name, None)
+        _interactive_flows.pop(name, None)
+        db.audit("graph.logout", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify({"logged_out": had_session})
+
+    @app.route("/api/tenants/<name>/graph/test", methods=["POST"])
+    def api_graph_test(name):
+        """Test the tenant's app-only Graph credentials without importing.
+
+        Body (optional): {"method": "certificate"|"client_secret"} to test one
+        specific method. Without it, every enabled + configured app-only
+        method is tried and the first success is reported.
+        """
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        if not tenant.get("tenant_id") or not tenant.get("client_id"):
+            return _json_error("Set Tenant ID and Client ID first.")
+
+        wanted = (request.get_json(silent=True) or {}).get("method")
+        if wanted and wanted not in ("certificate", "client_secret"):
+            return _json_error("method must be 'certificate' or 'client_secret' "
+                               "(device code and interactive are tested by signing in on the Import page)")
+
+        _cloud = tenant.get("cloud") or "global"
+
+        def _try_cert():
+            if not tenant.get("certificate_path"):
+                raise RuntimeError("No certificate uploaded for this tenant.")
+            client_credentials_token_cert(
+                tenant["tenant_id"], tenant["client_id"],
+                tenant["certificate_path"],
+                tenant.get("certificate_thumbprint", ""), cloud=_cloud)
+
+        def _try_secret():
+            if not tenant.get("client_secret"):
+                raise RuntimeError("No client secret configured for this tenant.")
+            client_credentials_token(
+                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"],
+                cloud=_cloud)
+
+        attempts = {"certificate": _try_cert, "client_secret": _try_secret}
+        methods = [wanted] if wanted else [
+            m for m in ("certificate", "client_secret")
+            if db.auth_method_enabled(tenant, m)]
+        if not methods:
+            return _json_error("All app-only authentication methods are disabled for this tenant.")
+
+        errors = []
+        for m in methods:
+            if not wanted and not db.auth_method_enabled(tenant, m):
+                continue
+            try:
+                attempts[m]()
+                return jsonify({"ok": True, "method": m,
+                                "enabled": db.auth_method_enabled(tenant, m)})
+            except Exception as e:
+                errors.append(f"{m.replace('_', ' ')}: {e}")
+        return jsonify({"ok": False, "error": " | ".join(errors)}), 400
+
+    @app.route("/api/tenants/<name>/certificate", methods=["POST"])
+    @require_role("admin")
+    def api_upload_certificate(name):
+        """Upload a PEM certificate bundle (private key + certificate) for
+        app-only Graph authentication. Stores it under data/certs/ and sets
+        certificate_path + derived thumbprint on the tenant."""
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        file = request.files.get("file")
+        if not file:
+            return _json_error("No file uploaded")
+        pem_bytes = file.read()
+        if len(pem_bytes) > 1024 * 1024:
+            return _json_error("Certificate file too large")
+        text = pem_bytes.decode("utf-8", errors="ignore")
+        if "PRIVATE KEY-----" not in text:
+            return _json_error(
+                "The PEM file must contain the private key "
+                "(a '-----BEGIN PRIVATE KEY-----' or '-----BEGIN RSA PRIVATE KEY-----' block). "
+                "Export both key and certificate into one .pem file.")
+        if "-----BEGIN CERTIFICATE-----" not in text:
+            return _json_error(
+                "The PEM file must also contain the certificate "
+                "(a '-----BEGIN CERTIFICATE-----' block).")
+        thumbprint = thumbprint_from_pem(pem_bytes)
+        if not thumbprint:
+            return _json_error("Could not read the certificate from the PEM file.")
+
+        certs_dir = Path(db.db_path).parent / "certs"
+        certs_dir.mkdir(parents=True, exist_ok=True)
+        cert_path = certs_dir / f"{name}.pem"
+        cert_path.write_bytes(pem_bytes)
+        try:
+            os.chmod(cert_path, 0o600)
+        except OSError:
+            pass
+
+        db.update_tenant(name, certificate_path=str(cert_path),
+                         certificate_thumbprint=thumbprint)
+        # Cached tokens were obtained against old credentials
+        _device_flows.pop(name, None)
+        _interactive_flows.pop(name, None)
+        db.audit("tenant.certificate_upload", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=thumbprint)
+        return jsonify({"ok": True, "certificate_path": str(cert_path),
+                        "thumbprint": thumbprint})
+
+    @app.route("/api/tenants/<name>/certificate", methods=["DELETE"])
+    @require_role("admin")
+    def api_delete_certificate(name):
+        """Remove the stored certificate from the tenant configuration."""
+        tenant = db.get_tenant(name)
+        if not tenant:
+            return _json_error("Tenant not found", 404)
+        cert_path = tenant.get("certificate_path", "")
+        managed_dir = str(Path(db.db_path).parent / "certs")
+        if cert_path and cert_path.startswith(managed_dir) and os.path.isfile(cert_path):
+            os.unlink(cert_path)
+        db.update_tenant(name, certificate_path="", certificate_thumbprint="")
+        _device_flows.pop(name, None)
+        db.audit("tenant.certificate_delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify({"ok": True})
+
+    # ── Notifications ──
+
+    @app.route("/api/notifications/smtp", methods=["GET"])
+    @require_role("admin")
+    def api_get_smtp():
+        from .notifications import get_smtp_settings
+        settings = get_smtp_settings(db)
+        if settings.get("password"):
+            settings["password"] = "***"
+        return jsonify(settings)
+
+    @app.route("/api/notifications/smtp", methods=["PUT"])
+    @require_role("admin")
+    def api_set_smtp():
+        from .notifications import DEFAULT_SMTP, get_smtp_settings
+        data = request.get_json() or {}
+        settings = {k: data.get(k, v) for k, v in DEFAULT_SMTP.items()}
+        # "***" means "keep the stored password"
+        if settings.get("password") == "***":
+            settings["password"] = get_smtp_settings(db).get("password", "")
+        try:
+            settings["port"] = int(settings.get("port") or 587)
+        except (TypeError, ValueError):
+            return _json_error("port must be a number")
+        db.set_app_setting("smtp", settings)
+        db.audit("notifications.smtp_update", actor=session.get("username"),
+                 entity_type="settings", entity_id="smtp")
+        redacted = dict(settings)
+        if redacted.get("password"):
+            redacted["password"] = "***"
+        return jsonify(redacted)
+
+    @app.route("/api/tenants/<name>/notifications", methods=["GET"])
+    @require_role("admin")
+    def api_get_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import get_notification_config
+        return jsonify(get_notification_config(db, name))
+
+    @app.route("/api/tenants/<name>/notifications", methods=["PUT"])
+    @require_role("admin")
+    def api_set_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import DEFAULT_TENANT_CONFIG, EVENTS
+        data = request.get_json() or {}
+        config = {
+            "enabled": bool(data.get("enabled")),
+            "emails": [e.strip() for e in (data.get("emails") or [])
+                       if isinstance(e, str) and e.strip()],
+            "teams_webhook": (data.get("teams_webhook") or "").strip(),
+            "slack_webhook": (data.get("slack_webhook") or "").strip(),
+            "events": {e: bool((data.get("events") or {}).get(e, True))
+                       for e in EVENTS},
+        }
+        for url_key in ("teams_webhook", "slack_webhook"):
+            if config[url_key] and not config[url_key].lower().startswith("https://"):
+                return _json_error(f"{url_key} must start with https://")
+        try:
+            config["regression_threshold"] = float(
+                data.get("regression_threshold",
+                         DEFAULT_TENANT_CONFIG["regression_threshold"]))
+        except (TypeError, ValueError):
+            return _json_error("regression_threshold must be a number")
+        db.set_tool_config(name, "notifications", config)
+        db.audit("notifications.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify(config)
+
+    @app.route("/api/tenants/<name>/notifications/test", methods=["POST"])
+    @require_role("admin")
+    def api_test_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import send_test_notification
+        result = send_test_notification(db, name)
+        db.audit("notifications.test", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        status = 200 if result.get("sent") else 400
+        return jsonify(result), status
+
+    @app.route("/api/tenants/<name>/notifications/log", methods=["GET"])
+    @require_role("admin")
+    def api_notification_log(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 30, type=int)
+        return jsonify(db.get_notification_log(name, limit))
+
+    # ── Automation: schedules, tool configs, runs ──
+
+    @app.route("/api/tenants/<name>/automation", methods=["GET"])
+    def api_automation_overview(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .runner import find_pwsh
+        ps_cfg = db.get_tool_config(name, "powershell")
+        tenant = db.get_tenant(name)
+        is_admin = session.get("role") == "admin"
+        tool_configs = {
+            "scuba": db.get_tool_config(name, "scuba"),
+            "zero_trust": db.get_tool_config(name, "zero_trust"),
+            "maester": db.get_tool_config(name, "maester"),
+            "powershell": ps_cfg,
+        }
+        overview = {
+            "schedules": db.get_schedules(name),
+            "tool_configs": tool_configs,
+            "runs": db.get_tool_runs(name),
+            "environment": {
+                "pwsh_found": bool(find_pwsh(ps_cfg)),
+                "pwsh_path": find_pwsh(ps_cfg) or "",
+                "app_credentials": bool(
+                    tenant.get("tenant_id") and tenant.get("client_id")
+                    and (tenant.get("client_secret") or tenant.get("certificate_path"))),
+            },
+        }
+        # Notification config contains webhook URLs (channel secrets) —
+        # only admins receive it; others get a boolean so the UI can hint.
+        from .notifications import get_notification_config
+        notif = get_notification_config(db, name)
+        if is_admin:
+            overview["notifications"] = notif
+        else:
+            overview["notifications_enabled"] = bool(notif.get("enabled"))
+        return jsonify(overview)
+
+    @app.route("/api/tenants/<name>/schedules/<task_type>", methods=["PUT"])
+    def api_set_schedule(name, task_type):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        data = request.get_json() or {}
+        try:
+            sched = db.set_schedule(name, task_type,
+                                    data.get("frequency", "manual"),
+                                    bool(data.get("enabled")))
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("schedule.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name,
+                 detail=f"{task_type}={sched['frequency']},enabled={sched['enabled']}")
+        return jsonify(sched)
+
+    @app.route("/api/tenants/<name>/tool-config/<tool>", methods=["PUT"])
+    @require_role("admin")
+    def api_set_tool_config(name, tool):
+        # Admin-only: the config includes executable paths (pwsh_path,
+        # module folders) and extra arguments — i.e. what gets executed on
+        # the host when a run starts.
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        if tool not in ("scuba", "zero_trust", "maester", "powershell"):
+            return _json_error("Unknown tool")
+        data = request.get_json() or {}
+        db.audit("tool_config.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=tool)
+        return jsonify(db.set_tool_config(name, tool, data.get("config", {})))
+
+    @app.route("/api/tenants/<name>/run/<task_type>", methods=["POST"])
+    def api_run_task(name, task_type):
+        """Start a tool run in the background. Poll /runs for its status."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .runner import execute_task_async, TASK_TYPES
+        if task_type not in TASK_TYPES:
+            return _json_error("Unknown task type")
+        run_id = execute_task_async(db.db_path, name, task_type, trigger="manual")
+        db.audit("tool.run", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=task_type)
+        return jsonify({"run_id": run_id, "status": "running"}), 202
+
+    @app.route("/api/tenants/<name>/runs", methods=["GET"])
+    def api_tool_runs(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 30, type=int)
+        return jsonify(db.get_tool_runs(name, limit))
 
     # ── Auth ──
 
@@ -2268,8 +2761,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_cross_tenant():
         """Show implementation status of global actions across all tenants.
         Supports pagination (limit/offset) and filtering by source_tool/workload."""
-        limit = min(int(request.args.get("limit", 100)), 5000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 100, type=int) or 100, 5000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")
 
@@ -2312,6 +2805,8 @@ def create_app(db_path: str = None) -> Flask:
                 page_ga_ids,
             ).fetchall()
 
+        # Per-tenant workload exclusions apply to the cross-tenant matrix too
+        exclusions = {t: set(db.get_excluded_workloads(t)) for t in tenants}
         by_ga: dict = {}
         for r in rows:
             d = dict(r)
@@ -2322,7 +2817,7 @@ def create_app(db_path: str = None) -> Flask:
                     "workload": d["workload"], "review_status": d["review_status"],
                     "tenant_status": {},
                 }
-            if d["tenant_name"]:
+            if d["tenant_name"] and d["workload"] not in exclusions.get(d["tenant_name"], set()):
                 by_ga[gid]["tenant_status"][d["tenant_name"]] = {
                     "status": d["status"], "action_id": d["action_id"],
                 }
@@ -2344,7 +2839,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(users)
 
     @app.route("/api/control-plane/users", methods=["POST"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_create_user():
         data = request.get_json() or {}
         username = data.get("username", "").strip()
@@ -2376,6 +2871,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user), 201
 
     @app.route("/api/control-plane/users/<user_id>", methods=["GET"])
+    @require_role("admin", "analyst")
     def api_cp_get_user(user_id):
         user = db.get_user(user_id)
         if not user:
@@ -2384,7 +2880,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["PUT"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_update_user(user_id):
         data = request.get_json() or {}
         allowed = {"display_name", "email", "role", "is_active", "password"}
@@ -2414,7 +2910,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_delete_user(user_id):
         if user_id == session.get("user_id"):
             return _json_error("Cannot delete your own account")
@@ -2423,6 +2919,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "deleted"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access", methods=["POST"])
+    @require_role("admin")
     def api_cp_set_user_tenant_access(user_id):
         data = request.get_json() or {}
         tenant_name = data.get("tenant_name")
@@ -2432,6 +2929,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "ok"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access/<tenant_name>", methods=["DELETE"])
+    @require_role("admin")
     def api_cp_remove_user_tenant_access(user_id, tenant_name):
         db.remove_user_tenant_access(user_id, tenant_name)
         return jsonify({"status": "deleted"})
@@ -2464,8 +2962,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_unlinked_actions():
         tenant_name = request.args.get("tenant")
         source_tool = request.args.get("source_tool")
-        limit = min(int(request.args.get("limit", 200)), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 200, type=int) or 200, 1000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         where = ["global_action_id IS NULL"]
         params: list = []
         if tenant_name:
@@ -2538,70 +3036,27 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Action not found", 404)
         return jsonify(result), 201
 
-    # ── Correlation groups (CP management) ──
-
-    @app.route("/api/control-plane/correlation-groups", methods=["GET"])
-    def api_cp_list_correlation_groups():
-        return jsonify(db.list_correlation_groups())
-
-    @app.route("/api/control-plane/correlation-groups", methods=["POST"])
-    def api_cp_create_correlation_group():
-        data = request.get_json() or {}
-        if not data.get("canonical_name"):
-            return _json_error("canonical_name required")
-        result = db.create_correlation_group(
-            data["canonical_name"], data.get("description", ""), data.get("keywords", [])
-        )
-        return jsonify(result), 201
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["PUT"])
-    def api_cp_update_correlation_group(group_id):
-        data = request.get_json() or {}
-        result = db.update_correlation_group(group_id, **data)
-        if not result:
-            return _json_error("Not found", 404)
-        return jsonify(result)
-
-    @app.route("/api/control-plane/correlation-groups/<group_id>", methods=["DELETE"])
-    def api_cp_delete_correlation_group(group_id):
-        db.delete_correlation_group(group_id)
-        return jsonify({"status": "deleted"})
-
-    # ── Database Migration ──
-
-    @app.route("/api/admin/migrate-database", methods=["POST"])
-    def api_migrate_database():
-        """Migrate to per-tenant database layout."""
-        from .tenant_db import migrate_to_per_tenant, is_migrated
-        if is_migrated():
-            return jsonify({"already_migrated": True,
-                            "message": "Database already migrated to per-tenant layout."})
-        result = migrate_to_per_tenant(db.db_path)
-        return jsonify(result)
-
-    @app.route("/api/admin/migration-status", methods=["GET"])
-    def api_migration_status():
-        from .tenant_db import is_migrated, MIGRATION_MARKER, TENANT_DB_DIR
-        if not is_migrated():
-            return jsonify({"migrated": False})
-        import json as _json
-        marker = _json.loads(MIGRATION_MARKER.read_text())
-        tenant_dbs = list(TENANT_DB_DIR.glob("*.db"))
-        return jsonify({
-            "migrated": True,
-            "migrated_at": marker.get("migrated_at"),
-            "tenants": marker.get("tenants", []),
-            "tenant_db_count": len(tenant_dbs),
-        })
-
     return app
 
 
-def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True):
-    """Start the web server."""
+def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True,
+               host: str = None):
+    """Start the web server and the automation scheduler.
+
+    Binds to 127.0.0.1 by default — this is a local-first tool. Pass
+    ``host`` (or set the HOST env var / --host CLI flag) to expose it on a
+    network interface deliberately.
+    """
+    from .database import DEFAULT_DB_PATH
+    from .runner import start_scheduler
     app = create_app(db_path)
+    start_scheduler(str(db_path or DEFAULT_DB_PATH))
+    host = host or os.environ.get("HOST") or "127.0.0.1"
     url = f"http://localhost:{port}"
     print(f"Starting M365 Security Posture Manager at {url}")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"[WARNING] Binding to {host} exposes the app beyond this machine. "
+              "Set SECRET_KEY and use HTTPS (COOKIE_SECURE=true) in that case.", flush=True)
     if open_browser:
         webbrowser.open(url)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)

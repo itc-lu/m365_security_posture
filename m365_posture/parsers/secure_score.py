@@ -154,6 +154,8 @@ _STATUS_MAP: dict[str, str] = {
     "planifié": ActionStatus.IN_PLANNING.value,
     "risque accepté": ActionStatus.RISK_ACCEPTED.value,
     "non applicable": ActionStatus.NOT_APPLICABLE.value,
+    "résolu par un tiers": ActionStatus.THIRD_PARTY.value,
+    "résolu via une atténuation alternative": ActionStatus.THIRD_PARTY.value,
 }
 
 

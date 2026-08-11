@@ -108,13 +108,6 @@ def detect_drift(db: Database, tenant_name: str, source_tool: str = None) -> dic
                 "delta": delta,
             })
 
-    # Detect new/resolved findings by comparing action counts per status
-    current_status = current.get("by_status", {})
-    previous_status = previous.get("by_status", {})
-
-    new_todos = (current_status.get("ToDo", 0) - previous_status.get("ToDo", 0))
-    resolved = (current_status.get("Completed", 0) - previous_status.get("Completed", 0))
-
     # Get actual new and resolved actions from the change log
     changelog = db.get_tenant_change_log(tenant_name, limit=200)
     prev_ts = previous["timestamp"]

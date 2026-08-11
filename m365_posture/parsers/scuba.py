@@ -83,10 +83,11 @@ class ScubaParser:
     def _parse_zip(self, zip_path: Path) -> list[Action]:
         """Extract ZIP and find the ScubaResults JSON inside."""
         import tempfile
+        from .zip_safety import safe_extract_zip
         extract_dir = tempfile.mkdtemp(prefix="scuba_report_")
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extract_dir)
+                safe_extract_zip(zf, extract_dir)
 
             json_file = self._find_scuba_json(Path(extract_dir))
             if not json_file:
@@ -102,6 +103,9 @@ class ScubaParser:
         except zipfile.BadZipFile:
             shutil.rmtree(extract_dir, ignore_errors=True)
             raise ValueError("Invalid ZIP file")
+        except ValueError:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            raise
 
     def _find_scuba_json(self, root: Path) -> Path | None:
         """Find the best ScubaResults JSON in extracted directory."""
@@ -371,7 +375,13 @@ class ScubaParser:
             or item.get("control_id", "")
         )
         if not control_id:
-            control_id = item.get("Requirement", str(hash(str(item)))[:8])
+            # Stable fallback: Python's hash() is salted per process, which
+            # would produce a different source_id on every import and create
+            # duplicates. Use a content digest instead.
+            import hashlib
+            control_id = item.get("Requirement") or hashlib.md5(
+                json.dumps(item, sort_keys=True, default=str).encode()
+            ).hexdigest()[:8]
 
         result = (
             item.get("Result", "")

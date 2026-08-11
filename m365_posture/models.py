@@ -60,6 +60,7 @@ class Workload(str, Enum):
     DEFENDER = "Defender"
     INTUNE = "Intune"
     PURVIEW = "Purview"
+    COPILOT = "Copilot & AI"
     GENERAL = "General"
 
 
@@ -70,6 +71,7 @@ class SourceTool(str, Enum):
     ZERO_TRUST_REPORT = "Zero Trust Report"
     SCT = "Security Compliance Toolkit"
     M365_ASSESS = "M365-Assess"
+    MAESTER = "Maester"
     MANUAL = "Manual"
 
 
@@ -110,24 +112,16 @@ class GlobalActionReviewStatus(str, Enum):
     REVIEWED = "Reviewed"
 
 
-@dataclass
-class HistoryEntry:
-    """A single point-in-time snapshot of an action's status."""
-    timestamp: str
-    old_status: Optional[str] = None
-    new_status: Optional[str] = None
-    old_score: Optional[float] = None
-    new_score: Optional[float] = None
-    source_report: Optional[str] = None
-    changed_by: Optional[str] = None
-    notes: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
-
-    @classmethod
-    def from_dict(cls, data: dict) -> HistoryEntry:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+class RiskReasonCategory(str, Enum):
+    """Why an accepted risk cannot (yet) be remediated — the axis management
+    reports aggregate on ("12 critical risks accepted for licensing reasons")."""
+    LICENSING = "Licensing"
+    BUDGET = "Budget"
+    RESOURCES = "Resources"
+    SKILLS = "Skills"
+    TECHNICAL = "Technical"
+    BUSINESS = "Business"
+    OTHER = "Other"
 
 
 @dataclass
@@ -193,36 +187,6 @@ class Action:
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
 
-    def update_status(self, new_status: str, source_report: str = "", changed_by: str = "", notes: str = ""):
-        old_status = self.status
-        entry = HistoryEntry(
-            timestamp=datetime.utcnow().isoformat(),
-            old_status=old_status,
-            new_status=new_status,
-            source_report=source_report or None,
-            changed_by=changed_by or None,
-            notes=notes or None,
-        )
-        self.history.append(entry.to_dict())
-        self.status = new_status
-        self.updated_at = datetime.utcnow().isoformat()
-
-    def update_score(self, new_score: float, max_score: float = None, source_report: str = ""):
-        old_score = self.score
-        entry = HistoryEntry(
-            timestamp=datetime.utcnow().isoformat(),
-            old_score=old_score,
-            new_score=new_score,
-            source_report=source_report or None,
-        )
-        self.history.append(entry.to_dict())
-        self.score = new_score
-        if max_score is not None:
-            self.max_score = max_score
-        if self.max_score and self.max_score > 0:
-            self.score_percentage = round((new_score / self.max_score) * 100, 2)
-        self.updated_at = datetime.utcnow().isoformat()
-
 
 @dataclass
 class SecureScoreControl:
@@ -268,6 +232,8 @@ class TenantConfig:
     certificate_path: str = ""
     certificate_thumbprint: str = ""
     use_interactive: bool = False
+    # National cloud: global | usgov | usgovdod | china
+    cloud: str = "global"
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
@@ -343,19 +309,3 @@ class User:
     def from_dict(cls, data: dict) -> User:
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
-
-
-@dataclass
-class TenantData:
-    """All security posture data for a single tenant."""
-    tenant: dict = field(default_factory=dict)
-    actions: list[dict] = field(default_factory=list)
-    import_history: list[dict] = field(default_factory=list)
-    scores: dict = field(default_factory=dict)  # source_tool -> {score, max_score, date}
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> TenantData:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})

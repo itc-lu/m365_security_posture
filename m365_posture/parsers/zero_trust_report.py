@@ -134,10 +134,11 @@ class ZeroTrustReportParser:
     def _parse_zip(self, zip_path: Path) -> list[Action]:
         """Extract ZIP and find the report JSON inside."""
         import tempfile
+        from .zip_safety import safe_extract_zip
         extract_dir = tempfile.mkdtemp(prefix="zt_report_")
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extract_dir)
+                safe_extract_zip(zf, extract_dir)
 
             json_file = self._find_report_json(Path(extract_dir))
             if not json_file:
@@ -151,6 +152,9 @@ class ZeroTrustReportParser:
         except zipfile.BadZipFile:
             shutil.rmtree(extract_dir, ignore_errors=True)
             raise ValueError("Invalid ZIP file")
+        except ValueError:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            raise
 
     def _find_report_json(self, root: Path) -> Optional[Path]:
         """Find ZeroTrustAssessmentReport.json in extracted directory."""
