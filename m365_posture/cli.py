@@ -31,7 +31,8 @@ def cmd_web(args):
         if data_dir:
             db_path = os.path.join(data_dir, "m365_posture.db")
 
-    run_server(port=args.port, db_path=db_path, open_browser=not args.no_browser)
+    run_server(port=args.port, db_path=db_path, open_browser=not args.no_browser,
+               host=args.host)
 
 
 def cmd_migrate_from_json(args):
@@ -228,6 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     web = sub.add_parser("web", help="Launch the web management interface")
     web.add_argument("-p", "--port", type=int, default=8080, help="Port (default: 8080)")
+    web.add_argument("--host", default=None,
+                     help="Bind address (default: 127.0.0.1; use 0.0.0.0 to expose on the network)")
     web.add_argument("--no-browser", action="store_true", help="Don't open browser automatically")
     web.add_argument("--db", dest="db_path", help="Path to SQLite database file")
     web.set_defaults(func=cmd_web)

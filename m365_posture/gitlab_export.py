@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -189,25 +190,30 @@ def generate_gitlab_script(
     if filter_status:
         actions = [a for a in actions if a.status in filter_status]
 
+    # Every interpolated value is quoted with shlex.quote: action titles and
+    # responsible names come from imported reports, and double-quote escaping
+    # alone would still allow `$(...)` / backtick command substitution when
+    # the user runs the script.
     lines = ["#!/bin/bash", "# GitLab issue creation script",
              f"# Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
-             f"# Tenant: {tenant_name}", "",
-             f'PROJECT="{project_path}"', ""]
+             f"# Tenant: {shlex.quote(tenant_name)}", "",
+             f"PROJECT={shlex.quote(project_path)}", ""]
 
     for action in actions:
-        title = f"[{action.workload}] {action.title}"[:255].replace('"', '\\"')
+        title = f"[{action.workload}] {action.title}"[:255]
         labels = _build_labels(action)
-        due = f'--due-date "{action.planned_date}"' if action.planned_date else ""
-        assignee = f'--assignee "{action.responsible}"' if action.responsible else ""
+        due = f"--due-date {shlex.quote(action.planned_date)}" if action.planned_date else ""
+        assignee = f"--assignee {shlex.quote(action.responsible)}" if action.responsible else ""
+        description = (f"Source: {action.source_tool} | ID: {action.source_id} | "
+                       f"Priority: {action.priority} | Risk: {action.risk_level}")
 
-        lines.append(f'echo "Creating issue: {title[:60]}..."')
+        lines.append(f"echo {shlex.quote('Creating issue: ' + title[:60] + '...')}")
         lines.append(
             f'glab issue create --project "$PROJECT" '
-            f'--title "{title}" '
-            f'--label "{labels}" '
-            f'{due} {assignee} '
-            f'--description "Source: {action.source_tool} | ID: {action.source_id} | '
-            f'Priority: {action.priority} | Risk: {action.risk_level}"'
+            f"--title {shlex.quote(title)} "
+            f"--label {shlex.quote(labels)} "
+            f"{due} {assignee} "
+            f"--description {shlex.quote(description)}"
         )
         lines.append("")
 

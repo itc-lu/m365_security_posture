@@ -10,7 +10,9 @@ _SPA_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
 <title>M365 Security Posture Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Cpath d='M12 2L4 5.5v5.6c0 4.9 3.4 9.5 8 10.9 4.6-1.4 8-6 8-10.9V5.5L12 2zm-1.5 14.5l-3.5-3.5 1.4-1.4 2.1 2.1 5.1-5.1 1.4 1.4-6.5 6.5z'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #f1f5f9; --bg-card: #fff; --bg-sidebar: #0f172a; --bg-sidebar-hover: #1e293b;
@@ -401,8 +403,8 @@ body.unauth { background:#0f172a; }
   <div class="content" id="content"></div>
 </div>
 
-<!-- Toast container -->
-<div class="toast-container" id="toasts"></div>
+<!-- Toast container (aria-live so screen readers announce feedback) -->
+<div class="toast-container" id="toasts" role="status" aria-live="polite"></div>
 
 <!-- Login overlay -->
 <div class="login-overlay hidden" id="login-overlay">
@@ -432,7 +434,7 @@ body.unauth { background:#0f172a; }
 
 <!-- Confirm dialog -->
 <div class="confirm-overlay" id="confirm-overlay" style="display:none">
-  <div class="confirm-dialog">
+  <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
     <h3 id="confirm-title">Confirm</h3>
     <p id="confirm-message">Are you sure?</p>
     <div class="btn-row">
@@ -444,10 +446,10 @@ body.unauth { background:#0f172a; }
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-header">
       <h2 id="modal-title"></h2>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close dialog" title="Close">&times;</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer" id="modal-footer"></div>
@@ -567,6 +569,12 @@ function openModal(title, bodyHtml, footerHtml='') {
   document.getElementById('modal-body').innerHTML = bodyHtml;
   document.getElementById('modal-footer').innerHTML = footerHtml;
   document.getElementById('modal-overlay').classList.add('open');
+  // Move keyboard focus into the dialog (first form control, else the body)
+  setTimeout(() => {
+    const body = document.getElementById('modal-body');
+    const target = body.querySelector('input:not([type=hidden]),select,textarea,button');
+    if(target) target.focus();
+  }, 60);
 }
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
@@ -880,6 +888,31 @@ function resolveConfirm(result) {
 function esc(s) {
   if(s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── HTML sanitizer for fields that legitimately contain markup ──
+// Secure Score control profiles ship HTML descriptions from Microsoft, but the
+// same fields can arrive from uploaded report files — strip anything that
+// could execute before rendering.
+function sanitizeHtml(html) {
+  if(html == null) return '';
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  doc.querySelectorAll('script,style,iframe,object,embed,form,link,meta,base').forEach(el => el.remove());
+  doc.body.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const n = attr.name.toLowerCase();
+      if(n.startsWith('on') ||
+         ((n === 'href' || n === 'src' || n === 'xlink:href') &&
+          /^\s*(javascript|data|vbscript):/i.test(attr.value))) {
+        el.removeAttribute(attr.name);
+      }
+    });
+    if(el.tagName === 'A') {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  return doc.body.innerHTML;
 }
 
 // ── Excel export helper (posts table data, downloads .xlsx) ──
@@ -3258,8 +3291,8 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${a.remediation_impact}</div></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${sanitizeHtml(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${sanitizeHtml(a.remediation_impact)}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
@@ -4647,11 +4680,11 @@ async function viewPlan(planId) {
         `<option value="${p}">${phaseNames[p]}</option>`
       ).join('');
       return `<tr onclick="togglePlanActionDetail('plan-${a.action_id}')" style="cursor:pointer" id="plan-row-${a.action_id}">
-        <td>${a.title}</td>
+        <td>${esc(a.title)}</td>
         <td>${statusBadge(a.status||'ToDo')}</td>
         <td>${priorityBadge(a.priority||'Medium')}</td>
-        <td style="font-size:12px">${a.workload||''}</td>
-        <td style="font-size:12px">${a.implementation_effort||'Medium'}</td>
+        <td style="font-size:12px">${esc(a.workload||'')}</td>
+        <td style="font-size:12px">${esc(a.implementation_effort||'Medium')}</td>
         <td>${scoreDisplay}</td>
         <td onclick="event.stopPropagation()">
           <select onchange="movePlanItemPhase('${planId}','${a.action_id}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
@@ -7347,6 +7380,8 @@ async function renderCpUsers() {
   const users = await api.get('/api/control-plane/users');
   const tenants = await api.get('/api/tenants');
   const roleColors = {admin:'danger', analyst:'info', viewer:'gray', tenant_admin:'purple'};
+  // User management is admin-only server-side — hide the buttons that would 403
+  const canManage = _authUser && _authUser.role === 'admin';
 
   const rows = users.map(u => {
     const accessList = (u.tenant_access||[]).map(ta => {
@@ -7360,19 +7395,19 @@ async function renderCpUsers() {
       <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
       <td>${accessList||`<span style="color:var(--text-light);font-size:12px">${u.role==='admin'?'Full access':'No tenant access'}</span>`}</td>
       <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap">${canManage ? `
         <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')">&#x2715;</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')" aria-label="Delete user">&#x2715;</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 
-  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>`;
+  document.getElementById('topbar-actions').innerHTML = canManage ? `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>` : '';
   document.getElementById('content').innerHTML = `
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-8">
         <div class="card-header" style="margin:0">Application Users (${users.length})</div>
-        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>
+        ${canManage ? '<button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>' : '<span style="font-size:12px;color:var(--text-light)">Read-only — user management requires the admin role</span>'}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Tenant Access</th><th>Last Login</th><th></th></tr></thead>

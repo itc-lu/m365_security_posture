@@ -131,6 +131,12 @@ def _proc_failure_detail(label: str, proc) -> str:
     return "\n".join(parts)
 
 
+def _ps_quote(value: str) -> str:
+    """Quote a value for a PowerShell single-quoted string literal.
+    Doubling embedded single quotes is the only escape needed."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _module_import_prefix(module_path: str, module_name: str) -> str:
     """PowerShell snippet importing a module from a local folder (a git
     checkout or extracted release) instead of the installed module."""
@@ -147,11 +153,20 @@ def _module_import_prefix(module_path: str, module_name: str) -> str:
     for c in candidates:
         if (os.path.isfile(os.path.join(c, f"{module_name}.psd1"))
                 or os.path.isfile(os.path.join(c, f"{module_name}.psm1"))):
-            return f"Import-Module '{c}' -Force; "
+            return f"Import-Module {_ps_quote(c)} -Force; "
     raise RuntimeError(
         f"No {module_name} module found under '{module_path}'. Point the "
         f"folder setting at the {module_name} checkout (containing "
         f"PowerShell/{module_name}) or at the module folder itself.")
+
+
+def _config_timeout(cfg: dict, default: int = 3600) -> int:
+    """Read the run timeout from a tool config, tolerating bad values."""
+    try:
+        value = int(cfg.get("timeout", default))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
 
 
 def run_scuba(db: Database, tenant_name: str) -> dict:
@@ -189,11 +204,11 @@ def run_scuba(db: Database, tenant_name: str) -> dict:
             f.write(config_yaml)
         # Command-line parameters override config-file values in ScubaGear,
         # so -OutPath reliably lands the report where we can pick it up.
-        cmd = (f"{import_prefix}Invoke-SCuBA -ConfigFilePath '{cfg_file}' "
-               f"-OutPath '{out_dir}' -Quiet $true")
+        cmd = (f"{import_prefix}Invoke-SCuBA -ConfigFilePath {_ps_quote(cfg_file)} "
+               f"-OutPath {_ps_quote(out_dir)} -Quiet $true")
 
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
-                               timeout=int(cfg.get("timeout", 3600)))
+                               timeout=_config_timeout(cfg))
         if proc.returncode != 0:
             raise RuntimeError(_proc_failure_detail("Invoke-SCuBA", proc))
 
@@ -240,12 +255,12 @@ def run_zero_trust(db: Database, tenant_name: str) -> dict:
 
     out_dir = tempfile.mkdtemp(prefix="zt_run_")
     try:
-        cmd = f"{import_prefix}Invoke-ZTAssessment -Path '{out_dir}'"
+        cmd = f"{import_prefix}Invoke-ZTAssessment -Path {_ps_quote(out_dir)}"
         extra = cfg.get("extra_args", "").strip()
         if extra:
             cmd += " " + extra
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
-                               timeout=int(cfg.get("timeout", 3600)))
+                               timeout=_config_timeout(cfg))
         if proc.returncode != 0:
             raise RuntimeError(_proc_failure_detail("Invoke-ZTAssessment", proc))
 

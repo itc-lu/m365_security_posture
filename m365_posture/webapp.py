@@ -51,6 +51,11 @@ def _check_login_rate_limit(ip: str) -> bool:
     now = time.time()
     window = 300  # 5 minutes
     max_attempts = 10
+    # Prune stale IPs so the map cannot grow without bound
+    if len(_login_attempts) > 1000:
+        for key in [k for k, v in _login_attempts.items()
+                    if not v or now - v[-1] >= window]:
+            _login_attempts.pop(key, None)
     attempts = _login_attempts.get(ip, [])
     attempts = [t for t in attempts if now - t < window]
     if len(attempts) >= max_attempts:
@@ -229,14 +234,21 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         return jsonify(_redact_tenant(tenant))
 
+    # Credential-bearing tenant fields only admins may change: they control
+    # which Entra app/certificate the tool authenticates with, so letting a
+    # non-admin repoint them is an escalation path.
+    _TENANT_CREDENTIAL_FIELDS = {
+        "tenant_id", "client_id", "client_secret",
+        "certificate_path", "certificate_thumbprint", "auth_methods",
+    }
+
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         data = request.get_json() or {}
-        # Only admins may update client_secret
-        if "client_secret" in data and session.get("role") != "admin":
-            return _json_error("Admin role required to update client_secret", 403)
+        if (_TENANT_CREDENTIAL_FIELDS & set(data.keys())) and session.get("role") != "admin":
+            return _json_error("Admin role required to update tenant credentials", 403)
         tenant = db.update_tenant(name, **data)
         # Invalidate any cached Graph auth tokens for this tenant when the
         # credentials they were obtained against may have changed -- otherwise
@@ -381,7 +393,10 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/actions/<action_id>", methods=["PUT"])
     def api_update_action(action_id):
         data = request.get_json() or {}
-        changed_by = data.pop("changed_by", "")
+        # Prefer the authenticated session identity over a client-supplied name
+        # so the change history cannot be attributed to someone else.
+        changed_by = session.get("username") or data.pop("changed_by", "")
+        data.pop("changed_by", None)
         action = db.update_action(action_id, data, changed_by)
         if not action:
             return _json_error("Action not found", 404)
@@ -1283,9 +1298,9 @@ def create_app(db_path: str = None) -> Flask:
         if not action_ids or not status:
             return _json_error("action_ids and status required")
         updated = 0
+        changed_by = session.get("username") or data.get("changed_by", "batch")
         for aid in action_ids:
-            result = db.update_action(aid, {"status": status},
-                                       changed_by=data.get("changed_by", "batch"))
+            result = db.update_action(aid, {"status": status}, changed_by=changed_by)
             if result:
                 updated += 1
         return jsonify({"updated": updated})
@@ -1555,11 +1570,18 @@ def create_app(db_path: str = None) -> Flask:
             else:
                 return _json_error(f"Unknown format: {fmt}")
 
-            return send_file(tmp_path, mimetype=mime, as_attachment=True,
-                             download_name=fname)
+            # Read into memory so the temp file can be removed immediately
+            # instead of accumulating in the temp directory.
+            with open(tmp_path, "rb") as f:
+                content = f.read()
+            resp = Response(content, mimetype=mime)
+            resp.headers["Content-Disposition"] = f"attachment; filename={fname}"
+            return resp
         finally:
-            # Cleanup will happen after response
-            pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     # ── Score Trending endpoints ──
 
@@ -1953,15 +1975,19 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/auth/callback")
     def auth_callback():
         """Handle the OAuth2 redirect callback from Entra ID."""
+        from markupsafe import escape
+
         code = request.args.get("code")
         state = request.args.get("state")
         error = request.args.get("error")
         error_desc = request.args.get("error_description", "")
 
         if error:
+            # Query parameters are attacker-controllable — escape before
+            # embedding in HTML (reflected XSS otherwise).
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Authentication Failed</h2>
-                <p>{error}: {error_desc}</p>
+                <p>{escape(error)}: {escape(error_desc)}</p>
                 <p>You can close this window.</p></body></html>"""
 
         # Find which tenant this callback belongs to
@@ -1993,14 +2019,14 @@ def create_app(db_path: str = None) -> Flask:
 
             return f"""<html><body style="font-family:system-ui;padding:40px;text-align:center">
                 <h2 style="color:green">Authenticated Successfully</h2>
-                <p>You are now signed in for tenant <strong>{tenant_name}</strong>.</p>
+                <p>You are now signed in for tenant <strong>{escape(tenant_name)}</strong>.</p>
                 <p>Token expires in {expires_in // 60} minutes.</p>
                 <p>You can close this window and return to the application.</p>
                 <script>window.close()</script></body></html>"""
         except Exception as e:
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Token Exchange Failed</h2>
-                <p>{str(e)}</p></body></html>"""
+                <p>{escape(str(e))}</p></body></html>"""
 
     @app.route("/api/tenants/<name>/graph/interactive-status", methods=["GET"])
     def api_graph_interactive_status(name):
@@ -2184,12 +2210,18 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(sched)
 
     @app.route("/api/tenants/<name>/tool-config/<tool>", methods=["PUT"])
+    @require_role("admin")
     def api_set_tool_config(name, tool):
+        # Admin-only: the config includes executable paths (pwsh_path,
+        # module folders) and extra arguments — i.e. what gets executed on
+        # the host when a run starts.
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         if tool not in ("scuba", "zero_trust", "powershell"):
             return _json_error("Unknown tool")
         data = request.get_json() or {}
+        db.audit("tool_config.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=tool)
         return jsonify(db.set_tool_config(name, tool, data.get("config", {})))
 
     @app.route("/api/tenants/<name>/run/<task_type>", methods=["POST"])
@@ -2397,8 +2429,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_cross_tenant():
         """Show implementation status of global actions across all tenants.
         Supports pagination (limit/offset) and filtering by source_tool/workload."""
-        limit = min(int(request.args.get("limit", 100)), 5000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 100, type=int) or 100, 5000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")
 
@@ -2473,7 +2505,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(users)
 
     @app.route("/api/control-plane/users", methods=["POST"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_create_user():
         data = request.get_json() or {}
         username = data.get("username", "").strip()
@@ -2505,6 +2537,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user), 201
 
     @app.route("/api/control-plane/users/<user_id>", methods=["GET"])
+    @require_role("admin", "analyst")
     def api_cp_get_user(user_id):
         user = db.get_user(user_id)
         if not user:
@@ -2513,7 +2546,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["PUT"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_update_user(user_id):
         data = request.get_json() or {}
         allowed = {"display_name", "email", "role", "is_active", "password"}
@@ -2543,7 +2576,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_delete_user(user_id):
         if user_id == session.get("user_id"):
             return _json_error("Cannot delete your own account")
@@ -2552,6 +2585,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "deleted"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access", methods=["POST"])
+    @require_role("admin")
     def api_cp_set_user_tenant_access(user_id):
         data = request.get_json() or {}
         tenant_name = data.get("tenant_name")
@@ -2561,6 +2595,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "ok"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access/<tenant_name>", methods=["DELETE"])
+    @require_role("admin")
     def api_cp_remove_user_tenant_access(user_id, tenant_name):
         db.remove_user_tenant_access(user_id, tenant_name)
         return jsonify({"status": "deleted"})
@@ -2593,8 +2628,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_unlinked_actions():
         tenant_name = request.args.get("tenant")
         source_tool = request.args.get("source_tool")
-        limit = min(int(request.args.get("limit", 200)), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 200, type=int) or 200, 1000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         where = ["global_action_id IS NULL"]
         params: list = []
         if tenant_name:
@@ -2670,14 +2705,24 @@ def create_app(db_path: str = None) -> Flask:
     return app
 
 
-def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True):
-    """Start the web server and the automation scheduler."""
+def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True,
+               host: str = None):
+    """Start the web server and the automation scheduler.
+
+    Binds to 127.0.0.1 by default — this is a local-first tool. Pass
+    ``host`` (or set the HOST env var / --host CLI flag) to expose it on a
+    network interface deliberately.
+    """
     from .database import DEFAULT_DB_PATH
     from .runner import start_scheduler
     app = create_app(db_path)
     start_scheduler(str(db_path or DEFAULT_DB_PATH))
+    host = host or os.environ.get("HOST") or "127.0.0.1"
     url = f"http://localhost:{port}"
     print(f"Starting M365 Security Posture Manager at {url}")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"[WARNING] Binding to {host} exposes the app beyond this machine. "
+              "Set SECRET_KEY and use HTTPS (COOKIE_SECURE=true) in that case.", flush=True)
     if open_browser:
         webbrowser.open(url)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)
