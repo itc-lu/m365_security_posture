@@ -11,6 +11,16 @@ from ..models import (
     ImplementationEffort, Workload, ActionStatus,
 )
 
+
+def _to_float(value, default: float = 0.0) -> float:
+    """Parse a numeric value that may arrive as an empty/odd CSV string."""
+    if value is None:
+        return default
+    try:
+        return float(str(value).replace(",", ".").strip() or default)
+    except (TypeError, ValueError):
+        return default
+
 # Zero Trust pillars to workload mapping
 PILLAR_WORKLOAD_MAP = {
     "identity": Workload.ENTRA.value,
@@ -123,8 +133,8 @@ class ZeroTrustParser:
             or item.get("Category", "")
             or ""
         )
-        score = float(item.get("score", item.get("Score", item.get("percentage", 0))))
-        max_score = float(item.get("maxScore", item.get("MaxScore", 100)))
+        score = _to_float(item.get("score", item.get("Score", item.get("percentage", 0))))
+        max_score = _to_float(item.get("maxScore", item.get("MaxScore", 100)), default=100.0)
 
         control_id = (
             item.get("id", "")

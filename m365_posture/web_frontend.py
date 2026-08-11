@@ -10,7 +10,9 @@ _SPA_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
 <title>M365 Security Posture Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Cpath d='M12 2L4 5.5v5.6c0 4.9 3.4 9.5 8 10.9 4.6-1.4 8-6 8-10.9V5.5L12 2zm-1.5 14.5l-3.5-3.5 1.4-1.4 2.1 2.1 5.1-5.1 1.4 1.4-6.5 6.5z'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #f1f5f9; --bg-card: #fff; --bg-sidebar: #0f172a; --bg-sidebar-hover: #1e293b;
@@ -401,8 +403,8 @@ body.unauth { background:#0f172a; }
   <div class="content" id="content"></div>
 </div>
 
-<!-- Toast container -->
-<div class="toast-container" id="toasts"></div>
+<!-- Toast container (aria-live so screen readers announce feedback) -->
+<div class="toast-container" id="toasts" role="status" aria-live="polite"></div>
 
 <!-- Login overlay -->
 <div class="login-overlay hidden" id="login-overlay">
@@ -432,7 +434,7 @@ body.unauth { background:#0f172a; }
 
 <!-- Confirm dialog -->
 <div class="confirm-overlay" id="confirm-overlay" style="display:none">
-  <div class="confirm-dialog">
+  <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
     <h3 id="confirm-title">Confirm</h3>
     <p id="confirm-message">Are you sure?</p>
     <div class="btn-row">
@@ -444,10 +446,10 @@ body.unauth { background:#0f172a; }
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-header">
       <h2 id="modal-title"></h2>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close dialog" title="Close">&times;</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer" id="modal-footer"></div>
@@ -567,6 +569,12 @@ function openModal(title, bodyHtml, footerHtml='') {
   document.getElementById('modal-body').innerHTML = bodyHtml;
   document.getElementById('modal-footer').innerHTML = footerHtml;
   document.getElementById('modal-overlay').classList.add('open');
+  // Move keyboard focus into the dialog (first form control, else the body)
+  setTimeout(() => {
+    const body = document.getElementById('modal-body');
+    const target = body.querySelector('input:not([type=hidden]),select,textarea,button');
+    if(target) target.focus();
+  }, 60);
 }
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
@@ -882,6 +890,31 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ── HTML sanitizer for fields that legitimately contain markup ──
+// Secure Score control profiles ship HTML descriptions from Microsoft, but the
+// same fields can arrive from uploaded report files — strip anything that
+// could execute before rendering.
+function sanitizeHtml(html) {
+  if(html == null) return '';
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  doc.querySelectorAll('script,style,iframe,object,embed,form,link,meta,base').forEach(el => el.remove());
+  doc.body.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const n = attr.name.toLowerCase();
+      if(n.startsWith('on') ||
+         ((n === 'href' || n === 'src' || n === 'xlink:href') &&
+          /^\s*(javascript|data|vbscript):/i.test(attr.value))) {
+        el.removeAttribute(attr.name);
+      }
+    });
+    if(el.tagName === 'A') {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 // ── Excel export helper (posts table data, downloads .xlsx) ──
 async function exportTableExcel(filename, sheet, headers, rows) {
   if(!rows.length) return toast('Nothing to export', 'error');
@@ -953,6 +986,26 @@ async function switchTenant(name) {
 document.addEventListener('click', () => {
   document.getElementById('tenant-dropdown')?.classList.remove('open');
 });
+
+function tenantExcludedWorkloads() {
+  try {
+    const v = JSON.parse(state.activeTenant?.excluded_workloads || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch(e) { return []; }
+}
+
+function excludedWorkloadsNotice() {
+  const excluded = tenantExcludedWorkloads();
+  if(!excluded.length) return '';
+  return `<div class="drift-banner neutral mb-16" style="font-size:12px">
+    <span>&#128683;</span>
+    <div><strong>${excluded.length} workload(s) excluded</strong> for this tenant:
+      ${excluded.map(w=>`<span class="badge badge-gray">${esc(w)}</span>`).join(' ')}
+      — hidden from all dashboards, reports, lists and scores (imports still update them in the background).
+      <a href="#" onclick="showCpTenantDetail('${esc(state.activeTenant.name)}');return false">Change in Tenant Config</a>
+    </div>
+  </div>`;
+}
 
 function requireTenant() {
   if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('cp-tenants'); return false; }
@@ -1453,7 +1506,7 @@ async function renderDashboard(sourceFilter) {
     ? `${dispScore}/${dispMax} points`
     : (sf ? scoreLabel : 'Average across source tools');
 
-  c.innerHTML = `${riskAlert}
+  c.innerHTML = `${excludedWorkloadsNotice()}${riskAlert}
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
       <div class="flex justify-between items-center">
         <div>
@@ -2070,7 +2123,7 @@ async function _downloadTenantComparisonPDF(today) {
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong></td>
         <td style="vertical-align:top;font-size:10px">${esc(a.priority||'')}</td>
-        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
         <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -2268,7 +2321,7 @@ async function _downloadSnapshotComparisonPDF(today) {
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
         <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
-        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
         <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -2600,7 +2653,7 @@ function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, a
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
         <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
-        <td style="vertical-align:top;color:#374151">${esc(a.risk_justification || a.risk_acceptance_justification || '—')}</td>
+        <td style="vertical-align:top;color:#374151">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification || a.risk_acceptance_justification || '—')}</td>
         <td style="vertical-align:top;color:#374151">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;color:#374151;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -2783,6 +2836,7 @@ async function renderActions() {
 
   const c = document.getElementById('content');
   c.innerHTML = `
+    ${excludedWorkloadsNotice()}
     <div class="filter-bar">
       <input type="text" id="f-search" placeholder="Search actions..." oninput="filterActions()">
       <select id="f-status" onchange="filterActions()"><option value="">All Statuses</option>${selectOptions(state.enums.statuses)}</select>
@@ -3174,6 +3228,7 @@ function actionDetailHtml(a) {
     riskHtml = `<div class="risk-card ${isExpired?'expired':''} mb-16">
       <div class="field-label">Risk Acceptance</div>
       <div class="grid grid-2 mt-16">
+        <div class="field"><div class="field-label">Reason</div><div class="field-value">${a.risk_reason_name?`<span class="badge badge-purple" title="${esc(a.risk_reason_category||'')}">${esc(a.risk_reason_name)}</span>`:'<span style="color:var(--text-light)">No structured reason</span>'}</div></div>
         <div class="field"><div class="field-label">Owner</div><div class="field-value">${esc(a.risk_owner||'Not specified')}</div></div>
         <div class="field"><div class="field-label">Accepted</div><div class="field-value">${a.risk_accepted_at?.substring(0,10)||'Unknown'}</div></div>
         <div class="field"><div class="field-label">Review Date</div><div class="field-value">${a.risk_review_date||'Not set'}</div></div>
@@ -3258,8 +3313,8 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${a.remediation_impact}</div></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${sanitizeHtml(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${sanitizeHtml(a.remediation_impact)}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
@@ -3779,10 +3834,12 @@ async function renderImport() {
       <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import into "${esc(displayName)}"</button>
     </div>
     <div id="imp-result"></div>
-    <div id="zt-reports-section"></div>`;
+    <div id="zt-reports-section"></div>
+    <div id="maester-reports-section"></div>`;
 
-  // Load ZT reports if any exist
+  // Load stored reports if any exist
   loadZtReports(t);
+  loadMaesterReports(t);
 }
 
 // ── Graph API Auth ──
@@ -4169,6 +4226,10 @@ function onSourceChange() {
     hint.style.display = 'block';
     hint.innerHTML = 'Upload the ScubaGear report directory as a <strong>ZIP file</strong> (containing BaselineReports.html, ScubaResults JSON, etc.), or just the ScubaResults JSON/CSV file.';
     uploadHint.textContent = 'ZIP file (recommended), JSON, or CSV file';
+  } else if(src === 'maester') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the <strong>Invoke-Maester output folder as a ZIP</strong> (keeps the HTML report browsable in-app), or just the test-results JSON file. Covers the Maester, EIDSCA, CISA, CIS and ORCA test suites.';
+    uploadHint.textContent = 'ZIP file (recommended) or JSON file';
   } else {
     hint.style.display = 'none';
     uploadHint.textContent = 'JSON or CSV file';
@@ -4217,6 +4278,50 @@ async function loadZtReports(tenantName) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+async function loadMaesterReports(tenantName) {
+  const el = document.getElementById('maester-reports-section');
+  if(!el) return;
+  const reports = await api.get(`/api/tenants/${tenantName}/maester-reports`);
+  if(!Array.isArray(reports) || !reports.length) { el.innerHTML = ''; return; }
+
+  const rows = reports.map(r => {
+    const date = r.imported_at ? new Date(r.imported_at).toLocaleString() : '';
+    const execDate = r.executed_at ? new Date(r.executed_at).toLocaleString() : '';
+    const counted = (r.total_tests||0) - (r.skipped_tests||0);
+    const pct = counted > 0 ? Math.round(r.passed_tests / counted * 100) : 0;
+    const clr = pct >= 60 ? 'var(--success)' : pct >= 30 ? 'var(--warning)' : 'var(--danger)';
+    const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/maester-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+    return `<tr>
+      <td>${date}</td>
+      <td>${execDate}</td>
+      <td>${esc(r.report_tenant_name || r.report_tenant_id || '')}</td>
+      <td style="color:${clr};font-weight:600">${r.passed_tests}/${counted} (${pct}%)</td>
+      <td style="font-size:12px">${r.failed_tests} failed · ${r.skipped_tests} skipped</td>
+      <td>${esc(r.tool_version || '')}</td>
+      <td>${htmlBtn}
+        <button class="btn btn-sm btn-danger" onclick="deleteMaesterReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">Maester Reports</div>
+      <table class="data-table">
+        <thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Pass Rate</th><th>Breakdown</th><th>Version</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function deleteMaesterReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this Maester report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source if the import was a mistake.')) return;
+  const r = await api.del(`/api/maester-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  loadMaesterReports(state.activeTenant.name);
 }
 
 async function deleteZtReport(reportId) {
@@ -4291,10 +4396,11 @@ async function renderAutomation() {
     secure_score: {name:'Secure Score Import', desc:'Imports Microsoft Secure Score via the Graph API using the tenant’s app-only credentials (certificate or client secret). Fully unattended.', needs: env.app_credentials ? '' : 'Requires app-only credentials — configure a certificate or client secret in Tenant Config.'},
     scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s uploaded YAML config and imports the report automatically.', needs: !env.pwsh_found ? 'Requires PowerShell 7 (pwsh) and the ScubaGear module (or a ScubaGear folder configured below).' : (!(cfgs.scuba||{}).config_yaml ? 'Upload a ScubaGear YAML config file below before running.' : '')},
     zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module (or a module folder configured below).'},
+    maester: {name:'Maester Run + Import', desc:'Runs Maester (Invoke-Maester — the MT, EIDSCA, CISA, CIS and ORCA test suites) and imports the results automatically.', needs: env.pwsh_found ? ((cfgs.maester||{}).connect_command ? '' : 'Configure a connect command below (e.g. Connect-MgGraph with app-only credentials) for unattended runs.') : 'Requires PowerShell 7 (pwsh) and the Maester module (Install-Module Maester, or a module folder configured below).'},
   };
   const freqOpts = f => ['manual','daily','weekly','monthly'].map(v=>`<option value="${v}" ${v===f?'selected':''}>${v==='manual'?'Manual only':v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join('');
 
-  const taskCards = ['secure_score','scuba','zero_trust'].map(task => {
+  const taskCards = ['secure_score','scuba','zero_trust','maester'].map(task => {
     const m = taskMeta[task];
     const s = schedMap[task] || {frequency:'manual', enabled:0};
     const lastBadge = s.last_status
@@ -4320,7 +4426,9 @@ async function renderAutomation() {
 
   const scuba = cfgs.scuba || {};
   const zt = cfgs.zero_trust || {};
+  const maester = cfgs.maester || {};
   const ps = cfgs.powershell || {};
+  const notif = ov.notifications || null;  // present for admins only
 
   const runRows = (ov.runs||[]).map(r => {
     const dur = r.finished_at ? Math.max(1, Math.round((new Date(r.finished_at)-new Date(r.started_at))/1000))+'s' : '—';
@@ -4389,6 +4497,21 @@ async function renderAutomation() {
             <input id="zt-extra" value="${esc(zt.extra_args||'')}" placeholder="-Days 30"></div>
           <button class="btn btn-primary btn-sm" onclick="saveToolConfig('zero_trust')">Save ZT Config</button>
         </div>
+        <div class="card mb-16">
+          <div class="card-header">Maester Configuration</div>
+          <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+            Maester needs an authenticated Graph session. For unattended runs, provide a
+            <em>connect command</em> executed before Invoke-Maester — e.g.
+            <code>Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …</code>.
+          </p>
+          <div class="form-group"><label>Maester folder (optional — path to a checkout/module folder; empty = installed module)</label>
+            <input id="maester-module-path" value="${esc(maester.module_path||'')}" placeholder="/opt/Maester"></div>
+          <div class="form-group"><label>Connect command (PowerShell, runs before Invoke-Maester; admin-only)</label>
+            <input id="maester-connect" value="${esc(maester.connect_command||'')}" placeholder="Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …"></div>
+          <div class="form-group"><label>Extra Invoke-Maester arguments (optional)</label>
+            <input id="maester-extra" value="${esc(maester.extra_args||'')}" placeholder="-Tag CA,MFA"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveToolConfig('maester')">Save Maester Config</button>
+        </div>
         <div class="card">
           <div class="card-header">PowerShell</div>
           <div class="form-group"><label>Path to pwsh (optional — auto-detected when empty)</label>
@@ -4398,6 +4521,15 @@ async function renderAutomation() {
       </div>
     </div>
 
+    ${notif !== null ? renderNotificationsCard(notif) : `
+    <div class="card mb-16">
+      <div class="card-header">Notifications</div>
+      <p style="font-size:13px;color:var(--text-light)">
+        ${ov.notifications_enabled ? 'Notifications are enabled for this tenant.' : 'Notifications are not configured.'}
+        Configuring channels (email / Teams / Slack) requires the admin role.
+      </p>
+    </div>`}
+
     <div class="card">
       <div class="card-header">Run History</div>
       <div class="table-wrap"><table>
@@ -4405,6 +4537,8 @@ async function renderAutomation() {
         <tbody>${runRows||'<tr><td colspan="6" class="text-center" style="padding:24px;color:var(--text-light)">No runs yet. Use "Run now" or enable a schedule.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+
+  if(notif !== null) loadSmtpSettings();
 
   // While a run is active, refresh the page periodically to show progress
   if((ov.runs||[]).some(r => r.status==='running')) {
@@ -4416,6 +4550,122 @@ async function renderAutomation() {
         renderAutomation();
       }
     }, 3000);
+  }
+}
+
+function renderNotificationsCard(notif) {
+  const events = [
+    ['run_failure', 'Automation run failures'],
+    ['score_regression', 'Score regressions after imports'],
+    ['new_findings', 'New findings imported'],
+    ['risk_expiry', 'Risk acceptances expiring (daily digest)'],
+  ];
+  const eventChecks = events.map(([key, label]) => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0;cursor:pointer">
+      <input type="checkbox" class="notif-event" data-event="${key}" ${notif.events?.[key] !== false ? 'checked' : ''}> ${label}
+    </label>`).join('');
+  return `
+    <div class="card mb-16" id="notifications-card">
+      <div class="card-header flex justify-between items-center">
+        <span>Notifications</span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0;cursor:pointer">
+          <input type="checkbox" id="notif-enabled" ${notif.enabled ? 'checked' : ''}> Enabled for this tenant
+        </label>
+      </div>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Alerts are sent when automation runs fail, imports regress the score, new findings arrive,
+        or accepted risks approach expiry. Email uses the global SMTP settings below; Teams and Slack
+        use per-tenant incoming-webhook URLs.</p>
+      <div class="grid grid-2">
+        <div>
+          <div class="form-group"><label>Recipient emails (comma-separated)</label>
+            <input id="notif-emails" value="${esc((notif.emails||[]).join(', '))}" placeholder="soc@example.com, ciso@example.com"></div>
+          <div class="form-group"><label>Teams incoming-webhook URL (optional)</label>
+            <input id="notif-teams" value="${esc(notif.teams_webhook||'')}" placeholder="https://…webhook.office.com/…"></div>
+          <div class="form-group"><label>Slack incoming-webhook URL (optional)</label>
+            <input id="notif-slack" value="${esc(notif.slack_webhook||'')}" placeholder="https://hooks.slack.com/services/…"></div>
+          <div class="form-group"><label>Regression threshold (percentage points)</label>
+            <input id="notif-threshold" type="number" step="0.1" min="0" value="${esc(String(notif.regression_threshold ?? 1.0))}" style="max-width:120px"></div>
+          <div><strong style="font-size:13px">Events</strong>${eventChecks}</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="saveNotificationConfig()">Save Notification Settings</button>
+            <button class="btn btn-sm" onclick="sendTestNotification()">Send Test Notification</button>
+          </div>
+          <div id="notif-test-result" style="margin-top:8px;font-size:13px"></div>
+        </div>
+        <div>
+          <div class="card" style="background:var(--bg)">
+            <div class="card-header" style="font-size:13px">Global SMTP Settings (all tenants)</div>
+            <div id="smtp-settings-body" style="color:var(--text-light);font-size:13px">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadSmtpSettings() {
+  const body = document.getElementById('smtp-settings-body');
+  if(!body) return;
+  const s = await api.get('/api/notifications/smtp');
+  if(s.error) { body.textContent = s.error; return; }
+  body.innerHTML = `
+    <div class="form-row">
+      <div class="form-group"><label>SMTP host</label><input id="smtp-host" value="${esc(s.host||'')}" placeholder="smtp.example.com"></div>
+      <div class="form-group"><label>Port</label><input id="smtp-port" type="number" value="${esc(String(s.port||587))}" style="max-width:100px"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Username (optional)</label><input id="smtp-user" value="${esc(s.username||'')}" autocomplete="off"></div>
+      <div class="form-group"><label>Password</label><input id="smtp-pass" type="password" value="${esc(s.password||'')}" placeholder="Leave *** to keep current" autocomplete="new-password"></div>
+    </div>
+    <div class="form-group"><label>From address</label><input id="smtp-from" value="${esc(s.from_addr||'')}" placeholder="m365-posture@example.com"></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:10px">
+      <input type="checkbox" id="smtp-tls" ${s.use_tls !== false ? 'checked' : ''}> Use STARTTLS
+    </label>
+    <button class="btn btn-primary btn-sm" onclick="saveSmtpSettings()">Save SMTP Settings</button>`;
+}
+
+async function saveSmtpSettings() {
+  const payload = {
+    host: document.getElementById('smtp-host').value.trim(),
+    port: document.getElementById('smtp-port').value.trim() || 587,
+    username: document.getElementById('smtp-user').value.trim(),
+    password: document.getElementById('smtp-pass').value,
+    from_addr: document.getElementById('smtp-from').value.trim(),
+    use_tls: document.getElementById('smtp-tls').checked,
+  };
+  const r = await api.put('/api/notifications/smtp', payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('SMTP settings saved', 'success');
+}
+
+async function saveNotificationConfig() {
+  const t = state.activeTenant.name;
+  const events = {};
+  document.querySelectorAll('.notif-event').forEach(cb => { events[cb.dataset.event] = cb.checked; });
+  const payload = {
+    enabled: document.getElementById('notif-enabled').checked,
+    emails: document.getElementById('notif-emails').value.split(',').map(e=>e.trim()).filter(Boolean),
+    teams_webhook: document.getElementById('notif-teams').value.trim(),
+    slack_webhook: document.getElementById('notif-slack').value.trim(),
+    regression_threshold: parseFloat(document.getElementById('notif-threshold').value) || 1.0,
+    events,
+  };
+  const r = await api.put(`/api/tenants/${t}/notifications`, payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('Notification settings saved', 'success');
+}
+
+async function sendTestNotification() {
+  const t = state.activeTenant.name;
+  const el = document.getElementById('notif-test-result');
+  el.textContent = 'Sending…';
+  const r = await api.post(`/api/tenants/${t}/notifications/test`, {});
+  if(r.errors && r.errors.length) {
+    el.innerHTML = `<span style="color:var(--danger)">Sent to ${r.sent||0} channel(s); errors: ${esc(r.errors.join(' | '))}</span>`;
+  } else if(r.sent) {
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Test notification sent to ${r.sent} channel(s)</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--danger)">${esc(r.error || (r.errors||[]).join(' | ') || 'No channels configured')}</span>`;
   }
 }
 
@@ -4461,6 +4711,12 @@ async function saveToolConfig(tool) {
     config = {
       module_path: document.getElementById('zt-module-path').value.trim(),
       extra_args: document.getElementById('zt-extra').value.trim(),
+    };
+  } else if(tool === 'maester') {
+    config = {
+      module_path: document.getElementById('maester-module-path').value.trim(),
+      connect_command: document.getElementById('maester-connect').value.trim(),
+      extra_args: document.getElementById('maester-extra').value.trim(),
     };
   } else if(tool === 'powershell') {
     config = {pwsh_path: document.getElementById('ps-path').value.trim()};
@@ -4647,11 +4903,11 @@ async function viewPlan(planId) {
         `<option value="${p}">${phaseNames[p]}</option>`
       ).join('');
       return `<tr onclick="togglePlanActionDetail('plan-${a.action_id}')" style="cursor:pointer" id="plan-row-${a.action_id}">
-        <td>${a.title}</td>
+        <td>${esc(a.title)}</td>
         <td>${statusBadge(a.status||'ToDo')}</td>
         <td>${priorityBadge(a.priority||'Medium')}</td>
-        <td style="font-size:12px">${a.workload||''}</td>
-        <td style="font-size:12px">${a.implementation_effort||'Medium'}</td>
+        <td style="font-size:12px">${esc(a.workload||'')}</td>
+        <td style="font-size:12px">${esc(a.implementation_effort||'Medium')}</td>
         <td>${scoreDisplay}</td>
         <td onclick="event.stopPropagation()">
           <select onchange="movePlanItemPhase('${planId}','${a.action_id}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
@@ -5895,7 +6151,7 @@ async function renderExport() {
       <div class="card-header">Data Export (CSV / JSON)</div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Full action data with all tracked fields — for Excel, Power BI, or your own scripts.</p>
       <div class="form-row">
-        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option></select></div>
+        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option><option value="md">Markdown (.md)</option></select></div>
         <div class="form-group"><label>Status</label><select id="dexp-status">${dStatusOpts}</select></div>
         <div class="form-group"><label>Source Tool</label><select id="dexp-source">${srcOpts}</select></div>
         <div class="form-group"><label>Workload</label><select id="dexp-workload">${wlOpts}</select></div>
@@ -6522,26 +6778,40 @@ async function mapCompliance() {
 }
 
 // ── Risk Register Page ──
-let _riskState = {actions: [], filters: {search: '', workload: '', source: '', owner: '', view: 'all'}, sort: {col: 'risk_accepted_at', dir: -1}, expanded: null};
+let _riskState = {actions: [], filters: {search: '', workload: '', source: '', owner: '', reason: '', view: 'all'}, sort: {col: 'risk_accepted_at', dir: -1}, expanded: null, tab: 'register', reasons: []};
 
 async function renderRisks() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
+  const isAdmin = _authUser && _authUser.role === 'admin';
 
   document.getElementById('topbar-actions').innerHTML = `
+    ${isAdmin ? '<button class="btn btn-sm" onclick="showManageReasons()">Manage Reasons</button>' : ''}
     <button class="btn btn-sm" onclick="riskAddSelectedToPlan()" id="risk-plan-btn" disabled>Add Selected to Plan</button>
     <button class="btn btn-sm" onclick="riskExportExcel()">Export Excel</button>
     <button class="btn btn-sm" onclick="riskExportCsv()">Export CSV</button>
     <button class="btn btn-sm btn-danger" onclick="expireRisks()" title="Auto-revert expired risk acceptances back to ToDo">Auto-expire</button>`;
 
-  // Fetch all Risk Accepted actions with full details
-  const [actions, summary] = await Promise.all([
+  const riskTabBar = `<div class="card mb-16" style="padding:0"><div class="action-tabs" style="margin:0">
+    <div class="atab${_riskState.tab==='register'?' active':''}" onclick="_riskState.tab='register';renderRisks()">Risk Register</div>
+    <div class="atab${_riskState.tab==='analysis'?' active':''}" onclick="_riskState.tab='analysis';renderRisks()">Analysis by Reason</div>
+  </div></div>`;
+
+  if(_riskState.tab === 'analysis') {
+    await renderRiskAnalysis(riskTabBar);
+    return;
+  }
+
+  // Fetch all Risk Accepted actions with full details, plus the reason catalog
+  const [actions, summary, reasons] = await Promise.all([
     api.get(`/api/tenants/${t}/actions?status=Risk%20Accepted`),
     api.get(`/api/tenants/${t}/risk-summary`),
+    api.get('/api/risk-reasons'),
   ]);
 
   _riskState.actions = actions || [];
   _riskState.summary = summary;
+  _riskState.reasons = Array.isArray(reasons) ? reasons : [];
   _riskState.expanded = null;
 
   // Build owner / workload / source dropdown options from data
@@ -6556,8 +6826,10 @@ async function renderRisks() {
   const upcomingCount = summary.upcoming_reviews.length;
   const noExpiry = _riskState.actions.filter(a => !a.risk_expiry_date).length;
   const noOwner = _riskState.actions.filter(a => !a.risk_owner).length;
+  const noReason = _riskState.actions.filter(a => !a.risk_reason_id).length;
+  const usedReasons = [...new Set(_riskState.actions.map(a => a.risk_reason_name).filter(Boolean))].sort();
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('content').innerHTML = `${riskTabBar}
     <div class="grid grid-4 mb-16">
       <div class="card stat-card" onclick="riskSetView('all')" style="cursor:pointer;${_riskState.filters.view==='all'?'border:2px solid var(--primary);':''}">
         <div class="value">${totalActions}</div><div class="label">Accepted Risks</div></div>
@@ -6569,12 +6841,13 @@ async function renderRisks() {
         <div class="value">${totalImpact.toFixed(0)}</div><div class="label">Risk Impact (Σ max-score excluded)</div></div>
     </div>
 
-    ${(noExpiry || noOwner) ? `
+    ${(noExpiry || noOwner || noReason) ? `
     <div class="drift-banner neutral mb-16" style="font-size:13px">
       <span>&#9432;</span>
       <div>
         ${noOwner?`<strong>${noOwner}</strong> risk(s) have no owner assigned. `:''}
         ${noExpiry?`<strong>${noExpiry}</strong> risk(s) have no expiry date set. `:''}
+        ${noReason?`<strong>${noReason}</strong> risk(s) have no structured reason — assign one so the Analysis by Reason report stays meaningful. `:''}
         Consider reviewing them so accepted risks don't linger indefinitely.
       </div>
     </div>` : ''}
@@ -6595,6 +6868,11 @@ async function renderRisks() {
           <option value="__none__" ${_riskState.filters.owner==='__none__'?'selected':''}>(no owner)</option>
           ${owners.map(o => `<option value="${esc(o)}" ${_riskState.filters.owner===o?'selected':''}>${esc(o)}</option>`).join('')}
         </select>
+        <select id="risk-reason-filter" onchange="riskSetFilter('reason',this.value)">
+          <option value="">All Reasons</option>
+          <option value="__none__" ${_riskState.filters.reason==='__none__'?'selected':''}>(no reason)</option>
+          ${usedReasons.map(r => `<option value="${esc(r)}" ${_riskState.filters.reason===r?'selected':''}>${esc(r)}</option>`).join('')}
+        </select>
         <select id="risk-view" onchange="riskSetFilter('view',this.value)">
           <option value="all" ${_riskState.filters.view==='all'?'selected':''}>All risks</option>
           <option value="expired" ${_riskState.filters.view==='expired'?'selected':''}>Expired only</option>
@@ -6602,6 +6880,7 @@ async function renderRisks() {
           <option value="active" ${_riskState.filters.view==='active'?'selected':''}>Active (not expired)</option>
           <option value="no-expiry" ${_riskState.filters.view==='no-expiry'?'selected':''}>No expiry set</option>
           <option value="no-owner" ${_riskState.filters.view==='no-owner'?'selected':''}>No owner</option>
+          <option value="no-reason" ${_riskState.filters.view==='no-reason'?'selected':''}>No reason assigned</option>
         </select>
         <button class="btn btn-sm" onclick="riskResetFilters()">Reset</button>
       </div>
@@ -6620,6 +6899,7 @@ async function renderRisks() {
             <th onclick="riskSetSort('workload')" style="cursor:pointer">Workload</th>
             <th onclick="riskSetSort('source_tool')" style="cursor:pointer">Source</th>
             <th onclick="riskSetSort('priority')" style="cursor:pointer">Priority</th>
+            <th onclick="riskSetSort('risk_reason_name')" style="cursor:pointer">Reason</th>
             <th onclick="riskSetSort('risk_owner')" style="cursor:pointer">Owner</th>
             <th onclick="riskSetSort('risk_accepted_at')" style="cursor:pointer">Accepted</th>
             <th onclick="riskSetSort('risk_review_date')" style="cursor:pointer">Review</th>
@@ -6655,9 +6935,11 @@ function riskFilteredActions() {
     if (f.source && a.source_tool !== f.source) return false;
     if (f.owner === '__none__') { if (a.risk_owner) return false; }
     else if (f.owner && a.risk_owner !== f.owner) return false;
+    if (f.reason === '__none__') { if (a.risk_reason_id) return false; }
+    else if (f.reason && a.risk_reason_name !== f.reason) return false;
     if (f.search) {
       const q = f.search.toLowerCase();
-      const blob = `${a.title||''} ${a.risk_justification||''} ${a.source_id||''} ${a.id||''}`.toLowerCase();
+      const blob = `${a.title||''} ${a.risk_justification||''} ${a.risk_reason_name||''} ${a.source_id||''} ${a.id||''}`.toLowerCase();
       if (!blob.includes(q)) return false;
     }
     if (f.view === 'expired') {
@@ -6671,6 +6953,8 @@ function riskFilteredActions() {
       if (a.risk_expiry_date) return false;
     } else if (f.view === 'no-owner') {
       if (a.risk_owner) return false;
+    } else if (f.view === 'no-reason') {
+      if (a.risk_reason_id) return false;
     }
     return true;
   });
@@ -6696,7 +6980,7 @@ function riskRenderRows() {
     `— ${actions.length} of ${_riskState.actions.length} shown`;
 
   if (!actions.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:24px;color:var(--text-light)">No risks match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center" style="padding:24px;color:var(--text-light)">No risks match the current filters.</td></tr>';
     return;
   }
 
@@ -6730,7 +7014,7 @@ function riskRenderRows() {
       </td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${esc(a.workload||'—')}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${esc(a.source_tool||'—')}</td>
-      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${priorityBadge(a.priority||'')}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${a.risk_reason_name?`<span class="badge badge-purple" title="${esc(a.risk_reason_category||'')}">${esc(a.risk_reason_name)}</span>`:'<span class="badge badge-warning" title="Assign a structured reason via Update Review/Expiry">no reason</span>'}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${ownerHtml}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${a.risk_accepted_at?esc(a.risk_accepted_at.substring(0,10)):'—'}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${reviewHtml}</td>
@@ -6738,7 +7022,7 @@ function riskRenderRows() {
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;text-align:right;font-variant-numeric:tabular-nums">${impact}</td>
     </tr>
     <tr id="risk-detail-${a.id}" class="${isExpanded?'':'hidden'}">
-      <td colspan="10" style="padding:0;background:var(--bg)">
+      <td colspan="11" style="padding:0;background:var(--bg)">
         <div id="risk-detail-content-${a.id}" style="padding:16px"></div>
       </td>
     </tr>`;
@@ -6802,15 +7086,42 @@ function riskAddSelectedToPlan() {
 
 async function riskRevoke(actionId) {
   if (!await showConfirm('Revoke Risk Acceptance', 'Revoke this risk acceptance? The action will revert to ToDo and start counting toward the score again.', 'Revoke', 'btn-danger')) return;
-  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null, risk_accepted_at: null});
+  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null, risk_accepted_at: null, risk_reason_id: null});
   toast('Risk acceptance revoked', 'success');
   renderRisks();
 }
 
-function riskExtend(actionId) {
+function riskReasonSelectHtml(elId, selectedId) {
+  // Grouped <select> over the reason catalog (active reasons, plus the
+  // currently selected one even if it was deactivated meanwhile).
+  const reasons = _riskState.reasons || [];
+  const byCat = {};
+  reasons.filter(r => r.is_active || r.id === selectedId).forEach(r => {
+    (byCat[r.category] = byCat[r.category] || []).push(r);
+  });
+  const groups = Object.keys(byCat).sort().map(cat =>
+    `<optgroup label="${esc(cat)}">` +
+    byCat[cat].map(r => `<option value="${esc(r.id)}" ${r.id===selectedId?'selected':''}>${esc(r.name)}${r.is_active?'':' (deactivated)'}</option>`).join('') +
+    '</optgroup>').join('');
+  return `<select id="${elId}">
+    <option value="">— No structured reason —</option>
+    ${groups}
+  </select>`;
+}
+
+async function riskEnsureReasons() {
+  if (!(_riskState.reasons||[]).length) {
+    const reasons = await api.get('/api/risk-reasons');
+    _riskState.reasons = Array.isArray(reasons) ? reasons : [];
+  }
+}
+
+async function riskExtend(actionId) {
   const a = _riskState.actions.find(x => x.id === actionId);
   if (!a) return;
-  openModal('Update Review / Expiry', `
+  await riskEnsureReasons();
+  openModal('Update Risk Acceptance', `
+    <div class="form-group"><label>Reason (drives the Analysis by Reason report)</label>${riskReasonSelectHtml('rx-reason', a.risk_reason_id||'')}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="rx-review" type="date" value="${a.risk_review_date||''}"></div>
       <div class="form-group"><label>Expiry Date</label><input id="rx-expiry" type="date" value="${a.risk_expiry_date||''}"></div>
@@ -6828,8 +7139,10 @@ async function riskExtendSave(actionId) {
     risk_expiry_date: document.getElementById('rx-expiry').value || null,
     risk_owner: document.getElementById('rx-owner').value || '',
     risk_justification: document.getElementById('rx-just').value || '',
+    risk_reason_id: document.getElementById('rx-reason').value || null,
   };
-  await api.put(`/api/actions/${actionId}`, payload);
+  const r = await api.put(`/api/actions/${actionId}`, payload);
+  if(r.error) return toast(r.error, 'error');
   closeModal();
   toast('Risk acceptance updated', 'success');
   renderRisks();
@@ -6838,21 +7151,23 @@ async function riskExtendSave(actionId) {
 function riskExportExcel() {
   const actions = riskFilteredActions();
   const rows = actions.map(a => [
-    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.id, a.title, a.workload, a.source_tool, a.priority,
+    a.risk_reason_name||'', a.risk_reason_category||'', a.risk_owner||'',
     a.risk_accepted_at?.substring(0,10)||'', a.risk_review_date||'', a.risk_expiry_date||'',
     a.risk_justification||'', a.max_score||0,
   ]);
   exportTableExcel(`risk-register-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}`, 'Risk Register',
-    ['ID','Title','Workload','Source','Priority','Owner','Accepted At','Review Date','Expiry Date','Justification','Max Score'], rows);
+    ['ID','Title','Workload','Source','Priority','Reason','Reason Category','Owner','Accepted At','Review Date','Expiry Date','Justification','Max Score'], rows);
 }
 
 function riskExportCsv() {
   const actions = riskFilteredActions();
   if (!actions.length) return toast('Nothing to export with current filters', 'error');
-  const header = ['ID','Title','Workload','Source','Priority','Owner','AcceptedAt','ReviewDate','ExpiryDate','Justification','MaxScore'];
+  const header = ['ID','Title','Workload','Source','Priority','Reason','ReasonCategory','Owner','AcceptedAt','ReviewDate','ExpiryDate','Justification','MaxScore'];
   const csvCell = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
   const rows = actions.map(a => [
-    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.id, a.title, a.workload, a.source_tool, a.priority,
+    a.risk_reason_name||'', a.risk_reason_category||'', a.risk_owner||'',
     a.risk_accepted_at||'', a.risk_review_date||'', a.risk_expiry_date||'',
     a.risk_justification||'', a.max_score||0,
   ].map(csvCell).join(','));
@@ -6878,10 +7193,15 @@ async function expireRisks() {
 }
 
 // ── Risk Acceptance Modal ──
-function showAcceptRisk(actionId) {
+async function showAcceptRisk(actionId) {
+  await riskEnsureReasons();
   openModal('Accept Risk', `
     <p style="margin-bottom:12px;color:var(--text-light)">Document the risk acceptance decision. The action will be marked as "Risk Accepted".</p>
-    <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Why is this risk being accepted?"></textarea></div>
+    <div class="form-group"><label>Reason — why can this not be implemented?</label>
+      ${riskReasonSelectHtml('ra-reason','')}
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">The reason powers management reporting ("N critical risks accepted due to missing licences"). Admins can extend the catalog via Risk Register &gt; Manage Reasons.</div>
+    </div>
+    <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Details for this specific control — why is the risk acceptable for now?"></textarea></div>
     <div class="form-group"><label>Risk Owner (required)</label>${userSelectHtml('ra-owner','',{required:true})}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="ra-review" type="date"></div>
@@ -6899,6 +7219,7 @@ async function acceptRisk(actionId) {
   if(!risk_owner) return toast('Risk owner is required','error');
   const data = {
     justification, risk_owner,
+    reason_id: document.getElementById('ra-reason')?.value || null,
     review_date: document.getElementById('ra-review').value || null,
     expiry_date: document.getElementById('ra-expiry').value || null,
     changed_by: document.getElementById('ra-by').value || '',
@@ -6909,6 +7230,209 @@ async function acceptRisk(actionId) {
   toast('Risk accepted', 'success');
   if(state.currentPage === 'actions') filterActions();
   else navigate(state.currentPage);
+}
+
+// ── Risk Analysis by Reason ──
+let _riskAnalysis = null;
+
+async function renderRiskAnalysis(tabBar) {
+  const t = state.activeTenant.name;
+  const analysis = await api.get(`/api/tenants/${t}/risk-analysis`);
+  if(analysis.error) return toast(analysis.error, 'error');
+  _riskAnalysis = analysis;
+
+  document.getElementById('topbar-actions').innerHTML = `
+    ${_authUser && _authUser.role === 'admin' ? '<button class="btn btn-sm" onclick="showManageReasons()">Manage Reasons</button>' : ''}
+    <button class="btn btn-sm" onclick="riskAnalysisExportExcel()">Export Excel</button>`;
+
+  const groups = analysis.by_reason || [];
+  const unassigned = analysis.unassigned || {count: 0};
+  const top = groups[0];
+
+  const catCards = (analysis.by_category||[]).map(c => `
+    <div class="card stat-card">
+      <div class="value">${c.count}</div>
+      <div class="label">${esc(c.category)}</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">${c.critical_high} critical/high · ${c.score_potential.toFixed(1)} pts blocked</div>
+    </div>`).join('');
+
+  const prioCell = g => {
+    const parts = [];
+    if(g.by_priority['Critical']) parts.push(`<span class="badge badge-danger">${g.by_priority['Critical']} Critical</span>`);
+    if(g.by_priority['High']) parts.push(`<span class="badge badge-warning">${g.by_priority['High']} High</span>`);
+    const rest = g.count - (g.by_priority['Critical']||0) - (g.by_priority['High']||0);
+    if(rest > 0) parts.push(`<span class="badge badge-gray">${rest} other</span>`);
+    return parts.join(' ');
+  };
+
+  const reasonRow = (g, idx) => `
+    <tr onclick="document.getElementById('ra-detail-${idx}').classList.toggle('hidden')" style="cursor:pointer" title="Click to show the affected actions">
+      <td><strong>${esc(g.name)}</strong>${g.description?`<div style="font-size:11px;color:var(--text-light)">${esc(g.description.substring(0,90))}</div>`:''}</td>
+      <td><span class="badge badge-info">${esc(g.category)}</span></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${g.count}</td>
+      <td>${prioCell(g)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${g.score_potential.toFixed(1)}</strong> pts${g.score_potential_pct?` <span style="color:var(--text-light);font-size:11px">(${g.score_potential_pct.toFixed(1)}%)</span>`:''}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${g.roi_total.toFixed(0)}</td>
+      <td style="font-size:11px">${Object.entries(g.workloads).map(([w,n])=>`${esc(w)} (${n})`).join(', ')}</td>
+    </tr>
+    <tr id="ra-detail-${idx}" class="hidden"><td colspan="7" style="padding:0;background:var(--bg)">
+      <table style="margin:0"><thead><tr><th>Action</th><th>Priority</th><th>Workload</th><th>Source</th><th style="text-align:right">Potential</th><th style="text-align:right">ROI</th><th>Owner</th><th>Expiry</th></tr></thead>
+      <tbody>${g.actions.map(a => `<tr onclick="openActionQuickView('${a.id}');event.stopPropagation()" style="cursor:pointer">
+        <td>${esc((a.title||'').substring(0,80))}</td>
+        <td>${priorityBadge(a.priority||'')}</td>
+        <td style="font-size:12px">${esc(a.workload||'')}</td>
+        <td style="font-size:12px">${esc(a.source_tool||'')}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${(a.score_potential||0).toFixed(1)}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${(a.roi||0).toFixed(1)}</td>
+        <td style="font-size:12px">${esc(a.risk_owner||'—')}</td>
+        <td style="font-size:12px">${esc(a.risk_expiry_date||'—')}</td>
+      </tr>`).join('')}</tbody></table>
+    </td></tr>`;
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16" style="border-left:4px solid var(--primary)">
+      <div style="font-size:14px">
+        <strong>${analysis.total_accepted}</strong> accepted risk(s) are excluded from remediation,
+        parking <strong>${analysis.total_score_potential.toFixed(1)}</strong> score points.
+        ${top ? `Top blocker: <strong>${esc(top.name)}</strong> — ${top.count} risk(s)${(top.by_priority['Critical']||0)+(top.by_priority['High']||0) ? ` (${(top.by_priority['Critical']||0)+(top.by_priority['High']||0)} critical/high)` : ''}, worth ${top.score_potential.toFixed(1)} points${top.score_potential_pct?` (~${top.score_potential_pct.toFixed(1)}% of the total score)`:''} if resolved.` : ''}
+      </div>
+      ${unassigned.count ? `<div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:6px;padding:6px 10px;margin-top:10px">&#9888; ${unassigned.count} acceptance(s) have no structured reason and are missing from this breakdown.
+        <a href="#" onclick="_riskState.tab='register';_riskState.filters.view='no-reason';renderRisks();return false">Assign reasons now</a></div>` : ''}
+    </div>
+
+    ${catCards ? `<div class="grid grid-4 mb-16">${catCards}</div>` : ''}
+
+    <div class="card">
+      <div class="card-header">What would unblock the most? <span style="font-weight:400;font-size:12px;color:var(--text-light)">— reasons ordered by blocked score potential; click a row for the affected actions</span></div>
+      ${groups.length ? `
+      <div class="table-wrap"><table id="risk-analysis-table">
+        <thead><tr><th>Reason</th><th>Category</th><th style="text-align:right">Risks</th><th>Priorities</th><th style="text-align:right">Score potential</th><th style="text-align:right">ROI Σ</th><th>Workloads</th></tr></thead>
+        <tbody>
+          ${groups.map((g, i) => reasonRow(g, i)).join('')}
+          ${unassigned.count ? reasonRow(unassigned, 'unassigned') : ''}
+        </tbody>
+      </table></div>` : `
+      <div style="padding:24px;text-align:center;color:var(--text-light)">
+        ${analysis.total_accepted ? 'No accepted risk has a structured reason yet — assign reasons in the Risk Register to populate this report.' : 'No accepted risks. When risks are accepted with a structured reason (licence gaps, missing staff, …) this report shows management what is parked behind which constraint.'}
+      </div>`}
+    </div>`;
+}
+
+function riskAnalysisExportExcel() {
+  const a = _riskAnalysis;
+  if(!a) return;
+  const groups = (a.by_reason||[]).concat(a.unassigned?.count ? [a.unassigned] : []);
+  if(!groups.length) return toast('Nothing to export', 'error');
+  const rows = groups.map(g => [
+    g.name, g.category, g.count,
+    g.by_priority['Critical']||0, g.by_priority['High']||0,
+    g.by_priority['Medium']||0, g.by_priority['Low']||0,
+    g.score_potential, g.score_potential_pct, g.roi_total,
+    Object.entries(g.workloads).map(([w,n])=>`${w} (${n})`).join(', '),
+    g.actions.map(x=>x.title).join(' | '),
+  ]);
+  exportTableExcel(`risk-analysis-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}`, 'Risk Analysis',
+    ['Reason','Category','Risks','Critical','High','Medium','Low','Score Potential','% of Total','ROI Sum','Workloads','Actions'], rows);
+}
+
+// ── Manage Risk Reasons (admin) ──
+let _reasonEditId = null;
+
+async function showManageReasons() {
+  _reasonEditId = null;
+  openModal('Manage Risk Reasons', '<div id="reason-mgr">Loading…</div>',
+    '<button class="btn" onclick="closeModal();if(state.currentPage===\'risks\')renderRisks()">Close</button>');
+  await renderReasonManager();
+}
+
+async function renderReasonManager() {
+  const el = document.getElementById('reason-mgr');
+  if(!el) return;
+  const reasons = await api.get('/api/risk-reasons?include_inactive=1');
+  _riskState.reasons = (reasons||[]).filter(r => r.is_active);
+  const cats = state.enums.risk_reason_categories || ['Licensing','Budget','Resources','Skills','Technical','Business','Other'];
+  const catOpts = sel => cats.map(c=>`<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+
+  const rows = (reasons||[]).map(r => _reasonEditId === r.id ? `
+    <tr style="background:var(--bg)">
+      <td><input id="re-name" value="${esc(r.name)}" style="width:100%"></td>
+      <td><select id="re-cat">${catOpts(r.category)}</select></td>
+      <td colspan="2"><input id="re-desc" value="${esc(r.description||'')}" style="width:100%" placeholder="Description"></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-primary" onclick="saveReasonEdit('${r.id}')">Save</button>
+        <button class="btn btn-sm" onclick="_reasonEditId=null;renderReasonManager()">Cancel</button>
+      </td>
+    </tr>` : `
+    <tr ${r.is_active?'':'style="opacity:.55"'}>
+      <td><strong>${esc(r.name)}</strong>${r.is_active?'':' <span class="badge badge-gray">deactivated</span>'}${r.description?`<div style="font-size:11px;color:var(--text-light)">${esc(r.description.substring(0,70))}</div>`:''}</td>
+      <td><span class="badge badge-info">${esc(r.category)}</span></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${r.active_usage||0}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">${r.total_usage||0}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="_reasonEditId='${r.id}';renderReasonManager()">Edit</button>
+        ${r.is_active
+          ? `<button class="btn btn-sm btn-danger" onclick="deleteReason('${r.id}','${esc(r.name).replace(/'/g,"\\'")}')" title="Delete (deactivates instead when in use)">&#x2715;</button>`
+          : `<button class="btn btn-sm" onclick="reactivateReason('${r.id}')">Reactivate</button>`}
+      </td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+      The shared catalog of acceptance reasons. Keep it curated — clean reasons make the
+      "Analysis by Reason" report meaningful. Deleting a reason that is in use deactivates it
+      instead, so historical acceptances keep their label.</p>
+    <div class="table-wrap mb-12"><table>
+      <thead><tr><th>Reason</th><th>Category</th><th style="text-align:right" title="Currently accepted risks using this reason">In use</th><th style="text-align:right" title="All actions ever labelled with this reason">Ever</th><th></th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" style="color:var(--text-light);padding:16px;text-align:center">No reasons defined.</td></tr>'}</tbody>
+    </table></div>
+    <div class="card" style="background:var(--bg)">
+      <strong style="font-size:13px">Add a reason</strong>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group"><label>Name</label><input id="re-new-name" placeholder="e.g. Defender for Cloud Apps licence required"></div>
+        <div class="form-group"><label>Category</label><select id="re-new-cat">${catOpts('Licensing')}</select></div>
+      </div>
+      <div class="form-group"><label>Description (optional)</label><input id="re-new-desc"></div>
+      <button class="btn btn-sm btn-primary" onclick="createReason()">Add Reason</button>
+    </div>`;
+}
+
+async function createReason() {
+  const name = document.getElementById('re-new-name').value.trim();
+  if(!name) return toast('Name is required', 'error');
+  const r = await api.post('/api/risk-reasons', {
+    name, category: document.getElementById('re-new-cat').value,
+    description: document.getElementById('re-new-desc').value.trim(),
+  });
+  if(r.error) return toast(r.error, 'error');
+  toast('Reason added', 'success');
+  renderReasonManager();
+}
+
+async function saveReasonEdit(id) {
+  const r = await api.put(`/api/risk-reasons/${id}`, {
+    name: document.getElementById('re-name').value.trim(),
+    category: document.getElementById('re-cat').value,
+    description: document.getElementById('re-desc').value.trim(),
+  });
+  if(r.error) return toast(r.error, 'error');
+  _reasonEditId = null;
+  toast('Reason updated', 'success');
+  renderReasonManager();
+}
+
+async function deleteReason(id, name) {
+  if(!await showConfirm('Delete Reason', `Delete "${name}"? If it is used by any acceptance it will be deactivated instead of deleted.`)) return;
+  const r = await api.del(`/api/risk-reasons/${id}`);
+  if(r.error) return toast(r.error, 'error');
+  toast(r.deactivated ? 'Reason deactivated (still referenced by acceptances)' : 'Reason deleted', 'success');
+  renderReasonManager();
+}
+
+async function reactivateReason(id) {
+  const r = await api.put(`/api/risk-reasons/${id}`, {is_active: true});
+  if(r.error) return toast(r.error, 'error');
+  toast('Reason reactivated', 'success');
+  renderReasonManager();
 }
 
 // ── Dependencies ──
@@ -7347,6 +7871,8 @@ async function renderCpUsers() {
   const users = await api.get('/api/control-plane/users');
   const tenants = await api.get('/api/tenants');
   const roleColors = {admin:'danger', analyst:'info', viewer:'gray', tenant_admin:'purple'};
+  // User management is admin-only server-side — hide the buttons that would 403
+  const canManage = _authUser && _authUser.role === 'admin';
 
   const rows = users.map(u => {
     const accessList = (u.tenant_access||[]).map(ta => {
@@ -7360,19 +7886,19 @@ async function renderCpUsers() {
       <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
       <td>${accessList||`<span style="color:var(--text-light);font-size:12px">${u.role==='admin'?'Full access':'No tenant access'}</span>`}</td>
       <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap">${canManage ? `
         <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')">&#x2715;</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')" aria-label="Delete user">&#x2715;</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 
-  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>`;
+  document.getElementById('topbar-actions').innerHTML = canManage ? `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>` : '';
   document.getElementById('content').innerHTML = `
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-8">
         <div class="card-header" style="margin:0">Application Users (${users.length})</div>
-        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>
+        ${canManage ? '<button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>' : '<span style="font-size:12px;color:var(--text-light)">Read-only — user management requires the admin role</span>'}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Tenant Access</th><th>Last Login</th><th></th></tr></thead>
@@ -7615,6 +8141,28 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
         <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
       </div>
+      <div class="form-group"><label>Cloud environment (login &amp; Graph endpoints)</label>
+        <select id="cpt-cloud" style="max-width:320px">
+          ${(state.enums.clouds||[{id:'global',label:'Global (Commercial / GCC)'}]).map(c =>
+            `<option value="${esc(c.id)}" ${c.id===(tenant.cloud||'global')?'selected':''}>${esc(c.label)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ga-detail-section">
+        <h4 style="margin-bottom:8px">Excluded Workloads</h4>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+          Checked workloads are <strong>hidden from all dashboards, reports, action lists, exports and scores</strong>
+          for this tenant — e.g. when Exchange is managed by another party. Imports keep updating the hidden
+          actions in the background, so unchecking a workload brings its current state straight back.
+        </p>
+        ${(() => {
+          let excl = [];
+          try { excl = JSON.parse(tenant.excluded_workloads||'[]')||[]; } catch(e) {}
+          return (state.enums.workloads||[]).map(w => `
+            <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 14px 3px 0;font-size:13px;cursor:pointer">
+              <input type="checkbox" class="cpt-excl-wl" value="${esc(w)}" ${excl.includes(w)?'checked':''}> ${esc(w)}
+            </label>`).join('');
+        })()}
+      </div>
       <div class="ga-detail-section" style="margin-top:4px">
         <h4 style="margin-bottom:8px">Certificate (app-only auth)</h4>
         ${tenant.certificate_path ? `
@@ -7717,14 +8265,27 @@ async function showCpTenantDetail(tenantName) {
 async function saveTenantConfigCp(tenantName) {
   const payload = {
     display_name: document.getElementById('cpt-display').value,
-    tenant_id: document.getElementById('cpt-tid').value,
-    client_id: document.getElementById('cpt-cid').value,
     notes: document.getElementById('cpt-notes').value,
+    excluded_workloads: [...document.querySelectorAll('.cpt-excl-wl:checked')].map(cb => cb.value),
   };
-  const secret = document.getElementById('cpt-secret').value;
-  if(secret && secret !== '***') payload.client_secret = secret;
+  // Credential-bearing fields require the admin role server-side — only
+  // include them for admins so a non-admin can still save name/notes.
+  if(_authUser && _authUser.role === 'admin') {
+    payload.tenant_id = document.getElementById('cpt-tid').value;
+    payload.client_id = document.getElementById('cpt-cid').value;
+    const cloudSel = document.getElementById('cpt-cloud');
+    if(cloudSel) payload.cloud = cloudSel.value;
+    const secret = document.getElementById('cpt-secret').value;
+    if(secret && secret !== '***') payload.client_secret = secret;
+  }
   const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
+  // Keep the cached active tenant (and its exclusion banner) in sync
+  if(state.activeTenant && state.activeTenant.name === tenantName) {
+    const active = await api.get('/api/active-tenant');
+    if(active && active.name) state.activeTenant = active;
+  }
+  state.tenants = await api.get('/api/tenants');
   toast('Tenant updated','success');
 }
 

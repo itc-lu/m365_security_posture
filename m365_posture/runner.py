@@ -38,7 +38,7 @@ from pathlib import Path
 from .database import Database
 from .import_pipeline import process_file_import, import_secure_scores_with_token
 
-TASK_TYPES = ("secure_score", "scuba", "zero_trust")
+TASK_TYPES = ("secure_score", "scuba", "zero_trust", "maester")
 
 # Only one tool run at a time — the PowerShell tools are heavy and the
 # import pipeline writes to the same SQLite file.
@@ -65,16 +65,18 @@ def _acquire_app_token(tenant: dict) -> str:
         raise RuntimeError(
             "Tenant needs tenant_id and client_id configured for unattended runs.")
 
+    cloud = tenant.get("cloud") or "global"
     cert_path = tenant.get("certificate_path", "")
     if cert_path and Database.auth_method_enabled(tenant, "certificate"):
         result = client_credentials_token_cert(
             tenant_id, client_id, cert_path,
-            tenant.get("certificate_thumbprint", ""))
+            tenant.get("certificate_thumbprint", ""), cloud=cloud)
         return result["access_token"]
 
     client_secret = tenant.get("client_secret", "")
     if client_secret and Database.auth_method_enabled(tenant, "client_secret"):
-        result = client_credentials_token(tenant_id, client_id, client_secret)
+        result = client_credentials_token(tenant_id, client_id, client_secret,
+                                          cloud=cloud)
         return result["access_token"]
 
     raise RuntimeError(
@@ -89,7 +91,8 @@ def run_secure_score(db: Database, tenant_name: str) -> dict:
     if not tenant:
         raise RuntimeError(f"Tenant '{tenant_name}' not found")
     token = _acquire_app_token(tenant)
-    result = import_secure_scores_with_token(db, tenant_name, token)
+    result = import_secure_scores_with_token(
+        db, tenant_name, token, cloud=tenant.get("cloud") or "global")
     return {
         "summary": (f"Imported {result['total_parsed']} controls "
                     f"({result['new_actions']} new, {result['updated_actions']} updated), "
@@ -131,6 +134,12 @@ def _proc_failure_detail(label: str, proc) -> str:
     return "\n".join(parts)
 
 
+def _ps_quote(value: str) -> str:
+    """Quote a value for a PowerShell single-quoted string literal.
+    Doubling embedded single quotes is the only escape needed."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _module_import_prefix(module_path: str, module_name: str) -> str:
     """PowerShell snippet importing a module from a local folder (a git
     checkout or extracted release) instead of the installed module."""
@@ -147,11 +156,20 @@ def _module_import_prefix(module_path: str, module_name: str) -> str:
     for c in candidates:
         if (os.path.isfile(os.path.join(c, f"{module_name}.psd1"))
                 or os.path.isfile(os.path.join(c, f"{module_name}.psm1"))):
-            return f"Import-Module '{c}' -Force; "
+            return f"Import-Module {_ps_quote(c)} -Force; "
     raise RuntimeError(
         f"No {module_name} module found under '{module_path}'. Point the "
         f"folder setting at the {module_name} checkout (containing "
         f"PowerShell/{module_name}) or at the module folder itself.")
+
+
+def _config_timeout(cfg: dict, default: int = 3600) -> int:
+    """Read the run timeout from a tool config, tolerating bad values."""
+    try:
+        value = int(cfg.get("timeout", default))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
 
 
 def run_scuba(db: Database, tenant_name: str) -> dict:
@@ -189,11 +207,11 @@ def run_scuba(db: Database, tenant_name: str) -> dict:
             f.write(config_yaml)
         # Command-line parameters override config-file values in ScubaGear,
         # so -OutPath reliably lands the report where we can pick it up.
-        cmd = (f"{import_prefix}Invoke-SCuBA -ConfigFilePath '{cfg_file}' "
-               f"-OutPath '{out_dir}' -Quiet $true")
+        cmd = (f"{import_prefix}Invoke-SCuBA -ConfigFilePath {_ps_quote(cfg_file)} "
+               f"-OutPath {_ps_quote(out_dir)} -Quiet $true")
 
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
-                               timeout=int(cfg.get("timeout", 3600)))
+                               timeout=_config_timeout(cfg))
         if proc.returncode != 0:
             raise RuntimeError(_proc_failure_detail("Invoke-SCuBA", proc))
 
@@ -240,12 +258,12 @@ def run_zero_trust(db: Database, tenant_name: str) -> dict:
 
     out_dir = tempfile.mkdtemp(prefix="zt_run_")
     try:
-        cmd = f"{import_prefix}Invoke-ZTAssessment -Path '{out_dir}'"
+        cmd = f"{import_prefix}Invoke-ZTAssessment -Path {_ps_quote(out_dir)}"
         extra = cfg.get("extra_args", "").strip()
         if extra:
             cmd += " " + extra
         proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
-                               timeout=int(cfg.get("timeout", 3600)))
+                               timeout=_config_timeout(cfg))
         if proc.returncode != 0:
             raise RuntimeError(_proc_failure_detail("Invoke-ZTAssessment", proc))
 
@@ -277,11 +295,89 @@ def run_zero_trust(db: Database, tenant_name: str) -> dict:
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def run_maester(db: Database, tenant_name: str) -> dict:
+    """Run Maester (Invoke-Maester) and import the resulting report.
+
+    Maester relies on an existing Graph/EXO/Teams connection. For unattended
+    runs, the admin configures a *connect command* (PowerShell executed before
+    Invoke-Maester, e.g. ``Connect-MgGraph -ClientId .. -TenantId ..
+    -CertificateThumbprint ..``); interactive contexts can leave it empty when
+    the Maester module handles authentication itself.
+    """
+    tenant = db.get_tenant(tenant_name)
+    if not tenant:
+        raise RuntimeError(f"Tenant '{tenant_name}' not found")
+    cfg = db.get_tool_config(tenant_name, "maester")
+    ps_cfg = db.get_tool_config(tenant_name, "powershell")
+    pwsh = find_pwsh(ps_cfg)
+    if not pwsh:
+        raise RuntimeError(
+            "PowerShell not found. Install PowerShell 7 (pwsh) and the "
+            "Maester module (Install-Module Maester), or set the PowerShell "
+            "path in the tool configuration.")
+
+    import_prefix = _module_import_prefix(
+        (cfg.get("module_path") or "").strip(), "Maester")
+
+    out_dir = tempfile.mkdtemp(prefix="maester_run_")
+    try:
+        connect = (cfg.get("connect_command") or "").strip()
+        cmd = f"{import_prefix}"
+        if connect:
+            cmd += f"{connect}; "
+        cmd += f"Invoke-Maester -OutputFolder {_ps_quote(out_dir)} -NonInteractive"
+        extra = (cfg.get("extra_args") or "").strip()
+        if extra:
+            cmd += " " + extra
+
+        proc = _run_powershell(pwsh, f"$ErrorActionPreference='Stop'; {cmd}",
+                               timeout=_config_timeout(cfg))
+        if proc.returncode != 0:
+            raise RuntimeError(_proc_failure_detail("Invoke-Maester", proc))
+
+        results = (glob.glob(os.path.join(out_dir, "**", "*test*results*.json"),
+                             recursive=True)
+                   or glob.glob(os.path.join(out_dir, "**", "*.json"),
+                                recursive=True))
+        if not results:
+            raise RuntimeError(
+                "Maester finished but produced no results JSON.\n"
+                "--- stdout (last lines) ---\n" + _tail(proc.stdout))
+
+        zip_path = os.path.join(tempfile.gettempdir(),
+                                f"maester_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip")
+        _zip_directory(out_dir, zip_path)
+        try:
+            result = process_file_import(
+                db, tenant_name, "maester", zip_path,
+                f"scheduled_maester_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.zip")
+        finally:
+            os.unlink(zip_path)
+        return {
+            "summary": (f"Maester run imported: {result['total_parsed']} tests "
+                        f"({result['new_actions']} new, {result['updated_actions']} updated)"),
+            "result": result,
+            "report_id": result.get("maester_report_id", ""),
+        }
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 _TASK_RUNNERS = {
     "secure_score": run_secure_score,
     "scuba": run_scuba,
     "zero_trust": run_zero_trust,
+    "maester": run_maester,
 }
+
+
+def _notify_failure(db: Database, tenant_name: str, task_type: str, detail: str):
+    """Best-effort failure notification — must never mask the original error."""
+    try:
+        from .notifications import notify_run_failure
+        notify_run_failure(db, tenant_name, task_type, detail)
+    except Exception:
+        traceback.print_exc()
 
 
 def execute_task(db: Database, tenant_name: str, task_type: str,
@@ -302,6 +398,7 @@ def execute_task(db: Database, tenant_name: str, task_type: str,
         except Exception as e:
             db.finish_tool_run(run_id, "error", str(e))
             status = "error"
+            _notify_failure(db, tenant_name, task_type, str(e))
         if trigger == "schedule":
             db.mark_schedule_run(tenant_name, task_type, status)
     return run_id
@@ -324,6 +421,7 @@ def execute_task_async(db_path: str, tenant_name: str, task_type: str,
                                           outcome.get("report_id", ""))
             except Exception as e:
                 worker_db.finish_tool_run(run_id, "error", str(e))
+                _notify_failure(worker_db, tenant_name, task_type, str(e))
 
     threading.Thread(target=_work, daemon=True).start()
     return run_id
@@ -357,12 +455,22 @@ def start_scheduler(db_path: str, poll_seconds: int = 60):
         except Exception:
             traceback.print_exc()
 
+        last_risk_check = 0.0
         while True:
             try:
                 db = Database(db_path)
                 for sched in db.get_due_schedules():
                     execute_task(db, sched["tenant_name"], sched["task_type"],
                                  trigger="schedule")
+                # Risk-acceptance expiry digest: check a few times per day;
+                # the digest itself de-duplicates to at most one per ~day.
+                if time.time() - last_risk_check > 6 * 3600:
+                    last_risk_check = time.time()
+                    try:
+                        from .notifications import run_risk_expiry_checks
+                        run_risk_expiry_checks(db)
+                    except Exception:
+                        traceback.print_exc()
             except Exception:
                 traceback.print_exc()
             time.sleep(poll_seconds)

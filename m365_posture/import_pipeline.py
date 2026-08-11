@@ -20,7 +20,7 @@ from pathlib import Path
 from .models import SourceTool
 from .parsers import (
     SecureScoreParser, ScubaParser, ZeroTrustParser, ZeroTrustReportParser,
-    SCTParser, M365AssessParser,
+    SCTParser, M365AssessParser, MaesterParser,
     enrich_actions_from_controls, parse_graph_control_profiles,
 )
 from .essential_eight import apply_e8_mapping
@@ -35,6 +35,7 @@ PARSER_MAP = {
     "zero-trust-report": (ZeroTrustReportParser, SourceTool.ZERO_TRUST_REPORT.value),
     "sct": (SCTParser, SourceTool.SCT.value),
     "m365-assess": (M365AssessParser, SourceTool.M365_ASSESS.value),
+    "maester": (MaesterParser, SourceTool.MAESTER.value),
 }
 
 
@@ -214,6 +215,67 @@ def store_scuba_report(db, tenant_name: str, filename: str, tmp_path: str,
     return db.store_scuba_report(tenant_name, report_data)
 
 
+def store_maester_report(db, tenant_name: str, filename: str, tmp_path: str,
+                         parser, actions) -> str:
+    """Store Maester report HTML files and save metadata to DB."""
+    reports_dir = Path(db.db_path).parent / "maester_reports" / tenant_name
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    report_id = str(uuid.uuid4())[:8]
+    report_dir = reports_dir / report_id
+    report_dir.mkdir(exist_ok=True)
+
+    html_path = ""
+
+    if Path(tmp_path).suffix.lower() == ".zip":
+        extract_dir = getattr(parser, "_extract_dir", None)
+        if extract_dir and Path(extract_dir).exists():
+            for item in Path(extract_dir).iterdir():
+                dest = report_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
+                else:
+                    shutil.copy2(str(item), str(dest))
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        for html_file in report_dir.rglob("*.html"):
+            html_path = str(html_file)
+            break
+    else:
+        shutil.copy2(tmp_path, str(report_dir / filename))
+
+    metadata = getattr(parser, "report_metadata", {}) or {}
+    summary = getattr(parser, "test_summary", {}) or {}
+    status_counts = Counter(a.status for a in actions)
+    report_data = {
+        "id": report_id,
+        "imported_at": datetime.utcnow().isoformat(),
+        "executed_at": metadata.get("executed_at", ""),
+        "report_tenant_id": metadata.get("tenant_id", ""),
+        "report_tenant_name": metadata.get("tenant_name", ""),
+        "report_account": metadata.get("account", ""),
+        "tool_version": metadata.get("tool_version", ""),
+        "total_tests": summary.get("total", len(actions)),
+        "passed_tests": summary.get("passed", status_counts.get("Completed", 0)),
+        "failed_tests": summary.get("failed", status_counts.get("ToDo", 0)),
+        "skipped_tests": summary.get("skipped", status_counts.get("Not Applicable", 0)),
+        "source_file": filename,
+        "html_path": html_path,
+    }
+    return db.store_maester_report(tenant_name, report_data)
+
+
+def _notify_import(db, tenant_name: str, result: dict) -> None:
+    """Best-effort notification hook — an unreachable mail server must never
+    fail an import."""
+    try:
+        from .notifications import notify_import_events
+        outcome = notify_import_events(db, tenant_name, result)
+        if outcome.get("sent") or outcome.get("errors"):
+            result["notifications"] = outcome
+    except Exception:
+        pass
+
+
 def process_file_import(db, tenant_name: str, source: str,
                         file_path: str, filename: str,
                         force_tenant: bool = False) -> dict:
@@ -223,11 +285,19 @@ def process_file_import(db, tenant_name: str, source: str,
     (unless force_tenant is set)."""
     parser_cls, source_tool = PARSER_MAP[source]
     parser = parser_cls()
+    import_started = datetime.utcnow().isoformat()
     actions = parser.parse_file(file_path)
 
     # Guard against importing a report into the wrong tenant.
     if not force_tenant:
-        _verify_report_tenant(db, tenant_name, parser)
+        try:
+            _verify_report_tenant(db, tenant_name, parser)
+        except TenantMismatchError:
+            # The rejected upload must not leave its extracted ZIP behind.
+            extract_dir = getattr(parser, "_extract_dir", None)
+            if extract_dir:
+                shutil.rmtree(extract_dir, ignore_errors=True)
+            raise
 
     actions = apply_e8_mapping(actions)
     actions = enrich_actions_from_controls(db, actions)
@@ -245,6 +315,10 @@ def process_file_import(db, tenant_name: str, source: str,
     if source == "scuba":
         scuba_report_id = store_scuba_report(db, tenant_name, filename, file_path, parser, actions)
 
+    maester_report_id = None
+    if source == "maester":
+        maester_report_id = store_maester_report(db, tenant_name, filename, file_path, parser, actions)
+
     corr = auto_correlate(db, tenant_name)
     compliance = auto_map_compliance(db, tenant_name)
     snapshot = db.take_score_snapshot(tenant_name, trigger=f"import:{source}")
@@ -253,13 +327,15 @@ def process_file_import(db, tenant_name: str, source: str,
 
     protected_actions = [d for d in updated_details if d.get("status_protected")]
 
-    # Stale actions: same source_tool but not touched by this import
+    # Stale actions: same source_tool but not touched by this import.
+    # Everything present in the report was stamped with a fresh
+    # last_seen_in_report during merge, so anything older than the import
+    # start no longer appears in the tool's latest report.
     all_tenant_actions = db.get_actions(tenant_name)
-    import_ts = datetime.utcnow().isoformat()
     stale_actions = []
     for a in all_tenant_actions:
         if a["source_tool"] == source_tool and a.get("last_seen_in_report"):
-            if a["last_seen_in_report"] < import_ts[:10]:
+            if a["last_seen_in_report"] < import_started:
                 stale_actions.append({
                     "id": a["id"], "title": a["title"],
                     "status": a["status"],
@@ -297,20 +373,25 @@ def process_file_import(db, tenant_name: str, source: str,
         result["zt_report_id"] = zt_report_id
     if scuba_report_id:
         result["scuba_report_id"] = scuba_report_id
+    if maester_report_id:
+        result["maester_report_id"] = maester_report_id
+    _notify_import(db, tenant_name, result)
     return result
 
 
-def import_secure_scores_with_token(db, tenant_name: str, access_token: str) -> dict:
+def import_secure_scores_with_token(db, tenant_name: str, access_token: str,
+                                    cloud: str = "global") -> dict:
     """Import Secure Score data from the Graph API with an existing token.
 
     Fetches scores and control profiles, merges actions, updates the
     reference control table and runs the full post-import processing.
+    ``cloud`` selects the national-cloud Graph endpoint.
     """
     from .graph_api import fetch_secure_scores, fetch_control_profiles
 
-    scores_data = fetch_secure_scores(access_token)
+    scores_data = fetch_secure_scores(access_token, cloud=cloud)
     try:
-        profiles_data = fetch_control_profiles(access_token)
+        profiles_data = fetch_control_profiles(access_token, cloud=cloud)
     except Exception:
         profiles_data = None
 
@@ -344,7 +425,7 @@ def import_secure_scores_with_token(db, tenant_name: str, access_token: str) -> 
 
     protected_actions = [d for d in updated_details if d.get("status_protected")]
 
-    return {
+    result = {
         "success": True,
         "source": "Microsoft Graph API",
         "total_parsed": len(actions),
@@ -360,3 +441,5 @@ def import_secure_scores_with_token(db, tenant_name: str, access_token: str) -> 
         "unmatched_controls": getattr(parser, "_unmatched_controls", []),
         "duplicates_removed": dedup.get("removed", 0),
     }
+    _notify_import(db, tenant_name, result)
+    return result

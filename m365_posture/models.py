@@ -60,6 +60,7 @@ class Workload(str, Enum):
     DEFENDER = "Defender"
     INTUNE = "Intune"
     PURVIEW = "Purview"
+    COPILOT = "Copilot & AI"
     GENERAL = "General"
 
 
@@ -70,6 +71,7 @@ class SourceTool(str, Enum):
     ZERO_TRUST_REPORT = "Zero Trust Report"
     SCT = "Security Compliance Toolkit"
     M365_ASSESS = "M365-Assess"
+    MAESTER = "Maester"
     MANUAL = "Manual"
 
 
@@ -108,6 +110,18 @@ class UserRole(str, Enum):
 class GlobalActionReviewStatus(str, Enum):
     TO_REVIEW = "To Review"
     REVIEWED = "Reviewed"
+
+
+class RiskReasonCategory(str, Enum):
+    """Why an accepted risk cannot (yet) be remediated — the axis management
+    reports aggregate on ("12 critical risks accepted for licensing reasons")."""
+    LICENSING = "Licensing"
+    BUDGET = "Budget"
+    RESOURCES = "Resources"
+    SKILLS = "Skills"
+    TECHNICAL = "Technical"
+    BUSINESS = "Business"
+    OTHER = "Other"
 
 
 @dataclass
@@ -218,6 +232,8 @@ class TenantConfig:
     certificate_path: str = ""
     certificate_thumbprint: str = ""
     use_interactive: bool = False
+    # National cloud: global | usgov | usgovdod | china
+    cloud: str = "global"
     notes: str = ""
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

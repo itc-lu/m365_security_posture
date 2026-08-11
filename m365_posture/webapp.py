@@ -21,7 +21,7 @@ from .models import (
     Action, TenantConfig, ActionStatus, Priority, RiskLevel,
     UserImpact, ImplementationEffort, SourceTool, Workload,
     EssentialEightControl, EssentialEightMaturity, ComplianceFramework,
-    GlobalAction, UserRole,
+    GlobalAction, UserRole, RiskReasonCategory,
 )
 from .parsers import load_seed_controls, parse_graph_control_profiles
 from .essential_eight import apply_e8_mapping, get_e8_summary
@@ -34,6 +34,7 @@ from .graph_api import (
     fetch_control_profiles, client_credentials_token,
     client_credentials_token_cert, thumbprint_from_pem,
     start_interactive_auth, exchange_auth_code,
+    CLOUD_ENDPOINTS,
 )
 from .import_pipeline import (
     PARSER_MAP, TenantMismatchError, process_file_import,
@@ -51,6 +52,11 @@ def _check_login_rate_limit(ip: str) -> bool:
     now = time.time()
     window = 300  # 5 minutes
     max_attempts = 10
+    # Prune stale IPs so the map cannot grow without bound
+    if len(_login_attempts) > 1000:
+        for key in [k for k, v in _login_attempts.items()
+                    if not v or now - v[-1] >= window]:
+            _login_attempts.pop(key, None)
     attempts = _login_attempts.get(ip, [])
     attempts = [t for t in attempts if now - t < window]
     if len(attempts) >= max_attempts:
@@ -189,6 +195,9 @@ def create_app(db_path: str = None) -> Flask:
             "e8_maturities": [m.value for m in EssentialEightMaturity],
             "import_sources": list(PARSER_MAP.keys()),
             "compliance_frameworks": [f.value for f in ComplianceFramework],
+            "clouds": [{"id": k, "label": v.get("label", k)}
+                       for k, v in CLOUD_ENDPOINTS.items()],
+            "risk_reason_categories": [c.value for c in RiskReasonCategory],
         })
 
     # ── Tenant endpoints ──
@@ -208,6 +217,10 @@ def create_app(db_path: str = None) -> Flask:
         existing = db.get_tenant(name)
         if existing:
             return _json_error(f"Tenant '{name}' already exists")
+        cloud = data.get("cloud", "global")
+        if cloud not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
         config = TenantConfig(
             tenant_id=data.get("tenant_id", ""),
             tenant_name=name,
@@ -217,6 +230,7 @@ def create_app(db_path: str = None) -> Flask:
             certificate_path=data.get("certificate_path", ""),
             certificate_thumbprint=data.get("certificate_thumbprint", ""),
             use_interactive=data.get("use_interactive", False),
+            cloud=cloud,
             notes=data.get("notes", ""),
         )
         tenant = db.create_tenant(name, config)
@@ -229,14 +243,39 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Tenant not found", 404)
         return jsonify(_redact_tenant(tenant))
 
+    # Credential-bearing tenant fields only admins may change: they control
+    # which Entra app/certificate the tool authenticates with (and against
+    # which cloud), so letting a non-admin repoint them is an escalation path.
+    _TENANT_CREDENTIAL_FIELDS = {
+        "tenant_id", "client_id", "client_secret",
+        "certificate_path", "certificate_thumbprint", "auth_methods", "cloud",
+    }
+
+    def _validate_excluded_workloads(value):
+        """excluded_workloads must be a list of known workload names."""
+        if not isinstance(value, list):
+            return "excluded_workloads must be a list"
+        valid = {w.value for w in Workload}
+        bad = [w for w in value if w not in valid]
+        if bad:
+            return (f"Unknown workload(s): {', '.join(map(str, bad))}. "
+                    f"Valid: {', '.join(sorted(valid))}")
+        return None
+
     @app.route("/api/tenants/<name>", methods=["PUT"])
     def api_update_tenant(name):
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
         data = request.get_json() or {}
-        # Only admins may update client_secret
-        if "client_secret" in data and session.get("role") != "admin":
-            return _json_error("Admin role required to update client_secret", 403)
+        if (_TENANT_CREDENTIAL_FIELDS & set(data.keys())) and session.get("role") != "admin":
+            return _json_error("Admin role required to update tenant credentials", 403)
+        if "cloud" in data and data["cloud"] not in CLOUD_ENDPOINTS:
+            return _json_error(
+                f"Invalid cloud. Valid: {', '.join(CLOUD_ENDPOINTS.keys())}")
+        if "excluded_workloads" in data:
+            err = _validate_excluded_workloads(data["excluded_workloads"])
+            if err:
+                return _json_error(err)
         tenant = db.update_tenant(name, **data)
         # Invalidate any cached Graph auth tokens for this tenant when the
         # credentials they were obtained against may have changed -- otherwise
@@ -381,7 +420,14 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/api/actions/<action_id>", methods=["PUT"])
     def api_update_action(action_id):
         data = request.get_json() or {}
-        changed_by = data.pop("changed_by", "")
+        # Prefer the authenticated session identity over a client-supplied name
+        # so the change history cannot be attributed to someone else.
+        changed_by = session.get("username") or data.pop("changed_by", "")
+        data.pop("changed_by", None)
+        # A structured risk reason must exist in the catalog (empty clears it)
+        if data.get("risk_reason_id"):
+            if not db.get_risk_reason(data["risk_reason_id"]):
+                return _json_error("Unknown risk reason")
         action = db.update_action(action_id, data, changed_by)
         if not action:
             return _json_error("Action not found", 404)
@@ -786,6 +832,44 @@ def create_app(db_path: str = None) -> Flask:
         import mimetypes
         mime = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
         return send_file(str(full_path), mimetype=mime)
+
+    # ── Maester report endpoints ──
+
+    @app.route("/api/tenants/<name>/maester-reports", methods=["GET"])
+    def api_maester_reports(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_maester_reports(name))
+
+    @app.route("/api/maester-reports/<report_id>", methods=["GET"])
+    def api_maester_report_detail(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        return jsonify(report)
+
+    @app.route("/api/maester-reports/<report_id>", methods=["DELETE"])
+    def api_maester_report_delete(report_id):
+        """Remove a stored Maester report record and its files (imported
+        actions are kept — clean those up via the Actions page if needed)."""
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        db.delete_maester_report(report_id)
+        db.audit("maester_report.delete", actor=session.get("username"),
+                 entity_type="tenant", entity_id=report.get("tenant_name"),
+                 detail=report_id)
+        return jsonify({"deleted": True})
+
+    @app.route("/api/maester-reports/<report_id>/html", methods=["GET"])
+    def api_maester_report_html(report_id):
+        report = db.get_maester_report(report_id)
+        if not report:
+            return _json_error("Report not found", 404)
+        html_path = report.get("html_path", "")
+        if not html_path or not Path(html_path).exists():
+            return _json_error("HTML report file not found", 404)
+        return send_file(html_path, mimetype="text/html")
 
     # ── Import history ──
 
@@ -1283,9 +1367,9 @@ def create_app(db_path: str = None) -> Flask:
         if not action_ids or not status:
             return _json_error("action_ids and status required")
         updated = 0
+        changed_by = session.get("username") or data.get("changed_by", "batch")
         for aid in action_ids:
-            result = db.update_action(aid, {"status": status},
-                                       changed_by=data.get("changed_by", "batch"))
+            result = db.update_action(aid, {"status": status}, changed_by=changed_by)
             if result:
                 updated += 1
         return jsonify({"updated": updated})
@@ -1511,7 +1595,42 @@ def create_app(db_path: str = None) -> Flask:
                 f"attachment; filename=actions_{name}_{stamp}.xlsx"
             return resp
 
-        return _json_error("format must be 'csv', 'json' or 'xlsx'")
+        if fmt == "md":
+            tenant = db.get_tenant(name)
+            scores = db.get_scores(name)
+
+            def _cell(value):
+                # Keep Markdown table structure intact regardless of content
+                return str(value if value is not None else "").replace(
+                    "|", "\\|").replace("\n", " ").strip()
+
+            lines = [
+                f"# Security Actions — {tenant.get('display_name') or name}",
+                "",
+                f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+                + (f" · Filters: {', '.join(f'{k}={v}' for k, v in filters.items())}"
+                   if filters else ""),
+                "",
+                f"**Overall score:** {scores.get('percentage', 0)}% · "
+                f"**Actions exported:** {len(actions)} · "
+                f"**Completed:** {sum(1 for a in actions if a.get('status') == 'Completed')}",
+                "",
+                "| Title | Status | Priority | Workload | Source | Score |",
+                "|---|---|---|---|---|---|",
+            ]
+            for a in actions:
+                score = (f"{a.get('score', 0) or 0:g}/{a.get('max_score', 0) or 0:g}"
+                         if a.get("max_score") is not None else "—")
+                lines.append(
+                    f"| {_cell(a.get('title'))[:120]} | {_cell(a.get('status'))} "
+                    f"| {_cell(a.get('priority'))} | {_cell(a.get('workload'))} "
+                    f"| {_cell(a.get('source_tool'))} | {score} |")
+            resp = Response("\n".join(lines) + "\n", mimetype="text/markdown")
+            resp.headers["Content-Disposition"] = \
+                f"attachment; filename=actions_{name}_{stamp}.md"
+            return resp
+
+        return _json_error("format must be 'csv', 'json', 'xlsx' or 'md'")
 
     # ── Export endpoint ──
 
@@ -1555,11 +1674,18 @@ def create_app(db_path: str = None) -> Flask:
             else:
                 return _json_error(f"Unknown format: {fmt}")
 
-            return send_file(tmp_path, mimetype=mime, as_attachment=True,
-                             download_name=fname)
+            # Read into memory so the temp file can be removed immediately
+            # instead of accumulating in the temp directory.
+            with open(tmp_path, "rb") as f:
+                content = f.read()
+            resp = Response(content, mimetype=mime)
+            resp.headers["Content-Disposition"] = f"attachment; filename={fname}"
+            return resp
         finally:
-            # Cleanup will happen after response
-            pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     # ── Score Trending endpoints ──
 
@@ -1633,6 +1759,106 @@ def create_app(db_path: str = None) -> Flask:
         result = auto_map_compliance(db, name, frameworks)
         return jsonify(result)
 
+    # ── Risk Reasons (structured acceptance reasons) ──
+
+    @app.route("/api/risk-reasons", methods=["GET"])
+    def api_list_risk_reasons():
+        include_inactive = request.args.get("include_inactive") == "1"
+        return jsonify(db.list_risk_reasons(include_inactive=include_inactive))
+
+    @app.route("/api/risk-reasons", methods=["POST"])
+    @require_role("admin")
+    def api_create_risk_reason():
+        data = request.get_json() or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return _json_error("name is required")
+        category = data.get("category") or RiskReasonCategory.OTHER.value
+        if category not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        try:
+            reason = db.create_risk_reason(name, category,
+                                           data.get("description", ""))
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.create", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason["id"], detail=name)
+        return jsonify(reason), 201
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["PUT"])
+    @require_role("admin")
+    def api_update_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        data = request.get_json() or {}
+        if "category" in data and data["category"] not in [c.value for c in RiskReasonCategory]:
+            return _json_error(
+                f"Invalid category. Valid: {', '.join(c.value for c in RiskReasonCategory)}")
+        if "name" in data and not (data.get("name") or "").strip():
+            return _json_error("name cannot be empty")
+        try:
+            reason = db.update_risk_reason(reason_id, **data)
+        except ValueError as e:
+            return _json_error(str(e))
+        db.audit("risk_reason.update", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id)
+        return jsonify(reason)
+
+    @app.route("/api/risk-reasons/<reason_id>", methods=["DELETE"])
+    @require_role("admin")
+    def api_delete_risk_reason(reason_id):
+        if not db.get_risk_reason(reason_id):
+            return _json_error("Reason not found", 404)
+        result = db.delete_risk_reason(reason_id)
+        db.audit("risk_reason.delete", actor=session.get("username"),
+                 entity_type="risk_reason", entity_id=reason_id,
+                 detail="deactivated" if result.get("deactivated") else "deleted")
+        return jsonify(result)
+
+    @app.route("/api/tenants/<name>/risk-analysis", methods=["GET"])
+    def api_risk_analysis(name):
+        """Accepted risks grouped by structured reason — the management view
+        of what is parked behind which constraint and what resolving it
+        would unlock."""
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        return jsonify(db.get_risk_analysis(name))
+
+    @app.route("/api/control-plane/risk-analysis", methods=["GET"])
+    def api_cp_risk_analysis():
+        """Cross-tenant rollup: per reason, how many risks each tenant has
+        accepted and the combined unlock potential."""
+        tenants = [t["name"] for t in db.list_tenants()]
+        rollup: dict = {}
+        totals = {"total_accepted": 0, "score_potential": 0.0}
+        for tenant in tenants:
+            analysis = db.get_risk_analysis(tenant)
+            totals["total_accepted"] += analysis["total_accepted"]
+            groups = analysis["by_reason"] + (
+                [analysis["unassigned"]] if analysis["unassigned"]["count"] else [])
+            for g in groups:
+                key = g["reason_id"] or "__unassigned__"
+                entry = rollup.setdefault(key, {
+                    "reason_id": g["reason_id"], "name": g["name"],
+                    "category": g["category"], "count": 0,
+                    "critical_high": 0, "score_potential": 0.0,
+                    "by_tenant": {},
+                })
+                entry["count"] += g["count"]
+                entry["critical_high"] += (g["by_priority"].get("Critical", 0)
+                                           + g["by_priority"].get("High", 0))
+                entry["score_potential"] = round(
+                    entry["score_potential"] + g["score_potential"], 2)
+                entry["by_tenant"][tenant] = {
+                    "count": g["count"],
+                    "score_potential": g["score_potential"],
+                }
+                totals["score_potential"] = round(
+                    totals["score_potential"] + g["score_potential"], 2)
+        reasons = sorted(rollup.values(), key=lambda r: -r["score_potential"])
+        return jsonify({"tenants": tenants, "reasons": reasons, "totals": totals})
+
     # ── Risk Acceptance endpoints ──
 
     @app.route("/api/actions/<action_id>/accept-risk", methods=["POST"])
@@ -1644,11 +1870,19 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("justification is required")
         if not risk_owner:
             return _json_error("risk_owner is required")
+        reason_id = (data.get("reason_id") or "").strip() or None
+        if reason_id:
+            reason = db.get_risk_reason(reason_id)
+            if not reason:
+                return _json_error("Unknown risk reason")
+            if not reason.get("is_active", True):
+                return _json_error("This risk reason has been deactivated")
         result = db.accept_risk(
             action_id, justification, risk_owner,
             review_date=data.get("review_date"),
             expiry_date=data.get("expiry_date"),
-            changed_by=data.get("changed_by", ""),
+            changed_by=session.get("username") or data.get("changed_by", ""),
+            reason_id=reason_id,
         )
         if not result:
             return _json_error("Action not found", 404)
@@ -1724,12 +1958,14 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = start_device_code_flow(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            result = start_device_code_flow(tenant_id, client_id, cloud=cloud)
             # Store the flow for polling
             _device_flows[name] = {
                 "device_code": result["device_code"],
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "expires_at": datetime.utcnow().timestamp() + result.get("expires_in", 900),
             }
             return jsonify({
@@ -1753,7 +1989,9 @@ def create_app(db_path: str = None) -> Flask:
             _device_flows.pop(name, None)
             return _json_error("Device code expired. Please start a new flow.")
 
-        result = poll_for_token(flow["tenant_id"], flow["client_id"], flow["device_code"])
+        result = poll_for_token(flow["tenant_id"], flow["client_id"],
+                                flow["device_code"],
+                                cloud=flow.get("cloud", "global"))
 
         if "access_token" in result:
             # Store token temporarily, remove device code
@@ -1787,7 +2025,10 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            result = import_secure_scores_with_token(db, name, flow["access_token"])
+            tenant = db.get_tenant(name) or {}
+            result = import_secure_scores_with_token(
+                db, name, flow["access_token"],
+                cloud=tenant.get("cloud") or "global")
             return jsonify(result)
         except Exception as e:
             return _json_error(f"Graph API import failed: {str(e)}")
@@ -1807,7 +2048,9 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("Token expired. Please re-authenticate.")
 
         try:
-            profiles_data = fetch_control_profiles(flow["access_token"])
+            tenant = db.get_tenant(name) or {}
+            profiles_data = fetch_control_profiles(
+                flow["access_token"], cloud=tenant.get("cloud") or "global")
             controls = parse_graph_control_profiles(profiles_data)
             result = db.seed_controls(controls)
             return jsonify(result)
@@ -1852,7 +2095,9 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            result = client_credentials_token(tenant_id, client_id, client_secret)
+            result = client_credentials_token(
+                tenant_id, client_id, client_secret,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1892,7 +2137,8 @@ def create_app(db_path: str = None) -> Flask:
 
         try:
             result = client_credentials_token_cert(
-                tenant_id, client_id, cert_path, thumbprint)
+                tenant_id, client_id, cert_path, thumbprint,
+                cloud=tenant.get("cloud") or "global")
             expires_in = result.get("expires_in", 3600)
             _device_flows[name] = {
                 "access_token": result["access_token"],
@@ -1935,10 +2181,12 @@ def create_app(db_path: str = None) -> Flask:
             )
 
         try:
-            auth_data = start_interactive_auth(tenant_id, client_id)
+            cloud = tenant.get("cloud") or "global"
+            auth_data = start_interactive_auth(tenant_id, client_id, cloud=cloud)
             _interactive_flows[name] = {
                 "tenant_id": tenant_id,
                 "client_id": client_id,
+                "cloud": cloud,
                 "state": auth_data["state"],
                 "code_verifier": auth_data["code_verifier"],
                 "redirect_uri": auth_data["redirect_uri"],
@@ -1953,15 +2201,19 @@ def create_app(db_path: str = None) -> Flask:
     @app.route("/auth/callback")
     def auth_callback():
         """Handle the OAuth2 redirect callback from Entra ID."""
+        from markupsafe import escape
+
         code = request.args.get("code")
         state = request.args.get("state")
         error = request.args.get("error")
         error_desc = request.args.get("error_description", "")
 
         if error:
+            # Query parameters are attacker-controllable — escape before
+            # embedding in HTML (reflected XSS otherwise).
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Authentication Failed</h2>
-                <p>{error}: {error_desc}</p>
+                <p>{escape(error)}: {escape(error_desc)}</p>
                 <p>You can close this window.</p></body></html>"""
 
         # Find which tenant this callback belongs to
@@ -1982,7 +2234,8 @@ def create_app(db_path: str = None) -> Flask:
         try:
             token_result = exchange_auth_code(
                 flow["tenant_id"], flow["client_id"],
-                code, flow["code_verifier"], flow["redirect_uri"])
+                code, flow["code_verifier"], flow["redirect_uri"],
+                cloud=flow.get("cloud", "global"))
 
             expires_in = token_result.get("expires_in", 3600)
             _device_flows[tenant_name] = {
@@ -1993,14 +2246,14 @@ def create_app(db_path: str = None) -> Flask:
 
             return f"""<html><body style="font-family:system-ui;padding:40px;text-align:center">
                 <h2 style="color:green">Authenticated Successfully</h2>
-                <p>You are now signed in for tenant <strong>{tenant_name}</strong>.</p>
+                <p>You are now signed in for tenant <strong>{escape(tenant_name)}</strong>.</p>
                 <p>Token expires in {expires_in // 60} minutes.</p>
                 <p>You can close this window and return to the application.</p>
                 <script>window.close()</script></body></html>"""
         except Exception as e:
             return f"""<html><body style="font-family:system-ui;padding:40px">
                 <h2 style="color:red">Token Exchange Failed</h2>
-                <p>{str(e)}</p></body></html>"""
+                <p>{escape(str(e))}</p></body></html>"""
 
     @app.route("/api/tenants/<name>/graph/interactive-status", methods=["GET"])
     def api_graph_interactive_status(name):
@@ -2043,19 +2296,22 @@ def create_app(db_path: str = None) -> Flask:
             return _json_error("method must be 'certificate' or 'client_secret' "
                                "(device code and interactive are tested by signing in on the Import page)")
 
+        _cloud = tenant.get("cloud") or "global"
+
         def _try_cert():
             if not tenant.get("certificate_path"):
                 raise RuntimeError("No certificate uploaded for this tenant.")
             client_credentials_token_cert(
                 tenant["tenant_id"], tenant["client_id"],
                 tenant["certificate_path"],
-                tenant.get("certificate_thumbprint", ""))
+                tenant.get("certificate_thumbprint", ""), cloud=_cloud)
 
         def _try_secret():
             if not tenant.get("client_secret"):
                 raise RuntimeError("No client secret configured for this tenant.")
             client_credentials_token(
-                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"])
+                tenant["tenant_id"], tenant["client_id"], tenant["client_secret"],
+                cloud=_cloud)
 
         attempts = {"certificate": _try_cert, "client_secret": _try_secret}
         methods = [wanted] if wanted else [
@@ -2141,6 +2397,96 @@ def create_app(db_path: str = None) -> Flask:
                  entity_type="tenant", entity_id=name)
         return jsonify({"ok": True})
 
+    # ── Notifications ──
+
+    @app.route("/api/notifications/smtp", methods=["GET"])
+    @require_role("admin")
+    def api_get_smtp():
+        from .notifications import get_smtp_settings
+        settings = get_smtp_settings(db)
+        if settings.get("password"):
+            settings["password"] = "***"
+        return jsonify(settings)
+
+    @app.route("/api/notifications/smtp", methods=["PUT"])
+    @require_role("admin")
+    def api_set_smtp():
+        from .notifications import DEFAULT_SMTP, get_smtp_settings
+        data = request.get_json() or {}
+        settings = {k: data.get(k, v) for k, v in DEFAULT_SMTP.items()}
+        # "***" means "keep the stored password"
+        if settings.get("password") == "***":
+            settings["password"] = get_smtp_settings(db).get("password", "")
+        try:
+            settings["port"] = int(settings.get("port") or 587)
+        except (TypeError, ValueError):
+            return _json_error("port must be a number")
+        db.set_app_setting("smtp", settings)
+        db.audit("notifications.smtp_update", actor=session.get("username"),
+                 entity_type="settings", entity_id="smtp")
+        redacted = dict(settings)
+        if redacted.get("password"):
+            redacted["password"] = "***"
+        return jsonify(redacted)
+
+    @app.route("/api/tenants/<name>/notifications", methods=["GET"])
+    @require_role("admin")
+    def api_get_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import get_notification_config
+        return jsonify(get_notification_config(db, name))
+
+    @app.route("/api/tenants/<name>/notifications", methods=["PUT"])
+    @require_role("admin")
+    def api_set_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import DEFAULT_TENANT_CONFIG, EVENTS
+        data = request.get_json() or {}
+        config = {
+            "enabled": bool(data.get("enabled")),
+            "emails": [e.strip() for e in (data.get("emails") or [])
+                       if isinstance(e, str) and e.strip()],
+            "teams_webhook": (data.get("teams_webhook") or "").strip(),
+            "slack_webhook": (data.get("slack_webhook") or "").strip(),
+            "events": {e: bool((data.get("events") or {}).get(e, True))
+                       for e in EVENTS},
+        }
+        for url_key in ("teams_webhook", "slack_webhook"):
+            if config[url_key] and not config[url_key].lower().startswith("https://"):
+                return _json_error(f"{url_key} must start with https://")
+        try:
+            config["regression_threshold"] = float(
+                data.get("regression_threshold",
+                         DEFAULT_TENANT_CONFIG["regression_threshold"]))
+        except (TypeError, ValueError):
+            return _json_error("regression_threshold must be a number")
+        db.set_tool_config(name, "notifications", config)
+        db.audit("notifications.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        return jsonify(config)
+
+    @app.route("/api/tenants/<name>/notifications/test", methods=["POST"])
+    @require_role("admin")
+    def api_test_notifications(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        from .notifications import send_test_notification
+        result = send_test_notification(db, name)
+        db.audit("notifications.test", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name)
+        status = 200 if result.get("sent") else 400
+        return jsonify(result), status
+
+    @app.route("/api/tenants/<name>/notifications/log", methods=["GET"])
+    @require_role("admin")
+    def api_notification_log(name):
+        if not db.get_tenant(name):
+            return _json_error("Tenant not found", 404)
+        limit = request.args.get("limit", 30, type=int)
+        return jsonify(db.get_notification_log(name, limit))
+
     # ── Automation: schedules, tool configs, runs ──
 
     @app.route("/api/tenants/<name>/automation", methods=["GET"])
@@ -2150,13 +2496,16 @@ def create_app(db_path: str = None) -> Flask:
         from .runner import find_pwsh
         ps_cfg = db.get_tool_config(name, "powershell")
         tenant = db.get_tenant(name)
-        return jsonify({
+        is_admin = session.get("role") == "admin"
+        tool_configs = {
+            "scuba": db.get_tool_config(name, "scuba"),
+            "zero_trust": db.get_tool_config(name, "zero_trust"),
+            "maester": db.get_tool_config(name, "maester"),
+            "powershell": ps_cfg,
+        }
+        overview = {
             "schedules": db.get_schedules(name),
-            "tool_configs": {
-                "scuba": db.get_tool_config(name, "scuba"),
-                "zero_trust": db.get_tool_config(name, "zero_trust"),
-                "powershell": ps_cfg,
-            },
+            "tool_configs": tool_configs,
             "runs": db.get_tool_runs(name),
             "environment": {
                 "pwsh_found": bool(find_pwsh(ps_cfg)),
@@ -2165,7 +2514,16 @@ def create_app(db_path: str = None) -> Flask:
                     tenant.get("tenant_id") and tenant.get("client_id")
                     and (tenant.get("client_secret") or tenant.get("certificate_path"))),
             },
-        })
+        }
+        # Notification config contains webhook URLs (channel secrets) —
+        # only admins receive it; others get a boolean so the UI can hint.
+        from .notifications import get_notification_config
+        notif = get_notification_config(db, name)
+        if is_admin:
+            overview["notifications"] = notif
+        else:
+            overview["notifications_enabled"] = bool(notif.get("enabled"))
+        return jsonify(overview)
 
     @app.route("/api/tenants/<name>/schedules/<task_type>", methods=["PUT"])
     def api_set_schedule(name, task_type):
@@ -2184,12 +2542,18 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(sched)
 
     @app.route("/api/tenants/<name>/tool-config/<tool>", methods=["PUT"])
+    @require_role("admin")
     def api_set_tool_config(name, tool):
+        # Admin-only: the config includes executable paths (pwsh_path,
+        # module folders) and extra arguments — i.e. what gets executed on
+        # the host when a run starts.
         if not db.get_tenant(name):
             return _json_error("Tenant not found", 404)
-        if tool not in ("scuba", "zero_trust", "powershell"):
+        if tool not in ("scuba", "zero_trust", "maester", "powershell"):
             return _json_error("Unknown tool")
         data = request.get_json() or {}
+        db.audit("tool_config.update", actor=session.get("username"),
+                 entity_type="tenant", entity_id=name, detail=tool)
         return jsonify(db.set_tool_config(name, tool, data.get("config", {})))
 
     @app.route("/api/tenants/<name>/run/<task_type>", methods=["POST"])
@@ -2397,8 +2761,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_cross_tenant():
         """Show implementation status of global actions across all tenants.
         Supports pagination (limit/offset) and filtering by source_tool/workload."""
-        limit = min(int(request.args.get("limit", 100)), 5000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 100, type=int) or 100, 5000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         source_tool = request.args.get("source_tool")
         workload = request.args.get("workload")
 
@@ -2441,6 +2805,8 @@ def create_app(db_path: str = None) -> Flask:
                 page_ga_ids,
             ).fetchall()
 
+        # Per-tenant workload exclusions apply to the cross-tenant matrix too
+        exclusions = {t: set(db.get_excluded_workloads(t)) for t in tenants}
         by_ga: dict = {}
         for r in rows:
             d = dict(r)
@@ -2451,7 +2817,7 @@ def create_app(db_path: str = None) -> Flask:
                     "workload": d["workload"], "review_status": d["review_status"],
                     "tenant_status": {},
                 }
-            if d["tenant_name"]:
+            if d["tenant_name"] and d["workload"] not in exclusions.get(d["tenant_name"], set()):
                 by_ga[gid]["tenant_status"][d["tenant_name"]] = {
                     "status": d["status"], "action_id": d["action_id"],
                 }
@@ -2473,7 +2839,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(users)
 
     @app.route("/api/control-plane/users", methods=["POST"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_create_user():
         data = request.get_json() or {}
         username = data.get("username", "").strip()
@@ -2505,6 +2871,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user), 201
 
     @app.route("/api/control-plane/users/<user_id>", methods=["GET"])
+    @require_role("admin", "analyst")
     def api_cp_get_user(user_id):
         user = db.get_user(user_id)
         if not user:
@@ -2513,7 +2880,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["PUT"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_update_user(user_id):
         data = request.get_json() or {}
         allowed = {"display_name", "email", "role", "is_active", "password"}
@@ -2543,7 +2910,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify(user)
 
     @app.route("/api/control-plane/users/<user_id>", methods=["DELETE"])
-    @require_role("admin", "analyst")
+    @require_role("admin")
     def api_cp_delete_user(user_id):
         if user_id == session.get("user_id"):
             return _json_error("Cannot delete your own account")
@@ -2552,6 +2919,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "deleted"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access", methods=["POST"])
+    @require_role("admin")
     def api_cp_set_user_tenant_access(user_id):
         data = request.get_json() or {}
         tenant_name = data.get("tenant_name")
@@ -2561,6 +2929,7 @@ def create_app(db_path: str = None) -> Flask:
         return jsonify({"status": "ok"})
 
     @app.route("/api/control-plane/users/<user_id>/tenant-access/<tenant_name>", methods=["DELETE"])
+    @require_role("admin")
     def api_cp_remove_user_tenant_access(user_id, tenant_name):
         db.remove_user_tenant_access(user_id, tenant_name)
         return jsonify({"status": "deleted"})
@@ -2593,8 +2962,8 @@ def create_app(db_path: str = None) -> Flask:
     def api_cp_unlinked_actions():
         tenant_name = request.args.get("tenant")
         source_tool = request.args.get("source_tool")
-        limit = min(int(request.args.get("limit", 200)), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = min(request.args.get("limit", 200, type=int) or 200, 1000)
+        offset = max(request.args.get("offset", 0, type=int) or 0, 0)
         where = ["global_action_id IS NULL"]
         params: list = []
         if tenant_name:
@@ -2670,14 +3039,24 @@ def create_app(db_path: str = None) -> Flask:
     return app
 
 
-def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True):
-    """Start the web server and the automation scheduler."""
+def run_server(port: int = 8080, db_path: str = None, open_browser: bool = True,
+               host: str = None):
+    """Start the web server and the automation scheduler.
+
+    Binds to 127.0.0.1 by default — this is a local-first tool. Pass
+    ``host`` (or set the HOST env var / --host CLI flag) to expose it on a
+    network interface deliberately.
+    """
     from .database import DEFAULT_DB_PATH
     from .runner import start_scheduler
     app = create_app(db_path)
     start_scheduler(str(db_path or DEFAULT_DB_PATH))
+    host = host or os.environ.get("HOST") or "127.0.0.1"
     url = f"http://localhost:{port}"
     print(f"Starting M365 Security Posture Manager at {url}")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"[WARNING] Binding to {host} exposes the app beyond this machine. "
+              "Set SECRET_KEY and use HTTPS (COOKIE_SECURE=true) in that case.", flush=True)
     if open_browser:
         webbrowser.open(url)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)
