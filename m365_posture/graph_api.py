@@ -22,11 +22,39 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
-# Default scope for Secure Score read access
-GRAPH_SCOPES = "https://graph.microsoft.com/SecurityEvents.Read.All offline_access"
+# National cloud endpoints. Each entry: (login authority base, Graph base).
+CLOUD_ENDPOINTS: dict[str, dict[str, str]] = {
+    "global": {"login": "https://login.microsoftonline.com",
+               "graph": "https://graph.microsoft.com",
+               "label": "Global (Commercial / GCC)"},
+    "usgov": {"login": "https://login.microsoftonline.us",
+              "graph": "https://graph.microsoft.us",
+              "label": "US Government (GCC High)"},
+    "usgovdod": {"login": "https://login.microsoftonline.us",
+                 "graph": "https://dod-graph.microsoft.us",
+                 "label": "US Government (DoD)"},
+    "china": {"login": "https://login.partner.microsoftonline.cn",
+              "graph": "https://microsoftgraph.chinacloudapi.cn",
+              "label": "China (21Vianet)"},
+}
 
 
-def start_device_code_flow(tenant_id: str, client_id: str) -> dict:
+def cloud_endpoints(cloud: str = "global") -> dict[str, str]:
+    """Resolve a cloud name to its login/Graph endpoints (defaults to global)."""
+    return CLOUD_ENDPOINTS.get((cloud or "global").strip().lower(),
+                               CLOUD_ENDPOINTS["global"])
+
+
+def _delegated_scopes(cloud: str = "global") -> str:
+    return f"{cloud_endpoints(cloud)['graph']}/SecurityEvents.Read.All offline_access"
+
+
+# Kept for backwards compatibility (global-cloud default scope string)
+GRAPH_SCOPES = _delegated_scopes("global")
+
+
+def start_device_code_flow(tenant_id: str, client_id: str,
+                           cloud: str = "global") -> dict:
     """Initiate the device code flow. Returns device code response.
 
     Response includes:
@@ -36,10 +64,11 @@ def start_device_code_flow(tenant_id: str, client_id: str) -> dict:
       - interval: Polling interval in seconds
       - expires_in: Seconds until the code expires
     """
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/devicecode"
+    login = cloud_endpoints(cloud)["login"]
+    url = f"{login}/{tenant_id}/oauth2/v2.0/devicecode"
     data = urlencode({
         "client_id": client_id,
-        "scope": GRAPH_SCOPES,
+        "scope": _delegated_scopes(cloud),
     }).encode()
 
     req = Request(url, data=data, method="POST")
@@ -57,7 +86,8 @@ def start_device_code_flow(tenant_id: str, client_id: str) -> dict:
             raise RuntimeError(f"Device code request failed ({e.code}): {body}")
 
 
-def poll_for_token(tenant_id: str, client_id: str, device_code: str) -> dict:
+def poll_for_token(tenant_id: str, client_id: str, device_code: str,
+                   cloud: str = "global") -> dict:
     """Poll once for the token. Returns token response or status.
 
     Returns dict with either:
@@ -65,7 +95,7 @@ def poll_for_token(tenant_id: str, client_id: str, device_code: str) -> dict:
       - "error" key ("authorization_pending" or "slow_down") while waiting
       - "error" key with other value on failure
     """
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    url = f"{cloud_endpoints(cloud)['login']}/{tenant_id}/oauth2/v2.0/token"
     data = urlencode({
         "client_id": client_id,
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
@@ -89,7 +119,8 @@ def poll_for_token(tenant_id: str, client_id: str, device_code: str) -> dict:
 
 def client_credentials_token_cert(tenant_id: str, client_id: str,
                                    certificate_path: str,
-                                   thumbprint: str = "") -> dict:
+                                   thumbprint: str = "",
+                                   cloud: str = "global") -> dict:
     """Acquire an access token using a certificate (app-only) flow.
 
     Requires the ``msal`` library and a PEM file containing the private key
@@ -133,13 +164,14 @@ def client_credentials_token_cert(tenant_id: str, client_id: str,
         "public_certificate": pem_text,
     }
 
+    endpoints = cloud_endpoints(cloud)
     app = msal.ConfidentialClientApplication(
         client_id,
-        authority=f"https://login.microsoftonline.com/{tenant_id}",
+        authority=f"{endpoints['login']}/{tenant_id}",
         client_credential=credential,
     )
     result = app.acquire_token_for_client(
-        scopes=["https://graph.microsoft.com/.default"]
+        scopes=[f"{endpoints['graph']}/.default"]
     )
     if "access_token" not in result:
         raise RuntimeError(
@@ -163,7 +195,8 @@ def thumbprint_from_pem(pem_bytes: bytes) -> str:
     return hashlib.sha1(der).hexdigest().upper()
 
 
-def client_credentials_token(tenant_id: str, client_id: str, client_secret: str) -> dict:
+def client_credentials_token(tenant_id: str, client_id: str, client_secret: str,
+                             cloud: str = "global") -> dict:
     """Acquire an access token using the client credentials (app-only) flow.
 
     Requires an app registration with a client secret and
@@ -171,12 +204,13 @@ def client_credentials_token(tenant_id: str, client_id: str, client_secret: str)
 
     Returns the full token response dict including ``access_token``.
     """
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    endpoints = cloud_endpoints(cloud)
+    url = f"{endpoints['login']}/{tenant_id}/oauth2/v2.0/token"
     data = urlencode({
         "grant_type": "client_credentials",
         "client_id": client_id,
         "client_secret": client_secret,
-        "scope": "https://graph.microsoft.com/.default",
+        "scope": f"{endpoints['graph']}/.default",
     }).encode()
 
     req = Request(url, data=data, method="POST")
@@ -197,7 +231,8 @@ def client_credentials_token(tenant_id: str, client_id: str, client_secret: str)
 # ── Interactive Browser Auth (Authorization Code + PKCE) ──
 
 def start_interactive_auth(tenant_id: str, client_id: str,
-                           redirect_port: int = 8400) -> dict:
+                           redirect_port: int = 8400,
+                           cloud: str = "global") -> dict:
     """Start the interactive browser-based OAuth2 Authorization Code flow with PKCE.
 
     Returns a dict with:
@@ -218,13 +253,13 @@ def start_interactive_auth(tenant_id: str, client_id: str,
         "client_id": client_id,
         "response_type": "code",
         "redirect_uri": redirect_uri,
-        "scope": GRAPH_SCOPES,
+        "scope": _delegated_scopes(cloud),
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         "prompt": "select_account",
     })
-    auth_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize?{params}"
+    auth_url = f"{cloud_endpoints(cloud)['login']}/{tenant_id}/oauth2/v2.0/authorize?{params}"
 
     return {
         "auth_url": auth_url,
@@ -236,9 +271,10 @@ def start_interactive_auth(tenant_id: str, client_id: str,
 
 
 def exchange_auth_code(tenant_id: str, client_id: str, code: str,
-                       code_verifier: str, redirect_uri: str) -> dict:
+                       code_verifier: str, redirect_uri: str,
+                       cloud: str = "global") -> dict:
     """Exchange an authorization code for an access token (PKCE flow)."""
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    url = f"{cloud_endpoints(cloud)['login']}/{tenant_id}/oauth2/v2.0/token"
     data = urlencode({
         "client_id": client_id,
         "grant_type": "authorization_code",
@@ -262,12 +298,12 @@ def exchange_auth_code(tenant_id: str, client_id: str, code: str,
             raise RuntimeError(f"Token exchange failed ({e.code}): {body}")
 
 
-def fetch_secure_scores(access_token: str) -> dict:
+def fetch_secure_scores(access_token: str, cloud: str = "global") -> dict:
     """Fetch the latest Secure Score data from Microsoft Graph.
 
     Calls GET /security/secureScores?$top=1 to get the most recent score.
     """
-    url = "https://graph.microsoft.com/v1.0/security/secureScores?$top=1"
+    url = f"{cloud_endpoints(cloud)['graph']}/v1.0/security/secureScores?$top=1"
     req = Request(url)
     req.add_header("Authorization", f"Bearer {access_token}")
 
@@ -291,14 +327,15 @@ def fetch_secure_scores(access_token: str) -> dict:
         raise RuntimeError(f"Graph API error ({e.code}): {body}")
 
 
-def fetch_control_profiles(access_token: str) -> dict:
+def fetch_control_profiles(access_token: str, cloud: str = "global") -> dict:
     """Fetch ALL Secure Score control profiles from Microsoft Graph.
 
     Handles pagination via @odata.nextLink to ensure every profile is returned.
     Calls GET /security/secureScoreControlProfiles.
     """
     all_profiles = []
-    url = "https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles?$top=200"
+    url = (f"{cloud_endpoints(cloud)['graph']}/v1.0/security/"
+           "secureScoreControlProfiles?$top=200")
 
     while url:
         req = Request(url)

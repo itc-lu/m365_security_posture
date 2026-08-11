@@ -11,6 +11,7 @@ from .zero_trust import ZeroTrustParser
 from .sct import SCTParser
 from .m365_assess import M365AssessParser
 from .zero_trust_report import ZeroTrustReportParser
+from .maester import MaesterParser
 
 __all__ = [
     "SecureScoreParser",
@@ -19,6 +20,7 @@ __all__ = [
     "ZeroTrustReportParser",
     "SCTParser",
     "M365AssessParser",
+    "MaesterParser",
     "enrich_actions_from_controls",
     "load_seed_controls",
     "parse_graph_control_profiles",

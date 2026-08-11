@@ -22,12 +22,15 @@ For production-style use, set a stable session key: `SECRET_KEY=<random> m365-po
 
 ## CLI
 
-The tool is managed entirely through the web UI. The CLI only launches it and migrates old data:
+The tool is managed through the web UI; the CLI launches it, runs automation tasks headlessly, and migrates old data:
 
 ```bash
-m365-posture web [-p PORT] [--no-browser] [--db PATH]
+m365-posture web [-p PORT] [--host ADDR] [--no-browser] [--db PATH]
+m365-posture run {secure_score|scuba|zero_trust|maester} --tenant NAME [--fail-on-regression] [--json] [--db PATH]
 m365-posture migrate-from-json [--data-dir DIR] [--db PATH] [--tenant NAME] [--dry-run]
 ```
+
+The server binds to `127.0.0.1` by default (local-first). Use `--host 0.0.0.0` (or the `HOST` env var) to expose it on the network deliberately — set `SECRET_KEY` and `COOKIE_SECURE=true` behind HTTPS in that case.
 
 `migrate-from-json` imports tenant data from the legacy JSON file layout (`data/<tenant>/actions.json`, …) used by pre-SQLite versions of this tool.
 
@@ -41,18 +44,34 @@ m365-posture migrate-from-json [--data-dir DIR] [--db PATH] [--tenant NAME] [--d
 | Zero Trust Assessment (legacy) | JSON, CSV | |
 | Security Compliance Toolkit | JSON, CSV | |
 | M365-Assess | JSON, CSV | |
+| Maester (maester.dev) | ZIP of the Invoke-Maester output folder (recommended), JSON | Covers the Maester (MT), EIDSCA, CISA, CIS and ORCA test suites; ZIP keeps the HTML report browsable in-app |
 
-Graph API import supports four auth methods per tenant: interactive browser (PKCE, no secret), device code, client secret, and certificate (requires `msal`). Certificates are uploaded as a PEM file (private key + certificate) in Tenant Config — the thumbprint is derived automatically, and a **Test Connection** button verifies the app-only credentials against Graph. Each tenant's Graph session can be signed out at any time (Import page or Tenant Config).
+Reports that embed a tenant identity (SCuBA, Zero Trust, Maester) are verified against the import target. Tenants can be assigned a **national cloud** (Global, US Gov/GCC High, US Gov DoD, China) — all Graph/login endpoints follow it.
+
+Graph API import supports four auth methods per tenant: interactive browser (PKCE, no secret), device code, client secret, and certificate (requires `msal`). Each method can be **enabled or disabled per tenant** in Tenant Config — disabled methods disappear from the Import page and are rejected by the API — and the app-only methods (certificate, client secret) each have their own **Test** button. Certificates are uploaded as a PEM file (private key + certificate); the thumbprint is derived automatically. Each tenant's Graph session can be signed out at any time (Import page or Tenant Config).
 
 ### Automation & Scheduling
 
 The **Automation** page runs the assessment tools directly and imports their results — manually ("Run now") or on a per-tenant schedule (daily / weekly / monthly, e.g. Secure Score daily and SCuBA weekly for one tenant, both monthly for another):
 
 - **Secure Score Import** — via Graph API with the tenant's app-only credentials (certificate or client secret). Fully unattended.
-- **SCuBA Run + Import** — invokes `Invoke-SCuBA` (CISA ScubaGear) with the tenant's product list, organization and optional ScubaGear config YAML, then imports the report. Requires PowerShell 7 (`pwsh`) + the ScubaGear module; certificate auth enables unattended runs.
-- **Zero Trust Run + Import** — invokes `Invoke-ZTAssessment` and imports the report. Requires PowerShell 7 + the ZeroTrustAssessment module.
+- **SCuBA Run + Import** — invokes `Invoke-SCuBA` (CISA ScubaGear) driven entirely by an **uploaded ScubaGear YAML config file** (products, organization, environment and auth all live in that file; use its certificate/AppID settings for unattended runs), then imports the report. Requires PowerShell 7 (`pwsh`); the ScubaGear module can be installed via `Install-Module` or pointed at a local checkout via the *ScubaGear folder* setting.
+- **Zero Trust Run + Import** — invokes `Invoke-ZTAssessment` and imports the report. Requires PowerShell 7 + the ZeroTrustAssessment module (installed, or via a module-folder setting).
+- **Maester Run + Import** — invokes `Invoke-Maester` (the MT / EIDSCA / CISA / CIS / ORCA test suites) and imports the results. Requires PowerShell 7 + the Maester module; for unattended runs configure a *connect command* (e.g. `Connect-MgGraph` with app-only credentials) that runs before the assessment.
 
-Every run (manual or scheduled) is recorded in the Run History with status, duration and output details. The scheduler runs inside `m365-posture web`; schedules fire while the app is running.
+Every run (manual or scheduled) is recorded in the Run History with status and duration; clicking a run expands the complete tool output (stdout/stderr tails on failure) so the reason for a failure is always visible. The scheduler runs inside `m365-posture web`; schedules fire while the app is running.
+
+### Notifications
+
+Alerts can be sent by **email (SMTP)** and to **Teams / Slack incoming webhooks**, configured per tenant on the Automation page (admin only). Supported events: automation run failures, score regressions beyond a configurable threshold, newly imported findings, and a daily digest of risk acceptances that expired or expire within 14 days. Global SMTP settings are stored once; every delivery attempt is written to a notification log. Nothing is sent unless explicitly configured — the tool stays fully local by default.
+
+### Headless CI mode
+
+```bash
+m365-posture run secure_score --tenant contoso --fail-on-regression --json
+```
+
+Runs one automation task without the web UI and exits with a CI-friendly code (`0` success, `1` run failed, `2` score regressed with `--fail-on-regression`, `3` configuration error) — embed posture checks in GitHub Actions / GitLab CI without hosting anything.
 
 PowerShell collection scripts for running the tools on another machine live in `powershell/`.
 
@@ -79,21 +98,26 @@ If a later import agrees with your status again, the conflict clears automatical
 
 ## Web UI Pages
 
+**Global Overview** (landing page):
+
+- All tenants side by side: overall score, adjusted score (excl. N/A & Risk Accepted), 7-day and 30-day progress, actions completed, blocked count and status pills per tenant — each card opens that tenant's dashboard. Below the cards: cross-tenant **Score by Source Tool** and **Score by Workload** matrices and a **status distribution** table (per-tenant counts and shares per status). Exportable as Excel and as a printable **management report (PDF)** with the same summary, tenant overview table, matrices and status distribution.
+
 **Tenant pages** (for the active tenant, switchable from the sidebar):
 
-- **Dashboard** – overall and per-tool scores, workload breakdown, 30-day progress, blocked actions (open items waiting on incomplete dependencies), pinned top-priority actions (ROI-ranked), tenant comparison with per-action drill-down and PDF management report. Scores can exclude *Not Applicable* and *Risk Accepted* actions.
+- **Tenant Dashboard** – overall and per-tool scores, workload breakdown, 30-day progress, blocked actions (open items waiting on incomplete dependencies), pinned top-priority actions (ROI-ranked), tenant comparison with per-action drill-down and PDF management report. Scores can exclude *Not Applicable* and *Risk Accepted* actions.
 - **Actions** – filterable/sortable action list with expandable detail (description, implementation, notes, linked actions, history), batch status/delete/add-to-plan, cross-tool peer status warnings with one-click sync, import-conflict review, Excel export of the filtered set, and a compliance timeline per action: *Compliant since* / *Regressed on* (like Secure Score's regression tracking), with a "Regressed" filter and dashboard alert.
-- **Import** – file upload (with per-source hints), Graph API import with all four auth flows (including per-tenant sign-out), drift summary after each import, stale-action detection, and post-import linking of unrecognized controls to the Control Plane.
+- **Import** – file upload (with per-source hints), Graph API import with all four auth flows (including per-tenant sign-out), drift summary after each import, stale-action detection, and post-import linking of unrecognized controls to the Control Plane. Wrong-tenant protection: the target tenant is shown prominently with its Entra tenant ID, every import is confirmed, and reports that embed a tenant ID (SCuBA, Zero Trust) are **verified against the target tenant** — a mismatch is rejected with an offer to import into the matching tenant instead (or an explicit, audited override). The active tenant is scoped per user session, so another user's or tab's tenant switch can never retarget your import.
 - **Automation** – scheduled or on-demand Secure Score imports, SCuBA runs and Zero Trust Assessment runs per tenant, with tool configuration and run history (see Automation & Scheduling above).
 - **Plans** – remediation plans with three phases (Quick Wins / Core Controls / Advanced Hardening), auto-phase assignment by ROI, score-gain simulation, licence/effort/user-impact breakdowns and a printable PDF report.
 - **Correlations** – actions from different tools grouped by control family (keyword-based auto-correlation), a **Suggested Links** tab that finds cross-tool pairs describing the same control (title similarity) for one-click linking, and family definition management. Linked actions warn when their statuses disagree, and completing one offers to sync the others — one fix raises the score in every framework.
 - **Essential Eight** – ASD Essential Eight maturity view with radar chart, per-control breakdown and target-level selection.
 - **SCuBA** – CISA baseline conformance grouped by product and policy group, with access to the original ScubaGear HTML reports.
 - **Compliance** – posture per subscribed framework (NIST 800-53, CIS Microsoft 365, ISO 27001, Essential Eight), rolled up from global-action mappings.
-- **Risk Register** – all accepted risks with owner, justification, review/expiry dates; filters for expired / due / unassigned; revoke, extend, CSV export and auto-expiry (expired acceptances revert to ToDo, also enforced on every import).
+- **Risk Register** – all accepted risks with owner, justification, review/expiry dates and a **structured reason** picked from a curated catalog (licence gaps such as "Entra ID P2 licence required" or "Defender for Office 365 licence required", missing staff capacity, missing skills, budget, technical constraints, …). Filters for expired / due / unassigned / no-reason; revoke, extend, Excel/CSV export and auto-expiry (expired acceptances revert to ToDo, also enforced on every import). The **Analysis by Reason** tab answers the management question "what is parked behind which constraint?": per reason and category it shows how many risks (by priority) are accepted, the score points that stay blocked, the summed ROI, and the affected actions — e.g. *"12 critical risks accepted due to 'Defender for Office 365 licence required', worth +8.4% score if resolved"*. Admins manage the reason catalog in-app; a cross-tenant rollup (`/api/control-plane/risk-analysis`) aggregates the same view over all tenants.
 - **Trending** – multi-series score chart (overall, adjusted, per source tool — toggleable), snapshot table with per-snapshot deltas, and one-click comparison of the current state against any snapshot; drift reports.
-- **Export** – full data export (Excel / CSV / JSON with status/source/workload filters), GitLab issue export (CSV / JSON / shell script) with status multi-select, per-tenant issue templates with `{{variable}}` placeholders, and plan-to-GitLab export. Every major table (Actions, Risk Register, History, Trending, Comparison, SCuBA, Essential Eight, Global Actions, Cross-Tenant) also has its own *Export Excel* button, and every table row opens the full action details inline or in a quick-view.
+- **Export** – full data export (Excel / CSV / JSON / Markdown with status/source/workload filters), GitLab issue export (CSV / JSON / shell script) with status multi-select, per-tenant issue templates with `{{variable}}` placeholders, and plan-to-GitLab export. Every major table (Actions, Risk Register, History, Trending, Comparison, SCuBA, Essential Eight, Global Actions, Cross-Tenant) also has its own *Export Excel* button, and every table row opens the full action details inline or in a quick-view.
 - **PDF reports** – the dashboard management report and both comparison reports show **Blocked Actions** (open items stuck behind unfinished prerequisites) and the **Accepted Risks Register** (signed-off decisions with owner/justification/expiry) as clearly separated sections.
+- **Tenant comparison** – overall/per-tool/per-workload scores with completion ratios, a **status distribution by workload** table (each workload's ToDo / In Progress / Risk Accepted / N/A / Completed counts side by side per tenant, Excel-exportable), and the action-differences list with search, workload filter, a *hide missing* mode, Excel/JSON export of the filtered set, and adding selected actions to a plan of a chosen tenant.
 - **History** – import log and a filterable per-action change log (search, source, user/imports-only, status vs. score changes) with load-more.
 
 **Control Plane** (cross-tenant administration):
@@ -102,27 +126,29 @@ If a later import agrees with your status again, the conflict clears automatical
 - **Cross-Tenant View** – implementation status of every global action across all tenants side by side.
 - **Frameworks** – assign compliance frameworks to tenants (controls which framework views each tenant shows).
 - **User Management** – local users with roles (`admin`, `tenant_admin`, `analyst`, `viewer`) and per-tenant / per-workload access restrictions.
-- **Tenant Config** – tenant CRUD, Graph API credentials (secret or certificate), framework assignment, user access, and linking of not-yet-globalized actions.
+- **Tenant Config** – tenant CRUD, Graph API credentials (secret or certificate), national cloud selection, framework assignment, user access, linking of not-yet-globalized actions, and **excluded workloads**: any number of workloads (e.g. Exchange Online and Defender when they are managed elsewhere) can be hidden from all dashboards, reports, action lists, exports and scores of that tenant. Imports keep updating hidden actions in the background, so re-including a workload immediately shows its current state; a banner on the Dashboard and Actions pages shows what is excluded.
 - **Merge / Dedup** – merge duplicate global actions; tenant links, compliance mappings and source aliases follow the surviving record, so future imports keep matching.
 
 ## Action Properties
 
-Per action the tool tracks: status (ToDo, In Progress, In Planning, Warning, Risk Accepted, Completed, Not Applicable, Third Party), priority, risk level, user impact, implementation effort, required licence, workload (Entra ID, Exchange Online, SharePoint, OneDrive, Teams, Power Platform, Defender, Intune, Purview, General), score/max score, Essential Eight control + maturity, compliance mappings, dependencies, correlation group, cross-tool links, responsible person, planned date, notes, full change history, and risk-acceptance details.
+Per action the tool tracks: status (ToDo, In Progress, In Planning, Warning, Risk Accepted, Completed, Not Applicable, Third Party), priority, risk level, user impact, implementation effort, required licence, workload (Entra ID, Exchange Online, SharePoint, OneDrive, Teams, Power Platform, Defender, Intune, Purview, Copilot & AI, General), score/max score, Essential Eight control + maturity, compliance mappings, dependencies, correlation group, cross-tool links, responsible person, planned date, notes, full change history, and risk-acceptance details (owner, justification, review/expiry dates and a structured reason from the shared catalog).
 
 ## Storage
 
-Everything lives in one SQLite database, by default `data/m365_posture.db` (override with `--db` or `--data-dir`). Imported ZT/SCuBA HTML reports are stored next to it under `data/zt_reports/` and `data/scuba_reports/`. Schema creation and migrations run automatically on startup.
+Everything lives in one SQLite database, by default `data/m365_posture.db` (override with `--db` or `--data-dir`). Imported ZT/SCuBA/Maester HTML reports are stored next to it under `data/zt_reports/`, `data/scuba_reports/` and `data/maester_reports/`. Schema creation and migrations run automatically on startup.
 
 ## Security Notes
 
+- The server binds to `127.0.0.1` by default; exposing it on a network is an explicit opt-in (`--host`).
 - All API routes require a logged-in session; state-changing requests carry an `X-Requested-With` header as CSRF protection.
-- The `viewer` role is enforced read-only across the whole API; tenant deletion and certificate management require `admin`.
+- The `viewer` role is enforced read-only across the whole API. User management, tenant credentials (tenant/client IDs, secrets, certificates, auth methods), automation tool configuration, tenant deletion and certificate management all require `admin`.
 - Login is rate-limited (10 attempts / 5 minutes / IP).
 - Passwords are stored as PBKDF2-SHA256 hashes; minimum length 12.
 - Set `SECRET_KEY` (session signing) and `COOKIE_SECURE=true` (HTTPS deployments) via environment variables.
 - Tenant `client_secret` values are never returned by the API (redacted as `***`) and only admins may change them. Uploaded certificates are stored under `data/certs/` with `0600` permissions.
 - Graph sessions are per tenant and can be signed out individually; changing a tenant's credentials invalidates its cached tokens.
-- Security-relevant operations (user management, credential changes, tool runs, tenant deletion) are written to an audit log.
+- Uploaded report ZIPs are checked against decompression bombs (size/count limits) before extraction; generated GitLab shell scripts quote all report-derived values.
+- Security-relevant operations (user management, credential changes, tool runs and their configuration, tenant deletion) are written to an audit log.
 
 ## Project Structure
 
@@ -133,9 +159,10 @@ m365_posture/
 ├── web_frontend.py      # Single-page web UI
 ├── database.py          # SQLite storage layer + schema migrations
 ├── models.py            # Dataclasses & enums
-├── parsers/             # Secure Score, SCuBA, Zero Trust, SCT, M365-Assess
+├── parsers/             # Secure Score, SCuBA, Zero Trust, SCT, M365-Assess, Maester
 ├── import_pipeline.py   # Shared parse→merge→post-process pipeline
-├── runner.py            # Tool runner (SCuBA / ZT / Graph) + scheduler
+├── runner.py            # Tool runner (SCuBA / ZT / Maester / Graph) + scheduler
+├── notifications.py     # Email / Teams / Slack alerts + risk-expiry digests
 ├── graph_api.py         # Microsoft Graph auth flows + fetchers
 ├── correlation.py       # Cross-tool control-family correlation
 ├── compliance.py        # Framework auto-mapping
@@ -147,7 +174,23 @@ m365_posture/
 ├── storage.py           # Legacy JSON storage (read by migrate-from-json)
 └── seed_data/           # E8 mappings, Secure Score control seeds
 powershell/              # Collection scripts for the source tools
+tests/                   # Pytest suite (parsers, engines, database, web API)
+docs/                    # Vision & competitive GAP analysis
 ```
+
+## Development & Tests
+
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/ -q
+```
+
+The suite covers all report parsers, the scoring/planning/correlation/compliance/E8 engines, the database merge & protection semantics, and the web API (auth, CSRF, RBAC, redaction, imports). CI runs it on every push (`.github/workflows/tests.yml`).
+
+## Documentation
+
+- [Vision & Mission](docs/VISION.md) — what this tool is (and isn't), with an alignment assessment.
+- [GAP analysis vs. Maester](docs/GAP_ANALYSIS_MAESTER.md) — competitive review and roadmap recommendations.
 
 ## License
 

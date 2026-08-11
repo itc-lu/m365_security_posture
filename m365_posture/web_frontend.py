@@ -10,7 +10,9 @@ _SPA_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
 <title>M365 Security Posture Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Cpath d='M12 2L4 5.5v5.6c0 4.9 3.4 9.5 8 10.9 4.6-1.4 8-6 8-10.9V5.5L12 2zm-1.5 14.5l-3.5-3.5 1.4-1.4 2.1 2.1 5.1-5.1 1.4 1.4-6.5 6.5z'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #f1f5f9; --bg-card: #fff; --bg-sidebar: #0f172a; --bg-sidebar-hover: #1e293b;
@@ -293,9 +295,13 @@ body.unauth { background:#0f172a; }
     M365 Posture
   </div>
   <nav>
-    <a href="#dashboard" data-page="dashboard" class="active">
+    <a href="#global" data-page="global" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      Overview
+    </a>
+    <a href="#dashboard" data-page="dashboard">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-      Dashboard
+      Tenant Dashboard
     </a>
     <a href="#actions" data-page="actions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,11 12,14 22,4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
@@ -397,8 +403,8 @@ body.unauth { background:#0f172a; }
   <div class="content" id="content"></div>
 </div>
 
-<!-- Toast container -->
-<div class="toast-container" id="toasts"></div>
+<!-- Toast container (aria-live so screen readers announce feedback) -->
+<div class="toast-container" id="toasts" role="status" aria-live="polite"></div>
 
 <!-- Login overlay -->
 <div class="login-overlay hidden" id="login-overlay">
@@ -428,7 +434,7 @@ body.unauth { background:#0f172a; }
 
 <!-- Confirm dialog -->
 <div class="confirm-overlay" id="confirm-overlay" style="display:none">
-  <div class="confirm-dialog">
+  <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
     <h3 id="confirm-title">Confirm</h3>
     <p id="confirm-message">Are you sure?</p>
     <div class="btn-row">
@@ -440,10 +446,10 @@ body.unauth { background:#0f172a; }
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-header">
       <h2 id="modal-title"></h2>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close dialog" title="Close">&times;</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer" id="modal-footer"></div>
@@ -563,6 +569,12 @@ function openModal(title, bodyHtml, footerHtml='') {
   document.getElementById('modal-body').innerHTML = bodyHtml;
   document.getElementById('modal-footer').innerHTML = footerHtml;
   document.getElementById('modal-overlay').classList.add('open');
+  // Move keyboard focus into the dialog (first form control, else the body)
+  setTimeout(() => {
+    const body = document.getElementById('modal-body');
+    const target = body.querySelector('input:not([type=hidden]),select,textarea,button');
+    if(target) target.focus();
+  }, 60);
 }
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
@@ -649,12 +661,13 @@ async function navigate(page) {
     }
   }
   document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.page===page));
-  const titles = {dashboard:'Dashboard',actions:'Actions',import:'Import Data',automation:'Automation & Scheduling',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
+  const titles = {global:'Global Overview',dashboard:'Tenant Dashboard',actions:'Actions',import:'Import Data',automation:'Automation & Scheduling',plans:'Remediation Plans',correlations:'Action Correlations',e8:'Essential Eight',scuba:'SCuBA Baseline Conformance',compliance:'Compliance Frameworks',risks:'Risk Register',trending:'Score Trending',export:'Export',history:'Import History','cp-global-actions':'Control Plane · Global Actions','cp-cross-tenant':'Control Plane · Cross-Tenant View','cp-frameworks':'Control Plane · Compliance Frameworks','cp-users':'Control Plane · User Management','cp-tenants':'Control Plane · Tenant Configuration','cp-merge':'Control Plane · Merge & Deduplicate'};
   document.getElementById('page-title').textContent = titles[page]||page;
   document.getElementById('topbar-actions').innerHTML = '';
 
   if(page !== 'dashboard') _dashData = {};
   const render = {
+    global:renderGlobalDashboard,
     dashboard:renderDashboard,actions:renderActions,import:renderImport,
     automation:renderAutomation,
     plans:renderPlans,correlations:renderCorrelations,e8:renderE8,scuba:renderScuba,
@@ -671,7 +684,7 @@ async function navigate(page) {
   setTimeout(applySort, 50);
 }
 
-window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'dashboard'));
+window.addEventListener('hashchange', () => navigate(location.hash.slice(1)||'global'));
 
 async function navigateToCpAction(globalActionId) {
   await navigate('cp-global-actions');
@@ -803,7 +816,7 @@ async function loadAuthenticatedState() {
   const active = await api.get('/api/active-tenant');
   state.activeTenant = active && active.name ? active : (state.tenants[0]||null);
   updateTenantIndicator();
-  navigate(location.hash.slice(1)||'dashboard');
+  navigate(location.hash.slice(1)||'global');
 }
 
 function showForcedPasswordChange(prefillCurrent) {
@@ -875,6 +888,31 @@ function resolveConfirm(result) {
 function esc(s) {
   if(s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── HTML sanitizer for fields that legitimately contain markup ──
+// Secure Score control profiles ship HTML descriptions from Microsoft, but the
+// same fields can arrive from uploaded report files — strip anything that
+// could execute before rendering.
+function sanitizeHtml(html) {
+  if(html == null) return '';
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  doc.querySelectorAll('script,style,iframe,object,embed,form,link,meta,base').forEach(el => el.remove());
+  doc.body.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const n = attr.name.toLowerCase();
+      if(n.startsWith('on') ||
+         ((n === 'href' || n === 'src' || n === 'xlink:href') &&
+          /^\s*(javascript|data|vbscript):/i.test(attr.value))) {
+        el.removeAttribute(attr.name);
+      }
+    });
+    if(el.tagName === 'A') {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  return doc.body.innerHTML;
 }
 
 // ── Excel export helper (posts table data, downloads .xlsx) ──
@@ -949,9 +987,326 @@ document.addEventListener('click', () => {
   document.getElementById('tenant-dropdown')?.classList.remove('open');
 });
 
+function tenantExcludedWorkloads() {
+  try {
+    const v = JSON.parse(state.activeTenant?.excluded_workloads || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch(e) { return []; }
+}
+
+function excludedWorkloadsNotice() {
+  const excluded = tenantExcludedWorkloads();
+  if(!excluded.length) return '';
+  return `<div class="drift-banner neutral mb-16" style="font-size:12px">
+    <span>&#128683;</span>
+    <div><strong>${excluded.length} workload(s) excluded</strong> for this tenant:
+      ${excluded.map(w=>`<span class="badge badge-gray">${esc(w)}</span>`).join(' ')}
+      — hidden from all dashboards, reports, lists and scores (imports still update them in the background).
+      <a href="#" onclick="showCpTenantDetail('${esc(state.activeTenant.name)}');return false">Change in Tenant Config</a>
+    </div>
+  </div>`;
+}
+
 function requireTenant() {
   if(!state.activeTenant) { toast('No active tenant. Add one first.','error'); navigate('cp-tenants'); return false; }
   return true;
+}
+
+// ── Global Overview (multi-tenant landing page) ──
+let _globalDash = null;
+
+function _gdDelta(d) {
+  if (d === null || d === undefined) return '<span style="color:var(--text-light);font-size:11px" title="Needs at least one snapshot older than the period">no baseline</span>';
+  const cls = d > 0.005 ? 'drift-positive' : d < -0.005 ? 'drift-negative' : 'drift-neutral';
+  return `<span class="${cls}">${d >= 0 ? '+' : ''}${d.toFixed(2)}%</span>`;
+}
+
+async function openTenantFromGlobal(name) {
+  await api.post(`/api/tenants/${name}/activate`);
+  const active = await api.get('/api/active-tenant');
+  state.activeTenant = active && active.name ? active : null;
+  updateTenantIndicator();
+  navigate('dashboard');
+}
+
+async function renderGlobalDashboard() {
+  const c = document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML = `
+    <button class="btn btn-sm" onclick="exportGlobalExcel()">Export Excel</button>
+    <button class="btn btn-sm btn-primary" onclick="downloadGlobalPDF()">Management Report (PDF)</button>`;
+  c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-light)">Loading global overview...</div>';
+
+  const data = await api.get('/api/global-dashboard');
+  _globalDash = data;
+  const tenants = data.tenants || [];
+  const totals = data.totals || {};
+
+  if (!tenants.length) {
+    c.innerHTML = `<div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px">No tenants yet</div>
+      <div style="color:var(--text-light);margin-bottom:16px">Add a tenant to start tracking your M365 security posture.</div>
+      <button class="btn btn-primary" onclick="navigate('cp-tenants')">Add Tenant</button>
+    </div>`;
+    return;
+  }
+
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
+  // Summary stat cards across all tenants
+  const summary = `<div class="grid grid-4 mb-16">
+    <div class="card stat-card"><div class="value">${totals.tenant_count||0}</div><div class="label">Tenants</div></div>
+    <div class="card stat-card"><div class="value" style="color:${pctColor(totals.avg_percentage||0)}">${(totals.avg_percentage||0).toFixed(2)}%</div><div class="label">Avg Overall Score</div></div>
+    <div class="card stat-card"><div class="value" style="color:${pctColor(totals.avg_adj_percentage||0)}">${(totals.avg_adj_percentage||0).toFixed(2)}%</div><div class="label">Avg Adjusted Score <span title="Excludes Not Applicable and Risk Accepted actions">&#9432;</span></div></div>
+    <div class="card stat-card"><div class="value">${totals.completed_actions||0} / ${totals.total_actions||0}</div><div class="label">Actions Completed</div></div>
+  </div>`;
+
+  const alerts = [];
+  if (totals.blocked) alerts.push(`<div class="drift-banner negative mb-16"><span style="font-size:20px">&#128274;</span><div><strong>${totals.blocked} blocked action(s)</strong> across all tenants are waiting on incomplete prerequisites.</div></div>`);
+
+  // Per-tenant cards: gauge + adjusted + 7d/30d + status pills
+  const tenantCards = tenants.map(t => {
+    const noData = !t.total_actions;
+    const pills = Object.entries(t.by_status||{}).map(([s,n]) => `${statusBadge(s)} <strong>${n}</strong>`).join('&nbsp; ');
+    return `<div class="card" style="cursor:pointer" onclick="openTenantFromGlobal('${esc(t.name)}')" title="Open tenant dashboard">
+      <div class="flex justify-between items-center" style="margin-bottom:8px">
+        <div>
+          <div style="font-size:16px;font-weight:700">${esc(t.display_name)}</div>
+          <div style="font-size:11px;color:var(--text-light)">${esc(t.tenant_id||'No Entra tenant ID')}</div>
+        </div>
+        <button class="btn btn-sm" onclick="openTenantFromGlobal('${esc(t.name)}');event.stopPropagation()">Open</button>
+      </div>
+      ${noData ? '<div style="color:var(--text-light);padding:16px 0">No data imported yet</div>' : `
+      <div class="flex items-center" style="gap:16px">
+        ${gauge(t.percentage||0, 96, 'overall')}
+        <div style="flex:1;font-size:13px">
+          <div class="flex justify-between mb-8"><span>Adjusted Score <span style="color:var(--text-light)" title="Excludes Not Applicable and Risk Accepted actions">&#9432;</span></span><strong style="color:${pctColor(t.adj_percentage||0)}">${(t.adj_percentage||0).toFixed(2)}%</strong></div>
+          <div class="flex justify-between mb-8"><span>7-Day Progress</span>${_gdDelta(t.progress_7d)}</div>
+          <div class="flex justify-between mb-8"><span>30-Day Progress</span>${_gdDelta(t.progress_30d)}</div>
+          <div class="flex justify-between mb-8"><span>Actions</span><span><strong>${t.completed_actions}</strong> / ${t.total_actions} completed</span></div>
+          <div class="flex justify-between"><span>Blocked / Risk Accepted</span><span>${t.blocked_count ? `<span class="drift-negative">${t.blocked_count}</span>` : '0'} / ${t.risk_accepted||0}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:12px">${pills||''}</div>`}
+    </div>`;
+  }).join('');
+
+  // Cross-tenant matrix helper: rows = tool/workload, columns = tenants
+  const withData = tenants.filter(t => t.total_actions > 0);
+  function matrix(key) {
+    const rowNames = [...new Set(withData.flatMap(t => Object.keys(t[key]||{})))].sort();
+    if (!rowNames.length) return '<div style="color:var(--text-light);padding:8px">No data</div>';
+    const head = withData.map(t => `<th title="${esc(t.name)}">${esc(t.display_name)}</th>`).join('');
+    const body = rowNames.map(rn => {
+      const cells = withData.map(t => {
+        const d = (t[key]||{})[rn];
+        if (!d) return '<td style="color:var(--text-light)">—</td>';
+        return `<td title="${d.completed}/${d.total} actions completed"><span style="color:${pctColor(d.percentage||0)};font-weight:600">${(d.percentage||0).toFixed(1)}%</span> <span style="font-size:11px;color:var(--text-light)">${d.completed}/${d.total}</span></td>`;
+      }).join('');
+      return `<tr><td style="font-weight:600">${esc(rn)}</td>${cells}</tr>`;
+    }).join('');
+    return `<div class="table-wrap"><table><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  // Status distribution matrix: rows = status, columns = tenants
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const seenStatuses = statusOrder.filter(s => withData.some(t => (t.by_status||{})[s]));
+  const statusMatrix = seenStatuses.length ? `<div class="table-wrap"><table>
+    <thead><tr><th></th>${withData.map(t => `<th title="${esc(t.name)}">${esc(t.display_name)}</th>`).join('')}</tr></thead>
+    <tbody>${seenStatuses.map(s => `<tr><td>${statusBadge(s)}</td>${withData.map(t => {
+      const n = (t.by_status||{})[s]||0;
+      const pct = t.total_actions ? (n/t.total_actions*100).toFixed(1) : '0.0';
+      return `<td>${n ? `<strong>${n}</strong> <span style="font-size:11px;color:var(--text-light)">(${pct}%)</span>` : '<span style="color:var(--text-light)">—</span>'}</td>`;
+    }).join('')}</tr>`).join('')}</tbody>
+  </table></div>` : '<div style="color:var(--text-light);padding:8px">No data</div>';
+
+  c.innerHTML = `
+    <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
+      <div class="flex justify-between items-center">
+        <div>
+          <div style="font-size:24px;font-weight:700">Global Security Posture</div>
+          <div style="font-size:13px;opacity:.7;margin-top:4px">${totals.tenant_count||0} tenant(s) &middot; ${today}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:42px;font-weight:800">${(totals.avg_percentage||0).toFixed(2)}%</div>
+          <div style="font-size:12px;opacity:.7">Average overall score across tenants</div>
+        </div>
+      </div>
+    </div>
+    ${alerts.join('')}
+    ${summary}
+    <div class="grid grid-2 mb-16">${tenantCards}</div>
+    <div class="grid grid-2 mb-16">
+      <div class="card"><div class="card-header">Score by Source Tool</div>${matrix('by_tool')}</div>
+      <div class="card"><div class="card-header">Score by Workload</div>${matrix('by_workload')}</div>
+    </div>
+    <div class="card mb-16"><div class="card-header">Status Distribution</div>${statusMatrix}</div>`;
+}
+
+function exportGlobalExcel() {
+  if (!_globalDash || !(_globalDash.tenants||[]).length) return toast('Nothing to export', 'error');
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const headers = ['Tenant','Entra Tenant ID','Overall Score %','Adjusted Score %','7-Day Progress %','30-Day Progress %','Total Actions','Completed','Blocked'].concat(statusOrder);
+  const rows = _globalDash.tenants.map(t => [
+    t.display_name, t.tenant_id||'',
+    t.percentage!=null?t.percentage.toFixed(2):'', t.adj_percentage!=null?t.adj_percentage.toFixed(2):'',
+    t.progress_7d!=null?t.progress_7d.toFixed(2):'', t.progress_30d!=null?t.progress_30d.toFixed(2):'',
+    t.total_actions, t.completed_actions, t.blocked_count,
+  ].concat(statusOrder.map(s => (t.by_status||{})[s]||0)));
+  exportTableExcel('global-overview', 'Global Overview', headers, rows);
+}
+
+async function downloadGlobalPDF() {
+  if (!_globalDash) _globalDash = await api.get('/api/global-dashboard');
+  const data = _globalDash;
+  if (!(data.tenants||[]).length) return toast('Nothing to report', 'error');
+  toast('Building management report...', 'info');
+  const printWin = window.open('', '_blank', 'width=1000,height=800');
+  printWin.document.write(_buildGlobalReportHtml(data));
+  printWin.document.close();
+}
+
+// Printable management report over all tenants (same visual language as the tenant report)
+function _buildGlobalReportHtml(data) {
+  const tenants = data.tenants || [];
+  const totals = data.totals || {};
+  const withData = tenants.filter(t => t.total_actions > 0);
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+  function scoreColor(pct) {
+    if (pct >= 80) return '#16a34a';
+    if (pct >= 60) return '#84cc16';
+    if (pct >= 40) return '#f59e0b';
+    if (pct >= 20) return '#f97316';
+    return '#dc2626';
+  }
+  function delta(d) {
+    if (d === null || d === undefined) return '<span style="color:#94a3b8">—</span>';
+    const clr = d > 0.005 ? '#16a34a' : d < -0.005 ? '#dc2626' : '#64748b';
+    return `<span style="color:${clr};font-weight:600">${d >= 0 ? '+' : ''}${d.toFixed(2)}%</span>`;
+  }
+
+  // Tenant overview table
+  const tenantRows = tenants.map(t => `<tr>
+    <td><strong>${esc(t.display_name)}</strong><br><span style="font-size:9px;color:#94a3b8">${esc(t.tenant_id||'')}</span></td>
+    <td style="color:${scoreColor(t.percentage||0)};font-weight:700">${(t.percentage||0).toFixed(2)}%</td>
+    <td style="color:${scoreColor(t.adj_percentage||0)};font-weight:600">${(t.adj_percentage||0).toFixed(2)}%</td>
+    <td>${delta(t.progress_7d)}</td>
+    <td>${delta(t.progress_30d)}</td>
+    <td style="color:#64748b">${t.completed_actions} / ${t.total_actions}</td>
+    <td style="color:${t.blocked_count?'#dc2626':'#64748b'}">${t.blocked_count||0}</td>
+    <td style="color:#64748b">${t.risk_accepted||0}</td>
+  </tr>`).join('');
+
+  // Cross-tenant matrices
+  function pdfMatrix(key) {
+    const rowNames = [...new Set(withData.flatMap(t => Object.keys(t[key]||{})))].sort();
+    if (!rowNames.length) return '<p style="color:#94a3b8;font-size:11px">No data</p>';
+    const head = withData.map(t => `<th>${esc(t.display_name)}</th>`).join('');
+    const body = rowNames.map(rn => `<tr><td style="font-weight:600">${esc(rn)}</td>${withData.map(t => {
+      const d = (t[key]||{})[rn];
+      if (!d) return '<td style="color:#94a3b8">—</td>';
+      return `<td><span style="color:${scoreColor(d.percentage||0)};font-weight:600">${(d.percentage||0).toFixed(1)}%</span> <span style="font-size:9px;color:#94a3b8">${d.completed}/${d.total}</span></td>`;
+    }).join('')}</tr>`).join('');
+    return `<table><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  // Status distribution matrix
+  const statusOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const statusClr = {'Completed':'#16a34a','In Progress':'#3b82f6','In Planning':'#a855f7','ToDo':'#ef4444','Risk Accepted':'#f59e0b','Not Applicable':'#6b7280','Third Party':'#06b6d4','Warning':'#f97316'};
+  const seenStatuses = statusOrder.filter(s => withData.some(t => (t.by_status||{})[s]));
+  const statusTable = seenStatuses.length ? `<table>
+    <thead><tr><th>Status</th>${withData.map(t => `<th>${esc(t.display_name)}</th>`).join('')}</tr></thead>
+    <tbody>${seenStatuses.map(s => `<tr>
+      <td><span style="color:${statusClr[s]||'#6b7280'};font-weight:600">${esc(s)}</span></td>
+      ${withData.map(t => {
+        const n = (t.by_status||{})[s]||0;
+        const pct = t.total_actions ? (n/t.total_actions*100).toFixed(1) : '0.0';
+        return `<td>${n ? `<strong>${n}</strong> <span style="font-size:9px;color:#94a3b8">(${pct}%)</span>` : '<span style="color:#cbd5e1">—</span>'}</td>`;
+      }).join('')}
+    </tr>`).join('')}</tbody>
+  </table>` : '<p style="color:#94a3b8;font-size:11px">No data</p>';
+
+  return `<!DOCTYPE html><html><head><title>Global M365 Security Posture Report</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; font-size:12px; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; padding-bottom:14px; border-bottom:3px solid #3b82f6; }
+    .page-header h1 { font-size:20px; color:#0f172a; margin-bottom:3px; }
+    .page-header .sub { color:#64748b; font-size:11px; }
+    .score-block { display:flex; gap:12px; margin-bottom:14px; }
+    .score-card { flex:1; border:1px solid #e2e8f0; border-radius:8px; padding:12px; text-align:center; }
+    .score-card .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+    .score-card .val { font-size:30px; font-weight:800; line-height:1; }
+    .score-card .det { font-size:10px; color:#94a3b8; margin-top:5px; }
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:14px; break-inside:avoid; }
+    .card-hdr { font-size:11px; font-weight:600; color:#374151; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    th { text-align:left; padding:5px 7px; background:#f8fafc; border-bottom:2px solid #e2e8f0; font-size:9px; text-transform:uppercase; color:#64748b; }
+    td { padding:5px 7px; border-bottom:1px solid #f1f5f9; }
+    .footer { text-align:center; margin-top:20px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10px; }
+    @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body>
+
+  <div class="page-header">
+    <div>
+      <h1>Global M365 Security Posture Report</h1>
+      <div class="sub">All tenants &middot; ${today}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#64748b">
+      <div>Tenants: <strong>${totals.tenant_count||0}</strong></div>
+      <div>Total Actions: <strong>${totals.total_actions||0}</strong></div>
+      <div>Completed: <strong>${totals.completed_actions||0}</strong></div>
+      ${totals.blocked ? `<div style="color:#dc2626">Blocked: <strong>${totals.blocked}</strong></div>` : ''}
+    </div>
+  </div>
+
+  <div class="score-block">
+    <div class="score-card">
+      <div class="lbl">Avg Overall Score</div>
+      <div class="val" style="color:${scoreColor(totals.avg_percentage||0)}">${(totals.avg_percentage||0).toFixed(2)}%</div>
+      <div class="det">Average across ${withData.length} tenant(s) with data</div>
+    </div>
+    <div class="score-card" style="border-color:#3b82f6;background:#f0f7ff">
+      <div class="lbl" style="color:#3b82f6">Avg Adjusted Score <span style="color:#94a3b8">(excl. N/A &amp; RA)</span></div>
+      <div class="val" style="color:${scoreColor(totals.avg_adj_percentage||0)}">${(totals.avg_adj_percentage||0).toFixed(2)}%</div>
+      <div class="det">${totals.risk_accepted||0} risk acceptance(s) on record</div>
+    </div>
+    <div class="score-card">
+      <div class="lbl">Actions Completed</div>
+      <div class="val" style="color:#0f172a">${totals.completed_actions||0} / ${totals.total_actions||0}</div>
+      <div class="det">${totals.blocked||0} blocked behind prerequisites</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Tenant Overview</div>
+    <table>
+      <thead><tr>
+        <th>Tenant</th><th>Overall Score</th><th>Adjusted Score</th><th>7-Day Progress</th><th>30-Day Progress</th>
+        <th>Completed</th><th>Blocked</th><th>Risk Accepted</th>
+      </tr></thead>
+      <tbody>${tenantRows}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Score by Source Tool</div>
+    ${pdfMatrix('by_tool')}
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Score by Workload</div>
+    ${pdfMatrix('by_workload')}
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Status Distribution</div>
+    ${statusTable}
+  </div>
+
+  <div class="footer">M365 Security Posture Manager &middot; Generated ${today} &middot; Adjusted score excludes Not Applicable and Risk Accepted actions</div>
+  <scr`+`ipt>setTimeout(()=>{window.print();},500);<\/scr`+`ipt>
+  </body></html>`;
 }
 
 // ── Dashboard ──
@@ -1151,7 +1506,7 @@ async function renderDashboard(sourceFilter) {
     ? `${dispScore}/${dispMax} points`
     : (sf ? scoreLabel : 'Average across source tools');
 
-  c.innerHTML = `${riskAlert}
+  c.innerHTML = `${excludedWorkloadsNotice()}${riskAlert}
     <div class="card mb-16" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;padding:24px">
       <div class="flex justify-between items-center">
         <div>
@@ -1387,12 +1742,40 @@ async function doDashboardCompare() {
   closeModal();
   // Hide dashboard topbar buttons during comparison
   document.getElementById('topbar-actions').innerHTML = '';
-  const [r, actionCmp] = await Promise.all([
+  const [r, actionCmp, ...tenantActionLists] = await Promise.all([
     api.post('/api/compare', {tenants}),
-    api.post('/api/compare-actions', {tenants})
+    api.post('/api/compare-actions', {tenants}),
+    ...tenants.map(t => api.get(`/api/tenants/${t}/actions`)),
   ]);
-  _cmpContext = {type: 'tenants', tenants, data: r, actionCmp};
+  const actionsByTenant = {};
+  tenants.forEach((t,i) => actionsByTenant[t] = tenantActionLists[i] || []);
+  _cmpContext = {type: 'tenants', tenants, data: r, actionCmp, actionsByTenant};
   const c = document.getElementById('content');
+
+  // Status distribution per workload per tenant (e.g. Defender: 5 N/A,
+  // 8 Risk Accepted, 50 ToDo, 20 In Progress for Tenant A vs Tenant B)
+  const _stOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const _stShort = {'ToDo':'ToDo','In Progress':'In Prog.','In Planning':'Planning','Warning':'Warn','Completed':'Done','Risk Accepted':'Risk Acc.','Not Applicable':'N/A','Third Party':'3rd Party'};
+  const wlStatus = {};
+  for(const t of tenants) {
+    for(const a of actionsByTenant[t]) {
+      const wl = a.workload || 'General';
+      wlStatus[wl] = wlStatus[wl] || {};
+      wlStatus[wl][t] = wlStatus[wl][t] || {};
+      wlStatus[wl][t][a.status] = (wlStatus[wl][t][a.status]||0) + 1;
+    }
+  }
+  const _stColor = {'Completed':'success','In Progress':'info','In Planning':'purple','Warning':'warning','ToDo':'danger','Risk Accepted':'warning','Not Applicable':'gray','Third Party':'cyan'};
+  const wlStatusRows = Object.keys(wlStatus).sort().map(wl => {
+    const cells = tenants.map(t => {
+      const counts = wlStatus[wl][t];
+      if(!counts) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">—</td>';
+      const pills = _stOrder.filter(s=>counts[s]).map(s =>
+        `<span class="badge badge-${_stColor[s]||'gray'}" style="margin:1px 4px 1px 0;white-space:nowrap" title="${esc(s)}">${_stShort[s]}&nbsp;${counts[s]}</span>`).join('');
+      return `<td style="font-size:11px">${pills}</td>`;
+    }).join('');
+    return `<tr><td style="font-weight:600">${esc(wl)}</td>${cells}</tr>`;
+  }).join('');
 
   let rows = tenants.map(t => {
     const d = r.overall[t]||{};
@@ -1443,17 +1826,30 @@ async function doDashboardCompare() {
         <table><thead><tr><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead><tbody>${wlRows||'<tr><td colspan="99">No data</td></tr>'}</tbody></table></div>
     </div>
     <div class="card mb-16">
+      <div class="card-header">Status Distribution by Workload
+        <button class="btn btn-sm" style="margin-left:8px" onclick="exportWlStatusExcel()">Export Excel</button>
+      </div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">How each workload's actions are distributed across statuses, side by side per tenant.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Workload</th>${tenants.map(t=>`<th>${esc(state.tenants.find(x=>x.name===t)?.display_name||t)}</th>`).join('')}</tr></thead>
+        <tbody>${wlStatusRows||'<tr><td colspan="99" style="color:var(--text-light)">No data</td></tr>'}</tbody>
+      </table></div>
+    </div>
+    <div class="card mb-16">
       <div class="card-header">Action Differences <span class="badge badge-danger">${actionCmp.differing||0} differ</span> <span class="badge badge-success">${sameActions.length} same</span></div>
       <div style="font-size:13px;color:var(--text-light);margin-bottom:8px">Actions where status differs between tenants, or an action exists in one tenant but not another. Click a status to see the tenant-specific details inline.</div>
       <div class="filter-bar" style="margin-bottom:8px">
         <input type="text" id="cmpdiff-search" placeholder="Search action..." oninput="renderCompareDiffRows()">
         <select id="cmpdiff-workload" onchange="renderCompareDiffRows()"><option value="">All Workloads</option></select>
         <select id="cmpdiff-mode" onchange="renderCompareDiffRows()">
-          <option value="differ">Differing only</option>
+          <option value="differ">Differing (incl. missing)</option>
+          <option value="differ-present">Differing (hide missing)</option>
           <option value="missing">Missing in a tenant</option>
           <option value="all">All actions</option>
         </select>
         <button class="btn btn-sm" onclick="exportCompareDiffExcel()">Export Excel</button>
+        <button class="btn btn-sm" onclick="exportCompareDiffJson()">Export JSON</button>
+        <button class="btn btn-sm btn-primary" id="cmpdiff-plan-btn" onclick="cmpAddSelectedToPlan()" disabled>Add Selected to Plan</button>
       </div>
       <div id="cmpdiff-table"></div>
     </div>
@@ -1489,19 +1885,24 @@ function renderCompareDiffRows() {
       if(!d) return '<td style="color:var(--text-light);font-style:italic;font-size:12px">Missing</td>';
       return `<td><a href="#" onclick="toggleCompareActionDetail('${t}','${d.id}','cmp-detail-${idx}');event.preventDefault()" style="text-decoration:none;cursor:pointer" title="Details for ${esc(t)} — score ${d.score??'—'}/${d.max_score??'—'}">${statusBadge(d.status)}</a></td>`;
     }).join('');
-    return `<tr><td style="font-size:12px">${esc(a.title||'')}</td>
+    return `<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="cmpdiff-cb" value="${esc(a.source_id||'')}" onchange="cmpUpdatePlanBtn()"></td>
+      <td style="font-size:12px">${esc(a.title||'')}</td>
       <td style="font-size:11px;color:var(--text-light)">${esc(anyD.workload||'')}</td>
       ${cells}</tr>
-      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+2}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
+      <tr id="cmp-detail-${idx}" class="hidden"><td colspan="${tenants.length+3}" style="padding:0"><div id="cmp-detail-content-${idx}" style="padding:12px;background:var(--bg-hover)"></div></td></tr>`;
   }).join('');
 
   el.innerHTML = body ? `
     <div class="table-wrap" style="max-height:520px;overflow-y:auto">
-      <table><thead><tr><th>Action</th><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead>
+      <table><thead><tr>
+        <th style="width:32px"><input type="checkbox" onchange="document.querySelectorAll('.cmpdiff-cb').forEach(c=>c.checked=this.checked);cmpUpdatePlanBtn()"></th>
+        <th>Action</th><th>Workload</th>${tenants.map(t=>`<th>${esc(t)}</th>`).join('')}</tr></thead>
       <tbody>${body}</tbody></table>
     </div>
     <div style="font-size:12px;color:var(--text-light);padding:6px">${shown.length}${rows.length>shown.length?` of ${rows.length}`:''} action(s) shown</div>`
     : '<div style="padding:20px;text-align:center;color:var(--text-light)">No actions match the current filters.</div>';
+  cmpUpdatePlanBtn();
 }
 
 function _filteredCompareDiff(q, wl, mode) {
@@ -1509,10 +1910,105 @@ function _filteredCompareDiff(q, wl, mode) {
   const tenants = ctx.tenants;
   let rows = (ctx.actionCmp.actions||[]);
   if(mode === 'differ') rows = rows.filter(a => a.differs);
+  else if(mode === 'differ-present') rows = rows.filter(a => a.differs && tenants.every(t => a.tenants[t]));
   else if(mode === 'missing') rows = rows.filter(a => tenants.some(t => !a.tenants[t]));
   if(q) rows = rows.filter(a => (a.title||'').toLowerCase().includes(q) || (a.source_id||'').toLowerCase().includes(q));
   if(wl) rows = rows.filter(a => Object.values(a.tenants).some(d => d && d.workload === wl));
   return rows;
+}
+
+function _currentCompareDiffRows() {
+  const q = (document.getElementById('cmpdiff-search')?.value||'').toLowerCase();
+  const wl = document.getElementById('cmpdiff-workload')?.value||'';
+  const mode = document.getElementById('cmpdiff-mode')?.value||'differ';
+  return _filteredCompareDiff(q, wl, mode);
+}
+
+function exportWlStatusExcel() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionsByTenant) return;
+  const stOrder = ['ToDo','In Progress','In Planning','Warning','Completed','Risk Accepted','Not Applicable','Third Party'];
+  const wlStatus = {};
+  for(const t of ctx.tenants) {
+    for(const a of ctx.actionsByTenant[t]) {
+      const wl = a.workload || 'General';
+      wlStatus[wl] = wlStatus[wl] || {};
+      wlStatus[wl][t] = wlStatus[wl][t] || {};
+      wlStatus[wl][t][a.status] = (wlStatus[wl][t][a.status]||0) + 1;
+    }
+  }
+  const headers = ['Workload', 'Tenant', ...stOrder, 'Total'];
+  const rows = [];
+  for(const wl of Object.keys(wlStatus).sort()) {
+    for(const t of ctx.tenants) {
+      const counts = wlStatus[wl][t] || {};
+      const vals = stOrder.map(s => counts[s]||0);
+      rows.push([wl, t, ...vals, vals.reduce((a,b)=>a+b,0)]);
+    }
+  }
+  exportTableExcel(`workload_status_${ctx.tenants.join('_')}`.substring(0,60), 'Workload Status', headers, rows);
+}
+
+function cmpUpdatePlanBtn() {
+  const n = document.querySelectorAll('.cmpdiff-cb:checked').length;
+  const btn = document.getElementById('cmpdiff-plan-btn');
+  if(!btn) return;
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `Add ${n} Selected to Plan` : 'Add Selected to Plan';
+}
+
+function exportCompareDiffJson() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionCmp) return;
+  const rows = _currentCompareDiffRows().map(a => ({
+    title: a.title || '',
+    source_id: a.source_id || '',
+    differs: !!a.differs,
+    tenants: Object.fromEntries(ctx.tenants.map(t => [t, a.tenants[t] ? {
+      id: a.tenants[t].id, status: a.tenants[t].status, priority: a.tenants[t].priority,
+      workload: a.tenants[t].workload, score: a.tenants[t].score, max_score: a.tenants[t].max_score,
+    } : null])),
+  }));
+  if(!rows.length) return toast('Nothing to export with current filters','error');
+  const blob = new Blob([JSON.stringify(rows, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `comparison_${ctx.tenants.join('_')}.json`.substring(0,80);
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast(`${rows.length} action(s) exported as JSON`, 'success');
+}
+
+function cmpAddSelectedToPlan() {
+  const ctx = _cmpContext;
+  if(!ctx || !ctx.actionCmp) return;
+  const selectedIds = new Set([...document.querySelectorAll('.cmpdiff-cb:checked')].map(c=>c.value));
+  if(!selectedIds.size) return toast('Select at least one action', 'error');
+  const rows = _currentCompareDiffRows().filter(a => selectedIds.has(a.source_id||''));
+  const tenantOpts = ctx.tenants.map(t => {
+    const present = rows.filter(a => a.tenants[t]).length;
+    const disp = state.tenants.find(x=>x.name===t)?.display_name || t;
+    return `<option value="${esc(t)}">${esc(disp)} — ${present} of ${rows.length} selected action(s) exist here</option>`;
+  }).join('');
+  openModal('Add Selected Actions to a Plan', `
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+      Plans belong to one tenant. Choose which tenant's plan to add the selected actions to —
+      actions that don't exist in that tenant are skipped.
+    </p>
+    <div class="form-group"><label>Tenant</label><select id="cmp-plan-tenant">${tenantOpts}</select></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="cmpAddToPlanForTenant()">Continue</button>`);
+  window._cmpPlanRows = rows;
+}
+
+async function cmpAddToPlanForTenant() {
+  const tenant = document.getElementById('cmp-plan-tenant')?.value;
+  const rows = window._cmpPlanRows || [];
+  if(!tenant) return;
+  const ids = rows.map(a => a.tenants[tenant]?.id).filter(Boolean);
+  const skipped = rows.length - ids.length;
+  if(!ids.length) return toast('None of the selected actions exist in that tenant', 'error');
+  if(skipped) toast(`${skipped} action(s) skipped — not present in ${tenant}`, 'info');
+  await showAddToPlan(ids, tenant);
 }
 
 function exportCompareDiffExcel() {
@@ -1627,7 +2123,7 @@ async function _downloadTenantComparisonPDF(today) {
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong></td>
         <td style="vertical-align:top;font-size:10px">${esc(a.priority||'')}</td>
-        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
         <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -1825,7 +2321,7 @@ async function _downloadSnapshotComparisonPDF(today) {
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
         <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
-        <td style="vertical-align:top">${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
+        <td style="vertical-align:top">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification||a.risk_acceptance_justification||'—')}</td>
         <td style="vertical-align:top">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -2157,7 +2653,7 @@ function _buildManagementReportHtml({reportTitle, subtitle, today, fullScores, a
       const rows = acts.map(a => `<tr>
         <td style="vertical-align:top"><strong>${esc(a.title||'')}</strong><br><span style="font-size:10px;color:#64748b">${esc(a.source_tool||'')}</span></td>
         <td style="vertical-align:top">${pBadge(a.priority||'')}</td>
-        <td style="vertical-align:top;color:#374151">${esc(a.risk_justification || a.risk_acceptance_justification || '—')}</td>
+        <td style="vertical-align:top;color:#374151">${a.risk_reason_name?`<strong>[${esc(a.risk_reason_name)}]</strong> `:''}${esc(a.risk_justification || a.risk_acceptance_justification || '—')}</td>
         <td style="vertical-align:top;color:#374151">${esc(a.risk_owner||'—')}</td>
         <td style="vertical-align:top;color:#374151;white-space:nowrap">${esc(a.risk_expiry_date||'—')}</td>
       </tr>`).join('');
@@ -2340,6 +2836,7 @@ async function renderActions() {
 
   const c = document.getElementById('content');
   c.innerHTML = `
+    ${excludedWorkloadsNotice()}
     <div class="filter-bar">
       <input type="text" id="f-search" placeholder="Search actions..." oninput="filterActions()">
       <select id="f-status" onchange="filterActions()"><option value="">All Statuses</option>${selectOptions(state.enums.statuses)}</select>
@@ -2603,15 +3100,17 @@ async function submitBatchStatus() {
 }
 
 let _addToPlanIds = [];
+let _addToPlanTenant = null;
 
-async function showAddToPlan(actionIds) {
+async function showAddToPlan(actionIds, tenantName) {
   if(!actionIds) {
     actionIds = Array.from(document.querySelectorAll('.action-cb:checked')).map(cb => cb.value);
   }
   if(!actionIds.length) return toast('No actions selected', 'error');
   _addToPlanIds = actionIds;
+  _addToPlanTenant = tenantName || state.activeTenant.name;
 
-  const t = state.activeTenant.name;
+  const t = _addToPlanTenant;
   const plans = await api.get(`/api/tenants/${t}/plans`);
   const hasPlans = plans.length > 0;
 
@@ -2673,7 +3172,7 @@ async function addToPlanSubmit() {
   const actionIds = _addToPlanIds;
   if(!actionIds.length) return toast('No actions to add', 'error');
   const mode = document.querySelector('input[name="plan-mode"]:checked')?.value;
-  const t = state.activeTenant.name;
+  const t = _addToPlanTenant || state.activeTenant.name;
 
   if(mode === 'new') {
     const name = document.getElementById('atp-new-name').value;
@@ -2729,6 +3228,7 @@ function actionDetailHtml(a) {
     riskHtml = `<div class="risk-card ${isExpired?'expired':''} mb-16">
       <div class="field-label">Risk Acceptance</div>
       <div class="grid grid-2 mt-16">
+        <div class="field"><div class="field-label">Reason</div><div class="field-value">${a.risk_reason_name?`<span class="badge badge-purple" title="${esc(a.risk_reason_category||'')}">${esc(a.risk_reason_name)}</span>`:'<span style="color:var(--text-light)">No structured reason</span>'}</div></div>
         <div class="field"><div class="field-label">Owner</div><div class="field-value">${esc(a.risk_owner||'Not specified')}</div></div>
         <div class="field"><div class="field-label">Accepted</div><div class="field-value">${a.risk_accepted_at?.substring(0,10)||'Unknown'}</div></div>
         <div class="field"><div class="field-label">Review Date</div><div class="field-value">${a.risk_review_date||'Not set'}</div></div>
@@ -2813,8 +3313,8 @@ function actionDetailHtml(a) {
           ${a.description?`<div class="field mb-16"><div class="field-label">What was checked</div><div class="field-value">${mdToHtml(a.description)}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Test Result</div><div class="field-value" style="white-space:pre-wrap;font-family:inherit">${mdToHtml(a.current_value)}</div></div>`:''}
           ` : `
-          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${a.description}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
-          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${a.remediation_impact}</div></div>`:''}
+          ${a.description?`<div class="field mb-16"><div class="field-label">Description</div><div class="field-value html-content">${sanitizeHtml(a.description)}</div></div>`:'<div class="field mb-16"><div class="field-label">Description</div><div class="field-value" style="color:var(--text-light);font-style:italic">No description available. Seed control data or import from Graph API to populate.</div></div>'}
+          ${a.remediation_impact?`<div class="field mb-16"><div class="field-label">Remediation Impact</div><div class="field-value html-content">${sanitizeHtml(a.remediation_impact)}</div></div>`:''}
           ${a.threats&&a.threats.length?`<div class="field mb-16"><div class="field-label">Threats Mitigated</div><div class="field-value">${a.threats.map(t=>'<span class="badge badge-info" style="margin:2px">'+esc(t)+'</span>').join(' ')}</div></div>`:''}
           ${a.current_value?`<div class="field mb-16"><div class="field-label">Current Configuration</div><pre>${esc(a.current_value)}</pre></div>`:''}
           ${a.recommended_value?`<div class="field mb-16"><div class="field-label">Recommended Configuration</div><pre>${esc(a.recommended_value)}</pre></div>`:''}
@@ -3267,34 +3767,57 @@ async function renderImport() {
         <div id="graph-result" style="margin-top:12px"></div>
       </div>`;
   } else {
-    const hasSecret = !!(state.activeTenant.client_secret);
-    const hasCert = !!(state.activeTenant.certificate_path);
+    // Respect the tenant's enabled authentication methods
+    let _am = {};
+    try { _am = JSON.parse(state.activeTenant.auth_methods||'{}')||{}; } catch(e) {}
+    const mOn = m => _am[m] !== false;
+    const hasSecret = !!(state.activeTenant.client_secret) && mOn('client_secret');
+    const hasCert = !!(state.activeTenant.certificate_path) && mOn('certificate');
+    const canInteractive = mOn('interactive');
+    const canDeviceCode = mOn('device_code');
     const appOnlyButtons = `
       ${hasSecret ? `<button class="btn btn-primary" id="graph-client-auth-btn" onclick="startClientAuth()">Sign in with Client Secret</button>` : ''}
       ${hasCert ? `<button class="btn ${hasSecret?'':'btn-primary'}" id="graph-cert-auth-btn" onclick="startCertAuth()">Sign in with Certificate</button>` : ''}
     `;
+    const delegatedButtons = `
+      ${canInteractive ? `<button class="btn ${(hasSecret||hasCert)?'':'btn-primary'}" onclick="startInteractiveAuth()">Sign in with Browser${(hasSecret||hasCert)?'':' (Recommended)'}</button>` : ''}
+      ${canDeviceCode ? `<button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>` : ''}
+    `;
+    const anyMethod = hasSecret || hasCert || canInteractive || canDeviceCode;
     graphSection = `
       <div class="card mb-16">
         <div class="card-header">Import from Microsoft Graph API</div>
-        ${(hasSecret || hasCert) ? `
-        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">App-only credentials detected. Requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent, or sign in interactively.</p>
+        ${!anyMethod ? `
+        <p style="font-size:13px;color:var(--danger);margin-bottom:8px">All authentication methods are disabled or unconfigured for this tenant.</p>
+        <button class="btn btn-sm" onclick="navigate('cp-tenants')">Open Tenant Config</button>
+        ` : (hasSecret || hasCert) ? `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">App-only credentials available. Requires <strong>application</strong> permission SecurityEvents.Read.All with admin consent${(canInteractive||canDeviceCode)?', or sign in interactively':''}.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           ${appOnlyButtons}
-          <button class="btn" onclick="startInteractiveAuth()">Sign in with Browser</button>
-          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+          ${delegatedButtons}
         </div>
         ` : `
         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Authenticate with your Microsoft account to import Secure Score data directly. Uses Global Reader permissions. No secrets stored.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn btn-primary" onclick="startInteractiveAuth()">Sign in with Browser (Recommended)</button>
-          <button class="btn" id="graph-auth-btn" onclick="startGraphAuth()">Sign in with Device Code</button>
+          ${delegatedButtons}
         </div>
         `}
         <div id="graph-auth-status" style="margin-top:12px"></div>
       </div>`;
   }
 
+  const displayName = state.activeTenant.display_name || state.activeTenant.name;
+  const tenantOpts = state.tenants.map(tn =>
+    `<option value="${esc(tn.name)}" ${tn.name===t?'selected':''}>${esc(tn.display_name||tn.name)}</option>`).join('');
+
   c.innerHTML = `
+    <div class="card mb-16" style="border-left:4px solid var(--primary);display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px">
+      <div style="font-size:14px;font-weight:600">Importing into tenant:</div>
+      <select id="imp-tenant" onchange="switchTenant(this.value)" style="max-width:280px;font-weight:600">${tenantOpts}</select>
+      <div style="font-size:12px;color:var(--text-light)">
+        ${state.activeTenant.tenant_id ? `Entra tenant ID: <code>${esc(state.activeTenant.tenant_id)}</code> — reports carrying a different tenant ID are rejected` : `<span style="color:#92400e">&#9888; No Entra tenant ID configured — the report/tenant match cannot be verified. Set it in Tenant Config.</span>`}
+      </div>
+    </div>
     ${graphSection}
     <div class="card mb-16">
       <div class="card-header">Import from File</div>
@@ -3308,13 +3831,15 @@ async function renderImport() {
       </div>
       <input type="file" id="imp-file" accept=".json,.csv,.zip" style="display:none" onchange="handleFileSelect(event)">
       <div id="imp-file-name" style="margin-top:8px;font-size:13px"></div>
-      <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import</button>
+      <button class="btn btn-primary mt-16" id="imp-btn" onclick="doImport()" disabled>Import into "${esc(displayName)}"</button>
     </div>
     <div id="imp-result"></div>
-    <div id="zt-reports-section"></div>`;
+    <div id="zt-reports-section"></div>
+    <div id="maester-reports-section"></div>`;
 
-  // Load ZT reports if any exist
+  // Load stored reports if any exist
   loadZtReports(t);
+  loadMaesterReports(t);
 }
 
 // ── Graph API Auth ──
@@ -3507,16 +4032,48 @@ function handleDrop(e) { e.preventDefault(); e.currentTarget.classList.remove('d
 
 async function doImport() {
   if(!selectedFile) return;
+  const source = document.getElementById('imp-source').value;
+  const tenantName = document.getElementById('imp-tenant')?.value || state.activeTenant.name;
+  const disp = state.tenants.find(x=>x.name===tenantName)?.display_name || tenantName;
+  if(!await showConfirm('Confirm Import',
+      `Import "${selectedFile.name}" (${source}) into tenant "${disp}"?`,
+      'Import', 'btn-primary')) return;
+  await _postImport(tenantName, source, false);
+}
+
+function _showTenantMismatchDialog(r, tenantName, source) {
+  const matchBtns = (r.matching_tenants||[]).map(m =>
+    `<button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:8px"
+      onclick="closeModal();_postImport('${esc(m.name)}','${esc(source)}',false)">
+      Import into "${esc(m.display_name)}" instead (recommended)</button>`).join('');
+  openModal('&#9888; Report Belongs to a Different Tenant', `
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#991b1b">
+      ${esc(r.message||'')}
+    </div>
+    <table style="font-size:13px;margin-bottom:14px">
+      <tr><td style="color:var(--text-light);padding:3px 12px 3px 0">Report generated for</td><td><strong>${esc(r.report_tenant_name||r.report_domain||'—')}</strong> <code style="font-size:11px">${esc(r.report_tenant_id||'')}</code></td></tr>
+      <tr><td style="color:var(--text-light);padding:3px 12px 3px 0">Selected tenant</td><td><strong>${esc(r.target_tenant_display||r.target_tenant||'')}</strong> <code style="font-size:11px">${esc(r.target_tenant_id||'(no tenant ID configured)')}</code></td></tr>
+    </table>
+    ${matchBtns}
+    <button class="btn" style="width:100%;justify-content:center;margin-bottom:8px"
+      onclick="closeModal();(async()=>{if(await showConfirm('Are you sure?','Importing this report into &quot;${esc(r.target_tenant_display||r.target_tenant)}&quot; will mix another tenant\\'s results into its data. This is almost always a mistake.','Import anyway','btn-danger'))_postImport('${esc(tenantName)}','${esc(source)}',true)})()">
+      Import anyway into "${esc(r.target_tenant_display||r.target_tenant)}" (override)</button>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button>`);
+}
+
+async function _postImport(tenantName, source, force) {
   const fd = new FormData();
-  fd.append('source', document.getElementById('imp-source').value);
+  fd.append('source', source);
   fd.append('file', selectedFile);
-  document.getElementById('imp-btn').disabled=true;
-  document.getElementById('imp-btn').textContent='Importing...';
-  const r = await api.upload(`/api/tenants/${state.activeTenant.name}/import`, fd);
-  document.getElementById('imp-btn').textContent='Import';
-  document.getElementById('imp-btn').disabled=false;
+  if(force) fd.append('force', '1');
+  const btn = document.getElementById('imp-btn');
+  if(btn) { btn.disabled = true; btn.textContent = 'Importing...'; }
+  const r = await api.upload(`/api/tenants/${tenantName}/import`, fd);
+  if(btn) { btn.textContent = 'Import'; btn.disabled = false; }
+  if(r.tenant_mismatch) { _showTenantMismatchDialog(r, tenantName, source); return; }
   if(r.error) { toast(r.error,'error'); return; }
-  toast('Import successful!','success');
+  const _dispT = state.tenants.find(x=>x.name===tenantName)?.display_name || tenantName;
+  toast(`Import into "${_dispT}" successful!`,'success');
 
   // Drift detection display
   let driftHtml = '';
@@ -3547,8 +4104,21 @@ async function doImport() {
     expiredHtml = `<div class="drift-banner negative mb-16"><span style="font-size:20px">&#9888;</span><div><strong>${r.expired_risk_acceptances} risk acceptance(s) expired</strong> and reverted to ToDo. <a href="#risks" style="text-decoration:underline">Review</a></div></div>`;
   }
 
+  const identityHtml = (() => {
+    const id = r.report_identity;
+    const label = id ? (id.tenant_name || id.domain || id.tenant_id) : '';
+    if(r.tenant_verified) {
+      return `<div style="font-size:12px;margin-bottom:10px"><span class="badge badge-success">&#10003; Tenant verified</span> <span style="color:var(--text-light)">Report generated for <strong>${esc(label)}</strong> (${esc(id.tenant_id||'')}) — matches "${esc(_dispT)}".</span></div>`;
+    }
+    if(id) {
+      return `<div style="font-size:12px;margin-bottom:10px"><span class="badge badge-warning">Unverified</span> <span style="color:var(--text-light)">Report identity: <strong>${esc(label)}</strong>${id.tenant_id?` (${esc(id.tenant_id)})`:''} — imported into "${esc(_dispT)}"${force?' with tenant check overridden':' (target has no tenant ID configured to verify against)'}.</span></div>`;
+    }
+    return `<div style="font-size:12px;margin-bottom:10px;color:var(--text-light)">Imported into <strong>${esc(_dispT)}</strong>. This report format carries no tenant identity to verify.</div>`;
+  })();
+
   document.getElementById('imp-result').innerHTML = `${expiredHtml}${driftHtml}
-    <div class="card"><div class="card-header">Import Result</div>
+    <div class="card"><div class="card-header">Import Result — ${esc(_dispT)}</div>
+      ${identityHtml}
       <div class="grid grid-4">
         <div class="stat-card"><div class="value">${r.total_parsed}</div><div class="label">Parsed</div></div>
         <div class="stat-card"><div class="value" style="color:var(--success)">${r.new_actions}</div><div class="label">New</div></div>
@@ -3573,11 +4143,14 @@ async function doImport() {
       ${r.updated_details?.length ? `<div style="margin-top:12px"><div class="field-label">Updated Actions (matched existing)</div><table class="data-table" style="font-size:12px"><thead><tr><th>Title</th><th>Source ID</th><th>Matched By</th></tr></thead><tbody>${r.updated_details.map(d => `<tr><td>${esc(d.title||'')}</td><td><code>${esc(d.source_id||'')}</code> ${d.source_id !== d.existing_source_id ? '← <code>'+esc(d.existing_source_id||'')+'</code>':''}</td><td>${esc(d.matched_by||'')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
   selectedFile=null;
+  const fname = document.getElementById('imp-file-name');
+  if(fname) fname.textContent = '';
+  if(btn) btn.disabled = true;
   // Reload ZT reports after import
-  if(r.zt_report_id) loadZtReports(state.activeTenant.name);
+  if(r.zt_report_id) loadZtReports(tenantName);
   // Show unlinked action dialog if any couldn't be matched to global actions
   if(r.unlinked_actions && r.unlinked_actions.length > 0) {
-    setTimeout(() => handlePostImportUnlinked(state.activeTenant.name, r), 400);
+    setTimeout(() => handlePostImportUnlinked(tenantName, r), 400);
   }
 }
 
@@ -3653,6 +4226,10 @@ function onSourceChange() {
     hint.style.display = 'block';
     hint.innerHTML = 'Upload the ScubaGear report directory as a <strong>ZIP file</strong> (containing BaselineReports.html, ScubaResults JSON, etc.), or just the ScubaResults JSON/CSV file.';
     uploadHint.textContent = 'ZIP file (recommended), JSON, or CSV file';
+  } else if(src === 'maester') {
+    hint.style.display = 'block';
+    hint.innerHTML = 'Upload the <strong>Invoke-Maester output folder as a ZIP</strong> (keeps the HTML report browsable in-app), or just the test-results JSON file. Covers the Maester, EIDSCA, CISA, CIS and ORCA test suites.';
+    uploadHint.textContent = 'ZIP file (recommended) or JSON file';
   } else {
     hint.style.display = 'none';
     uploadHint.textContent = 'JSON or CSV file';
@@ -3688,7 +4265,8 @@ async function loadZtReports(tenantName) {
       <td style="color:${pctColor};font-weight:600">${r.passed_tests}/${r.total_tests} (${pct}%)</td>
       <td style="font-size:12px">${esc(summaryText)}</td>
       <td>${esc(r.tool_version || '')}</td>
-      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button></td>
+      <td>${htmlBtn} <button class="btn btn-sm" onclick="showZtReportDetail('${r.id}')">Details</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteZtReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
     </tr>`;
   }).join('');
 
@@ -3700,6 +4278,59 @@ async function loadZtReports(tenantName) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+async function loadMaesterReports(tenantName) {
+  const el = document.getElementById('maester-reports-section');
+  if(!el) return;
+  const reports = await api.get(`/api/tenants/${tenantName}/maester-reports`);
+  if(!Array.isArray(reports) || !reports.length) { el.innerHTML = ''; return; }
+
+  const rows = reports.map(r => {
+    const date = r.imported_at ? new Date(r.imported_at).toLocaleString() : '';
+    const execDate = r.executed_at ? new Date(r.executed_at).toLocaleString() : '';
+    const counted = (r.total_tests||0) - (r.skipped_tests||0);
+    const pct = counted > 0 ? Math.round(r.passed_tests / counted * 100) : 0;
+    const clr = pct >= 60 ? 'var(--success)' : pct >= 30 ? 'var(--warning)' : 'var(--danger)';
+    const htmlBtn = r.html_path ? `<button class="btn btn-sm" onclick="window.open('/api/maester-reports/${r.id}/html','_blank')">Open Report</button>` : '';
+    return `<tr>
+      <td>${date}</td>
+      <td>${execDate}</td>
+      <td>${esc(r.report_tenant_name || r.report_tenant_id || '')}</td>
+      <td style="color:${clr};font-weight:600">${r.passed_tests}/${counted} (${pct}%)</td>
+      <td style="font-size:12px">${r.failed_tests} failed · ${r.skipped_tests} skipped</td>
+      <td>${esc(r.tool_version || '')}</td>
+      <td>${htmlBtn}
+        <button class="btn btn-sm btn-danger" onclick="deleteMaesterReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">Maester Reports</div>
+      <table class="data-table">
+        <thead><tr><th>Imported</th><th>Executed</th><th>Tenant</th><th>Pass Rate</th><th>Breakdown</th><th>Version</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function deleteMaesterReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this Maester report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source if the import was a mistake.')) return;
+  const r = await api.del(`/api/maester-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  loadMaesterReports(state.activeTenant.name);
+}
+
+async function deleteZtReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this Zero Trust report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source > select all > Delete if the import was a mistake.')) return;
+  const r = await api.del(`/api/zt-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  loadZtReports(state.activeTenant.name);
 }
 
 async function showZtReportDetail(reportId) {
@@ -3760,14 +4391,16 @@ async function renderAutomation() {
   const schedMap = {};
   (ov.schedules||[]).forEach(s => schedMap[s.task_type] = s);
 
+  _scubaCfgCache = cfgs.scuba || {};
   const taskMeta = {
     secure_score: {name:'Secure Score Import', desc:'Imports Microsoft Secure Score via the Graph API using the tenant’s app-only credentials (certificate or client secret). Fully unattended.', needs: env.app_credentials ? '' : 'Requires app-only credentials — configure a certificate or client secret in Tenant Config.'},
-    scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s configuration and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ScubaGear module on this machine.'},
-    zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module on this machine.'},
+    scuba: {name:'SCuBA Run + Import', desc:'Runs CISA ScubaGear (Invoke-SCuBA) with this tenant’s uploaded YAML config and imports the report automatically.', needs: !env.pwsh_found ? 'Requires PowerShell 7 (pwsh) and the ScubaGear module (or a ScubaGear folder configured below).' : (!(cfgs.scuba||{}).config_yaml ? 'Upload a ScubaGear YAML config file below before running.' : '')},
+    zero_trust: {name:'Zero Trust Run + Import', desc:'Runs the Zero Trust Assessment (Invoke-ZTAssessment) and imports the report automatically.', needs: env.pwsh_found ? '' : 'Requires PowerShell 7 (pwsh) and the ZeroTrustAssessment module (or a module folder configured below).'},
+    maester: {name:'Maester Run + Import', desc:'Runs Maester (Invoke-Maester — the MT, EIDSCA, CISA, CIS and ORCA test suites) and imports the results automatically.', needs: env.pwsh_found ? ((cfgs.maester||{}).connect_command ? '' : 'Configure a connect command below (e.g. Connect-MgGraph with app-only credentials) for unattended runs.') : 'Requires PowerShell 7 (pwsh) and the Maester module (Install-Module Maester, or a module folder configured below).'},
   };
   const freqOpts = f => ['manual','daily','weekly','monthly'].map(v=>`<option value="${v}" ${v===f?'selected':''}>${v==='manual'?'Manual only':v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join('');
 
-  const taskCards = ['secure_score','scuba','zero_trust'].map(task => {
+  const taskCards = ['secure_score','scuba','zero_trust','maester'].map(task => {
     const m = taskMeta[task];
     const s = schedMap[task] || {frequency:'manual', enabled:0};
     const lastBadge = s.last_status
@@ -3793,26 +4426,29 @@ async function renderAutomation() {
 
   const scuba = cfgs.scuba || {};
   const zt = cfgs.zero_trust || {};
+  const maester = cfgs.maester || {};
   const ps = cfgs.powershell || {};
-  const scubaProducts = ['aad','defender','exo','sharepoint','teams','powerplatform'];
-  const prodChecks = scubaProducts.map(p =>
-    `<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 12px 2px 0;font-size:13px;cursor:pointer">
-      <input type="checkbox" class="scuba-prod" value="${p}" ${(scuba.products||['aad','exo','teams']).includes(p)?'checked':''}> ${p}
-    </label>`).join('');
+  const notif = ov.notifications || null;  // present for admins only
 
   const runRows = (ov.runs||[]).map(r => {
     const dur = r.finished_at ? Math.max(1, Math.round((new Date(r.finished_at)-new Date(r.started_at))/1000))+'s' : '—';
     const st = r.status==='success' ? '<span class="badge badge-success">success</span>'
              : r.status==='error' ? '<span class="badge badge-danger">error</span>'
              : '<span class="badge badge-info">running…</span>';
-    return `<tr>
+    const detail = r.detail || '';
+    const firstLine = detail.split('\n')[0].substring(0, 90);
+    const hasMore = detail.length > firstLine.length;
+    return `<tr onclick="document.getElementById('run-detail-${r.id}').classList.toggle('hidden')" style="cursor:pointer" title="Click to show the full output">
       <td style="font-size:12px"><code>${esc((r.started_at||'').substring(0,19).replace('T',' '))}</code></td>
       <td>${esc(taskMeta[r.task_type]?.name||r.task_type)}</td>
       <td><span class="badge badge-gray" style="font-size:10px">${esc(r.trigger||'')}</span></td>
       <td>${st}</td>
       <td>${dur}</td>
-      <td style="font-size:12px;max-width:420px;white-space:pre-wrap">${esc(r.detail||'')}</td>
-    </tr>`;
+      <td style="font-size:12px">${esc(firstLine)}${hasMore?' <span style="color:var(--primary);font-size:11px">&#8230; more</span>':''}</td>
+    </tr>
+    <tr id="run-detail-${r.id}" class="hidden"><td colspan="6" style="padding:0">
+      <pre style="margin:0;padding:12px 16px;background:#1e293b;color:#e2e8f0;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto">${esc(detail||'(no output recorded)')}</pre>
+    </td></tr>`;
   }).join('');
 
   document.getElementById('content').innerHTML = `
@@ -3829,21 +4465,52 @@ async function renderAutomation() {
     <div class="grid grid-2 mb-16">
       <div class="card">
         <div class="card-header">SCuBA Configuration</div>
-        <div class="form-group"><label>Products</label><div>${prodChecks}</div></div>
-        <div class="form-group"><label>Organization (initial domain, e.g. contoso.onmicrosoft.com — required for unattended certificate auth)</label>
-          <input id="scuba-org" value="${esc(scuba.organization||'')}" placeholder="contoso.onmicrosoft.com"></div>
-        <div class="form-group"><label>ScubaGear config file (YAML, optional — overrides products/auth above)</label>
-          <textarea id="scuba-yaml" rows="5" style="font-family:monospace;font-size:12px" placeholder="ProductNames: [aad, exo]&#10;Organization: contoso.onmicrosoft.com&#10;...">${esc(scuba.config_yaml||'')}</textarea></div>
-        <div class="form-group"><label>Extra Invoke-SCuBA arguments (optional)</label>
-          <input id="scuba-extra" value="${esc(scuba.extra_args||'')}" placeholder="-M365Environment gcc"></div>
-        <button class="btn btn-primary btn-sm" onclick="saveToolConfig('scuba')">Save SCuBA Config</button>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+          The run is driven entirely by a <a href="https://github.com/cisagov/ScubaGear/blob/main/docs/configuration/configuration.md" target="_blank">ScubaGear YAML config file</a>:
+          products, organization, M365 environment and auth (use certificate/AppID parameters for unattended scheduled runs) all live in that file.
+        </p>
+        ${scuba.config_yaml ? `
+          <div style="font-size:13px;margin-bottom:8px">
+            <span class="badge badge-success">Config uploaded</span>
+            <span style="font-size:12px;color:var(--text-light);margin-left:6px">${esc(scuba.config_filename||'scuba_config.yaml')} · ${(scuba.config_yaml||'').split('\\n').length} lines</span>
+            <button class="btn btn-sm" style="margin-left:8px" onclick="document.getElementById('scuba-yaml-preview').classList.toggle('hidden')">View</button>
+            <button class="btn btn-sm btn-danger" onclick="removeScubaConfig()">Remove</button>
+          </div>
+          <pre id="scuba-yaml-preview" class="hidden" style="font-size:11px;background:var(--bg);padding:10px;border-radius:6px;max-height:260px;overflow-y:auto;white-space:pre-wrap">${esc(scuba.config_yaml)}</pre>
+        ` : `
+          <div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:6px;padding:6px 10px;margin-bottom:8px">&#9888; No config file uploaded yet — SCuBA runs will fail until one is provided.</div>
+        `}
+        <div class="flex gap-8 items-center" style="flex-wrap:wrap;margin-bottom:12px">
+          <input type="file" id="scuba-config-file" accept=".yaml,.yml,.txt" style="max-width:260px;font-size:12px">
+          <button class="btn btn-sm btn-primary" onclick="uploadScubaConfig()">${scuba.config_yaml?'Replace':'Upload'} Config File</button>
+        </div>
+        <div class="form-group"><label>ScubaGear folder (optional — path to a ScubaGear checkout or module folder; leave empty when the module is installed via Install-Module)</label>
+          <input id="scuba-module-path" value="${esc(scuba.scubagear_path||'')}" placeholder="/opt/ScubaGear or C:\\tools\\ScubaGear"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveToolConfig('scuba')">Save</button>
       </div>
       <div>
         <div class="card mb-16">
           <div class="card-header">Zero Trust Assessment Configuration</div>
+          <div class="form-group"><label>ZeroTrustAssessment folder (optional — path to a checkout/module folder; empty = installed module)</label>
+            <input id="zt-module-path" value="${esc(zt.module_path||'')}" placeholder="/opt/ZeroTrustAssessment"></div>
           <div class="form-group"><label>Extra Invoke-ZTAssessment arguments (optional)</label>
             <input id="zt-extra" value="${esc(zt.extra_args||'')}" placeholder="-Days 30"></div>
           <button class="btn btn-primary btn-sm" onclick="saveToolConfig('zero_trust')">Save ZT Config</button>
+        </div>
+        <div class="card mb-16">
+          <div class="card-header">Maester Configuration</div>
+          <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+            Maester needs an authenticated Graph session. For unattended runs, provide a
+            <em>connect command</em> executed before Invoke-Maester — e.g.
+            <code>Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …</code>.
+          </p>
+          <div class="form-group"><label>Maester folder (optional — path to a checkout/module folder; empty = installed module)</label>
+            <input id="maester-module-path" value="${esc(maester.module_path||'')}" placeholder="/opt/Maester"></div>
+          <div class="form-group"><label>Connect command (PowerShell, runs before Invoke-Maester; admin-only)</label>
+            <input id="maester-connect" value="${esc(maester.connect_command||'')}" placeholder="Connect-MgGraph -ClientId … -TenantId … -CertificateThumbprint …"></div>
+          <div class="form-group"><label>Extra Invoke-Maester arguments (optional)</label>
+            <input id="maester-extra" value="${esc(maester.extra_args||'')}" placeholder="-Tag CA,MFA"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveToolConfig('maester')">Save Maester Config</button>
         </div>
         <div class="card">
           <div class="card-header">PowerShell</div>
@@ -3854,6 +4521,15 @@ async function renderAutomation() {
       </div>
     </div>
 
+    ${notif !== null ? renderNotificationsCard(notif) : `
+    <div class="card mb-16">
+      <div class="card-header">Notifications</div>
+      <p style="font-size:13px;color:var(--text-light)">
+        ${ov.notifications_enabled ? 'Notifications are enabled for this tenant.' : 'Notifications are not configured.'}
+        Configuring channels (email / Teams / Slack) requires the admin role.
+      </p>
+    </div>`}
+
     <div class="card">
       <div class="card-header">Run History</div>
       <div class="table-wrap"><table>
@@ -3861,6 +4537,8 @@ async function renderAutomation() {
         <tbody>${runRows||'<tr><td colspan="6" class="text-center" style="padding:24px;color:var(--text-light)">No runs yet. Use "Run now" or enable a schedule.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+
+  if(notif !== null) loadSmtpSettings();
 
   // While a run is active, refresh the page periodically to show progress
   if((ov.runs||[]).some(r => r.status==='running')) {
@@ -3872,6 +4550,122 @@ async function renderAutomation() {
         renderAutomation();
       }
     }, 3000);
+  }
+}
+
+function renderNotificationsCard(notif) {
+  const events = [
+    ['run_failure', 'Automation run failures'],
+    ['score_regression', 'Score regressions after imports'],
+    ['new_findings', 'New findings imported'],
+    ['risk_expiry', 'Risk acceptances expiring (daily digest)'],
+  ];
+  const eventChecks = events.map(([key, label]) => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0;cursor:pointer">
+      <input type="checkbox" class="notif-event" data-event="${key}" ${notif.events?.[key] !== false ? 'checked' : ''}> ${label}
+    </label>`).join('');
+  return `
+    <div class="card mb-16" id="notifications-card">
+      <div class="card-header flex justify-between items-center">
+        <span>Notifications</span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0;cursor:pointer">
+          <input type="checkbox" id="notif-enabled" ${notif.enabled ? 'checked' : ''}> Enabled for this tenant
+        </label>
+      </div>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Alerts are sent when automation runs fail, imports regress the score, new findings arrive,
+        or accepted risks approach expiry. Email uses the global SMTP settings below; Teams and Slack
+        use per-tenant incoming-webhook URLs.</p>
+      <div class="grid grid-2">
+        <div>
+          <div class="form-group"><label>Recipient emails (comma-separated)</label>
+            <input id="notif-emails" value="${esc((notif.emails||[]).join(', '))}" placeholder="soc@example.com, ciso@example.com"></div>
+          <div class="form-group"><label>Teams incoming-webhook URL (optional)</label>
+            <input id="notif-teams" value="${esc(notif.teams_webhook||'')}" placeholder="https://…webhook.office.com/…"></div>
+          <div class="form-group"><label>Slack incoming-webhook URL (optional)</label>
+            <input id="notif-slack" value="${esc(notif.slack_webhook||'')}" placeholder="https://hooks.slack.com/services/…"></div>
+          <div class="form-group"><label>Regression threshold (percentage points)</label>
+            <input id="notif-threshold" type="number" step="0.1" min="0" value="${esc(String(notif.regression_threshold ?? 1.0))}" style="max-width:120px"></div>
+          <div><strong style="font-size:13px">Events</strong>${eventChecks}</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="saveNotificationConfig()">Save Notification Settings</button>
+            <button class="btn btn-sm" onclick="sendTestNotification()">Send Test Notification</button>
+          </div>
+          <div id="notif-test-result" style="margin-top:8px;font-size:13px"></div>
+        </div>
+        <div>
+          <div class="card" style="background:var(--bg)">
+            <div class="card-header" style="font-size:13px">Global SMTP Settings (all tenants)</div>
+            <div id="smtp-settings-body" style="color:var(--text-light);font-size:13px">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadSmtpSettings() {
+  const body = document.getElementById('smtp-settings-body');
+  if(!body) return;
+  const s = await api.get('/api/notifications/smtp');
+  if(s.error) { body.textContent = s.error; return; }
+  body.innerHTML = `
+    <div class="form-row">
+      <div class="form-group"><label>SMTP host</label><input id="smtp-host" value="${esc(s.host||'')}" placeholder="smtp.example.com"></div>
+      <div class="form-group"><label>Port</label><input id="smtp-port" type="number" value="${esc(String(s.port||587))}" style="max-width:100px"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Username (optional)</label><input id="smtp-user" value="${esc(s.username||'')}" autocomplete="off"></div>
+      <div class="form-group"><label>Password</label><input id="smtp-pass" type="password" value="${esc(s.password||'')}" placeholder="Leave *** to keep current" autocomplete="new-password"></div>
+    </div>
+    <div class="form-group"><label>From address</label><input id="smtp-from" value="${esc(s.from_addr||'')}" placeholder="m365-posture@example.com"></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:10px">
+      <input type="checkbox" id="smtp-tls" ${s.use_tls !== false ? 'checked' : ''}> Use STARTTLS
+    </label>
+    <button class="btn btn-primary btn-sm" onclick="saveSmtpSettings()">Save SMTP Settings</button>`;
+}
+
+async function saveSmtpSettings() {
+  const payload = {
+    host: document.getElementById('smtp-host').value.trim(),
+    port: document.getElementById('smtp-port').value.trim() || 587,
+    username: document.getElementById('smtp-user').value.trim(),
+    password: document.getElementById('smtp-pass').value,
+    from_addr: document.getElementById('smtp-from').value.trim(),
+    use_tls: document.getElementById('smtp-tls').checked,
+  };
+  const r = await api.put('/api/notifications/smtp', payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('SMTP settings saved', 'success');
+}
+
+async function saveNotificationConfig() {
+  const t = state.activeTenant.name;
+  const events = {};
+  document.querySelectorAll('.notif-event').forEach(cb => { events[cb.dataset.event] = cb.checked; });
+  const payload = {
+    enabled: document.getElementById('notif-enabled').checked,
+    emails: document.getElementById('notif-emails').value.split(',').map(e=>e.trim()).filter(Boolean),
+    teams_webhook: document.getElementById('notif-teams').value.trim(),
+    slack_webhook: document.getElementById('notif-slack').value.trim(),
+    regression_threshold: parseFloat(document.getElementById('notif-threshold').value) || 1.0,
+    events,
+  };
+  const r = await api.put(`/api/tenants/${t}/notifications`, payload);
+  if(r.error) return toast(r.error, 'error');
+  toast('Notification settings saved', 'success');
+}
+
+async function sendTestNotification() {
+  const t = state.activeTenant.name;
+  const el = document.getElementById('notif-test-result');
+  el.textContent = 'Sending…';
+  const r = await api.post(`/api/tenants/${t}/notifications/test`, {});
+  if(r.errors && r.errors.length) {
+    el.innerHTML = `<span style="color:var(--danger)">Sent to ${r.sent||0} channel(s); errors: ${esc(r.errors.join(' | '))}</span>`;
+  } else if(r.sent) {
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Test notification sent to ${r.sent} channel(s)</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--danger)">${esc(r.error || (r.errors||[]).join(' | ') || 'No channels configured')}</span>`;
   }
 }
 
@@ -3901,24 +4695,63 @@ async function runTaskNow(task) {
   renderAutomation();
 }
 
+let _scubaCfgCache = null;
+
 async function saveToolConfig(tool) {
   const t = state.activeTenant.name;
   let config = {};
   if(tool === 'scuba') {
+    // Keep the uploaded YAML, only update the module path
+    const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
     config = {
-      products: [...document.querySelectorAll('.scuba-prod:checked')].map(c=>c.value),
-      organization: document.getElementById('scuba-org').value.trim(),
-      config_yaml: document.getElementById('scuba-yaml').value,
-      extra_args: document.getElementById('scuba-extra').value.trim(),
+      ...cur,
+      scubagear_path: document.getElementById('scuba-module-path').value.trim(),
     };
   } else if(tool === 'zero_trust') {
-    config = {extra_args: document.getElementById('zt-extra').value.trim()};
+    config = {
+      module_path: document.getElementById('zt-module-path').value.trim(),
+      extra_args: document.getElementById('zt-extra').value.trim(),
+    };
+  } else if(tool === 'maester') {
+    config = {
+      module_path: document.getElementById('maester-module-path').value.trim(),
+      connect_command: document.getElementById('maester-connect').value.trim(),
+      extra_args: document.getElementById('maester-extra').value.trim(),
+    };
   } else if(tool === 'powershell') {
     config = {pwsh_path: document.getElementById('ps-path').value.trim()};
   }
   const r = await api.put(`/api/tenants/${t}/tool-config/${tool}`, {config});
   if(r.error) return toast(r.error, 'error');
   toast('Configuration saved', 'success');
+}
+
+async function uploadScubaConfig() {
+  const input = document.getElementById('scuba-config-file');
+  const file = input?.files?.[0];
+  if(!file) return toast('Choose a YAML file first', 'error');
+  const text = await file.text();
+  if(!text.trim()) return toast('The file is empty', 'error');
+  if(!/^[^#\n]*\w+\s*:/m.test(text)) return toast('This does not look like a YAML config (no "key: value" entries found)', 'error');
+  const t = state.activeTenant.name;
+  const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
+  const config = {...cur, config_yaml: text, config_filename: file.name,
+    scubagear_path: document.getElementById('scuba-module-path')?.value.trim() ?? cur.scubagear_path ?? ''};
+  const r = await api.put(`/api/tenants/${t}/tool-config/scuba`, {config});
+  if(r.error) return toast(r.error, 'error');
+  toast(`ScubaGear config "${file.name}" stored`, 'success');
+  renderAutomation();
+}
+
+async function removeScubaConfig() {
+  if(!await showConfirm('Remove Config', 'Remove the stored ScubaGear config file? SCuBA runs will fail until a new one is uploaded.')) return;
+  const t = state.activeTenant.name;
+  const cur = _scubaCfgCache || (await api.get(`/api/tenants/${t}/automation`)).tool_configs?.scuba || {};
+  const config = {...cur, config_yaml: '', config_filename: ''};
+  const r = await api.put(`/api/tenants/${t}/tool-config/scuba`, {config});
+  if(r.error) return toast(r.error, 'error');
+  toast('Config removed', 'success');
+  renderAutomation();
 }
 
 // ── Plans ──
@@ -4070,11 +4903,11 @@ async function viewPlan(planId) {
         `<option value="${p}">${phaseNames[p]}</option>`
       ).join('');
       return `<tr onclick="togglePlanActionDetail('plan-${a.action_id}')" style="cursor:pointer" id="plan-row-${a.action_id}">
-        <td>${a.title}</td>
+        <td>${esc(a.title)}</td>
         <td>${statusBadge(a.status||'ToDo')}</td>
         <td>${priorityBadge(a.priority||'Medium')}</td>
-        <td style="font-size:12px">${a.workload||''}</td>
-        <td style="font-size:12px">${a.implementation_effort||'Medium'}</td>
+        <td style="font-size:12px">${esc(a.workload||'')}</td>
+        <td style="font-size:12px">${esc(a.implementation_effort||'Medium')}</td>
         <td>${scoreDisplay}</td>
         <td onclick="event.stopPropagation()">
           <select onchange="movePlanItemPhase('${planId}','${a.action_id}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
@@ -5190,7 +6023,8 @@ async function renderScuba() {
         <td>${esc(r.tool_version || '')}</td>
         <td>${gauge(pr, 60)}</td>
         <td>${r.passed_controls}/${r.total_controls}</td>
-        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button></td>
+        <td class="flex gap-4">${htmlBtn}<button class="btn btn-sm" onclick="showScubaReportDetail('${r.id}')">Details</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteScubaReport('${r.id}')" title="Delete this report record (imported actions are kept)">&#x2715;</button></td>
       </tr>`;
     }).join('');
     reportsHtml = `<div class="card mb-16"><div class="card-header">Import History</div>
@@ -5228,6 +6062,15 @@ function exportScubaExcel() {
   }
   exportTableExcel(`scuba_${state.activeTenant.name}`, 'SCuBA',
     ['Product','Group','Control ID','Requirement','Result','Criticality','Details','Notes'], rows);
+}
+
+async function deleteScubaReport(reportId) {
+  if(!await showConfirm('Delete Report Record',
+      'Delete this SCuBA report record and its stored files? Actions imported from it are NOT deleted — remove those via Actions > filter by source > select all > Delete if the import was a mistake.')) return;
+  const r = await api.del(`/api/scuba-reports/${reportId}`);
+  if(r.error) return toast(r.error,'error');
+  toast('Report record deleted','success');
+  renderScuba();
 }
 
 async function showScubaReportDetail(reportId) {
@@ -5308,7 +6151,7 @@ async function renderExport() {
       <div class="card-header">Data Export (CSV / JSON)</div>
       <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Full action data with all tracked fields — for Excel, Power BI, or your own scripts.</p>
       <div class="form-row">
-        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option></select></div>
+        <div class="form-group"><label>Format</label><select id="dexp-fmt"><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option><option value="json">JSON</option><option value="md">Markdown (.md)</option></select></div>
         <div class="form-group"><label>Status</label><select id="dexp-status">${dStatusOpts}</select></div>
         <div class="form-group"><label>Source Tool</label><select id="dexp-source">${srcOpts}</select></div>
         <div class="form-group"><label>Workload</label><select id="dexp-workload">${wlOpts}</select></div>
@@ -5935,26 +6778,40 @@ async function mapCompliance() {
 }
 
 // ── Risk Register Page ──
-let _riskState = {actions: [], filters: {search: '', workload: '', source: '', owner: '', view: 'all'}, sort: {col: 'risk_accepted_at', dir: -1}, expanded: null};
+let _riskState = {actions: [], filters: {search: '', workload: '', source: '', owner: '', reason: '', view: 'all'}, sort: {col: 'risk_accepted_at', dir: -1}, expanded: null, tab: 'register', reasons: []};
 
 async function renderRisks() {
   if(!requireTenant()) return;
   const t = state.activeTenant.name;
+  const isAdmin = _authUser && _authUser.role === 'admin';
 
   document.getElementById('topbar-actions').innerHTML = `
+    ${isAdmin ? '<button class="btn btn-sm" onclick="showManageReasons()">Manage Reasons</button>' : ''}
     <button class="btn btn-sm" onclick="riskAddSelectedToPlan()" id="risk-plan-btn" disabled>Add Selected to Plan</button>
     <button class="btn btn-sm" onclick="riskExportExcel()">Export Excel</button>
     <button class="btn btn-sm" onclick="riskExportCsv()">Export CSV</button>
     <button class="btn btn-sm btn-danger" onclick="expireRisks()" title="Auto-revert expired risk acceptances back to ToDo">Auto-expire</button>`;
 
-  // Fetch all Risk Accepted actions with full details
-  const [actions, summary] = await Promise.all([
+  const riskTabBar = `<div class="card mb-16" style="padding:0"><div class="action-tabs" style="margin:0">
+    <div class="atab${_riskState.tab==='register'?' active':''}" onclick="_riskState.tab='register';renderRisks()">Risk Register</div>
+    <div class="atab${_riskState.tab==='analysis'?' active':''}" onclick="_riskState.tab='analysis';renderRisks()">Analysis by Reason</div>
+  </div></div>`;
+
+  if(_riskState.tab === 'analysis') {
+    await renderRiskAnalysis(riskTabBar);
+    return;
+  }
+
+  // Fetch all Risk Accepted actions with full details, plus the reason catalog
+  const [actions, summary, reasons] = await Promise.all([
     api.get(`/api/tenants/${t}/actions?status=Risk%20Accepted`),
     api.get(`/api/tenants/${t}/risk-summary`),
+    api.get('/api/risk-reasons'),
   ]);
 
   _riskState.actions = actions || [];
   _riskState.summary = summary;
+  _riskState.reasons = Array.isArray(reasons) ? reasons : [];
   _riskState.expanded = null;
 
   // Build owner / workload / source dropdown options from data
@@ -5969,8 +6826,10 @@ async function renderRisks() {
   const upcomingCount = summary.upcoming_reviews.length;
   const noExpiry = _riskState.actions.filter(a => !a.risk_expiry_date).length;
   const noOwner = _riskState.actions.filter(a => !a.risk_owner).length;
+  const noReason = _riskState.actions.filter(a => !a.risk_reason_id).length;
+  const usedReasons = [...new Set(_riskState.actions.map(a => a.risk_reason_name).filter(Boolean))].sort();
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('content').innerHTML = `${riskTabBar}
     <div class="grid grid-4 mb-16">
       <div class="card stat-card" onclick="riskSetView('all')" style="cursor:pointer;${_riskState.filters.view==='all'?'border:2px solid var(--primary);':''}">
         <div class="value">${totalActions}</div><div class="label">Accepted Risks</div></div>
@@ -5982,12 +6841,13 @@ async function renderRisks() {
         <div class="value">${totalImpact.toFixed(0)}</div><div class="label">Risk Impact (Σ max-score excluded)</div></div>
     </div>
 
-    ${(noExpiry || noOwner) ? `
+    ${(noExpiry || noOwner || noReason) ? `
     <div class="drift-banner neutral mb-16" style="font-size:13px">
       <span>&#9432;</span>
       <div>
         ${noOwner?`<strong>${noOwner}</strong> risk(s) have no owner assigned. `:''}
         ${noExpiry?`<strong>${noExpiry}</strong> risk(s) have no expiry date set. `:''}
+        ${noReason?`<strong>${noReason}</strong> risk(s) have no structured reason — assign one so the Analysis by Reason report stays meaningful. `:''}
         Consider reviewing them so accepted risks don't linger indefinitely.
       </div>
     </div>` : ''}
@@ -6008,6 +6868,11 @@ async function renderRisks() {
           <option value="__none__" ${_riskState.filters.owner==='__none__'?'selected':''}>(no owner)</option>
           ${owners.map(o => `<option value="${esc(o)}" ${_riskState.filters.owner===o?'selected':''}>${esc(o)}</option>`).join('')}
         </select>
+        <select id="risk-reason-filter" onchange="riskSetFilter('reason',this.value)">
+          <option value="">All Reasons</option>
+          <option value="__none__" ${_riskState.filters.reason==='__none__'?'selected':''}>(no reason)</option>
+          ${usedReasons.map(r => `<option value="${esc(r)}" ${_riskState.filters.reason===r?'selected':''}>${esc(r)}</option>`).join('')}
+        </select>
         <select id="risk-view" onchange="riskSetFilter('view',this.value)">
           <option value="all" ${_riskState.filters.view==='all'?'selected':''}>All risks</option>
           <option value="expired" ${_riskState.filters.view==='expired'?'selected':''}>Expired only</option>
@@ -6015,6 +6880,7 @@ async function renderRisks() {
           <option value="active" ${_riskState.filters.view==='active'?'selected':''}>Active (not expired)</option>
           <option value="no-expiry" ${_riskState.filters.view==='no-expiry'?'selected':''}>No expiry set</option>
           <option value="no-owner" ${_riskState.filters.view==='no-owner'?'selected':''}>No owner</option>
+          <option value="no-reason" ${_riskState.filters.view==='no-reason'?'selected':''}>No reason assigned</option>
         </select>
         <button class="btn btn-sm" onclick="riskResetFilters()">Reset</button>
       </div>
@@ -6033,6 +6899,7 @@ async function renderRisks() {
             <th onclick="riskSetSort('workload')" style="cursor:pointer">Workload</th>
             <th onclick="riskSetSort('source_tool')" style="cursor:pointer">Source</th>
             <th onclick="riskSetSort('priority')" style="cursor:pointer">Priority</th>
+            <th onclick="riskSetSort('risk_reason_name')" style="cursor:pointer">Reason</th>
             <th onclick="riskSetSort('risk_owner')" style="cursor:pointer">Owner</th>
             <th onclick="riskSetSort('risk_accepted_at')" style="cursor:pointer">Accepted</th>
             <th onclick="riskSetSort('risk_review_date')" style="cursor:pointer">Review</th>
@@ -6068,9 +6935,11 @@ function riskFilteredActions() {
     if (f.source && a.source_tool !== f.source) return false;
     if (f.owner === '__none__') { if (a.risk_owner) return false; }
     else if (f.owner && a.risk_owner !== f.owner) return false;
+    if (f.reason === '__none__') { if (a.risk_reason_id) return false; }
+    else if (f.reason && a.risk_reason_name !== f.reason) return false;
     if (f.search) {
       const q = f.search.toLowerCase();
-      const blob = `${a.title||''} ${a.risk_justification||''} ${a.source_id||''} ${a.id||''}`.toLowerCase();
+      const blob = `${a.title||''} ${a.risk_justification||''} ${a.risk_reason_name||''} ${a.source_id||''} ${a.id||''}`.toLowerCase();
       if (!blob.includes(q)) return false;
     }
     if (f.view === 'expired') {
@@ -6084,6 +6953,8 @@ function riskFilteredActions() {
       if (a.risk_expiry_date) return false;
     } else if (f.view === 'no-owner') {
       if (a.risk_owner) return false;
+    } else if (f.view === 'no-reason') {
+      if (a.risk_reason_id) return false;
     }
     return true;
   });
@@ -6109,7 +6980,7 @@ function riskRenderRows() {
     `— ${actions.length} of ${_riskState.actions.length} shown`;
 
   if (!actions.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:24px;color:var(--text-light)">No risks match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center" style="padding:24px;color:var(--text-light)">No risks match the current filters.</td></tr>';
     return;
   }
 
@@ -6143,7 +7014,7 @@ function riskRenderRows() {
       </td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${esc(a.workload||'—')}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${esc(a.source_tool||'—')}</td>
-      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${priorityBadge(a.priority||'')}</td>
+      <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${a.risk_reason_name?`<span class="badge badge-purple" title="${esc(a.risk_reason_category||'')}">${esc(a.risk_reason_name)}</span>`:'<span class="badge badge-warning" title="Assign a structured reason via Update Review/Expiry">no reason</span>'}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer">${ownerHtml}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${a.risk_accepted_at?esc(a.risk_accepted_at.substring(0,10)):'—'}</td>
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;font-size:12px">${reviewHtml}</td>
@@ -6151,7 +7022,7 @@ function riskRenderRows() {
       <td onclick="riskToggleRow('${a.id}')" style="cursor:pointer;text-align:right;font-variant-numeric:tabular-nums">${impact}</td>
     </tr>
     <tr id="risk-detail-${a.id}" class="${isExpanded?'':'hidden'}">
-      <td colspan="10" style="padding:0;background:var(--bg)">
+      <td colspan="11" style="padding:0;background:var(--bg)">
         <div id="risk-detail-content-${a.id}" style="padding:16px"></div>
       </td>
     </tr>`;
@@ -6215,15 +7086,42 @@ function riskAddSelectedToPlan() {
 
 async function riskRevoke(actionId) {
   if (!await showConfirm('Revoke Risk Acceptance', 'Revoke this risk acceptance? The action will revert to ToDo and start counting toward the score again.', 'Revoke', 'btn-danger')) return;
-  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null, risk_accepted_at: null});
+  await api.put(`/api/actions/${actionId}`, {status: 'ToDo', risk_justification: '', risk_owner: '', risk_review_date: null, risk_expiry_date: null, risk_accepted_at: null, risk_reason_id: null});
   toast('Risk acceptance revoked', 'success');
   renderRisks();
 }
 
-function riskExtend(actionId) {
+function riskReasonSelectHtml(elId, selectedId) {
+  // Grouped <select> over the reason catalog (active reasons, plus the
+  // currently selected one even if it was deactivated meanwhile).
+  const reasons = _riskState.reasons || [];
+  const byCat = {};
+  reasons.filter(r => r.is_active || r.id === selectedId).forEach(r => {
+    (byCat[r.category] = byCat[r.category] || []).push(r);
+  });
+  const groups = Object.keys(byCat).sort().map(cat =>
+    `<optgroup label="${esc(cat)}">` +
+    byCat[cat].map(r => `<option value="${esc(r.id)}" ${r.id===selectedId?'selected':''}>${esc(r.name)}${r.is_active?'':' (deactivated)'}</option>`).join('') +
+    '</optgroup>').join('');
+  return `<select id="${elId}">
+    <option value="">— No structured reason —</option>
+    ${groups}
+  </select>`;
+}
+
+async function riskEnsureReasons() {
+  if (!(_riskState.reasons||[]).length) {
+    const reasons = await api.get('/api/risk-reasons');
+    _riskState.reasons = Array.isArray(reasons) ? reasons : [];
+  }
+}
+
+async function riskExtend(actionId) {
   const a = _riskState.actions.find(x => x.id === actionId);
   if (!a) return;
-  openModal('Update Review / Expiry', `
+  await riskEnsureReasons();
+  openModal('Update Risk Acceptance', `
+    <div class="form-group"><label>Reason (drives the Analysis by Reason report)</label>${riskReasonSelectHtml('rx-reason', a.risk_reason_id||'')}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="rx-review" type="date" value="${a.risk_review_date||''}"></div>
       <div class="form-group"><label>Expiry Date</label><input id="rx-expiry" type="date" value="${a.risk_expiry_date||''}"></div>
@@ -6241,8 +7139,10 @@ async function riskExtendSave(actionId) {
     risk_expiry_date: document.getElementById('rx-expiry').value || null,
     risk_owner: document.getElementById('rx-owner').value || '',
     risk_justification: document.getElementById('rx-just').value || '',
+    risk_reason_id: document.getElementById('rx-reason').value || null,
   };
-  await api.put(`/api/actions/${actionId}`, payload);
+  const r = await api.put(`/api/actions/${actionId}`, payload);
+  if(r.error) return toast(r.error, 'error');
   closeModal();
   toast('Risk acceptance updated', 'success');
   renderRisks();
@@ -6251,21 +7151,23 @@ async function riskExtendSave(actionId) {
 function riskExportExcel() {
   const actions = riskFilteredActions();
   const rows = actions.map(a => [
-    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.id, a.title, a.workload, a.source_tool, a.priority,
+    a.risk_reason_name||'', a.risk_reason_category||'', a.risk_owner||'',
     a.risk_accepted_at?.substring(0,10)||'', a.risk_review_date||'', a.risk_expiry_date||'',
     a.risk_justification||'', a.max_score||0,
   ]);
   exportTableExcel(`risk-register-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}`, 'Risk Register',
-    ['ID','Title','Workload','Source','Priority','Owner','Accepted At','Review Date','Expiry Date','Justification','Max Score'], rows);
+    ['ID','Title','Workload','Source','Priority','Reason','Reason Category','Owner','Accepted At','Review Date','Expiry Date','Justification','Max Score'], rows);
 }
 
 function riskExportCsv() {
   const actions = riskFilteredActions();
   if (!actions.length) return toast('Nothing to export with current filters', 'error');
-  const header = ['ID','Title','Workload','Source','Priority','Owner','AcceptedAt','ReviewDate','ExpiryDate','Justification','MaxScore'];
+  const header = ['ID','Title','Workload','Source','Priority','Reason','ReasonCategory','Owner','AcceptedAt','ReviewDate','ExpiryDate','Justification','MaxScore'];
   const csvCell = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
   const rows = actions.map(a => [
-    a.id, a.title, a.workload, a.source_tool, a.priority, a.risk_owner||'',
+    a.id, a.title, a.workload, a.source_tool, a.priority,
+    a.risk_reason_name||'', a.risk_reason_category||'', a.risk_owner||'',
     a.risk_accepted_at||'', a.risk_review_date||'', a.risk_expiry_date||'',
     a.risk_justification||'', a.max_score||0,
   ].map(csvCell).join(','));
@@ -6291,10 +7193,15 @@ async function expireRisks() {
 }
 
 // ── Risk Acceptance Modal ──
-function showAcceptRisk(actionId) {
+async function showAcceptRisk(actionId) {
+  await riskEnsureReasons();
   openModal('Accept Risk', `
     <p style="margin-bottom:12px;color:var(--text-light)">Document the risk acceptance decision. The action will be marked as "Risk Accepted".</p>
-    <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Why is this risk being accepted?"></textarea></div>
+    <div class="form-group"><label>Reason — why can this not be implemented?</label>
+      ${riskReasonSelectHtml('ra-reason','')}
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">The reason powers management reporting ("N critical risks accepted due to missing licences"). Admins can extend the catalog via Risk Register &gt; Manage Reasons.</div>
+    </div>
+    <div class="form-group"><label>Justification (required)</label><textarea id="ra-justification" rows="3" placeholder="Details for this specific control — why is the risk acceptable for now?"></textarea></div>
     <div class="form-group"><label>Risk Owner (required)</label>${userSelectHtml('ra-owner','',{required:true})}</div>
     <div class="form-row">
       <div class="form-group"><label>Review Date</label><input id="ra-review" type="date"></div>
@@ -6312,6 +7219,7 @@ async function acceptRisk(actionId) {
   if(!risk_owner) return toast('Risk owner is required','error');
   const data = {
     justification, risk_owner,
+    reason_id: document.getElementById('ra-reason')?.value || null,
     review_date: document.getElementById('ra-review').value || null,
     expiry_date: document.getElementById('ra-expiry').value || null,
     changed_by: document.getElementById('ra-by').value || '',
@@ -6322,6 +7230,209 @@ async function acceptRisk(actionId) {
   toast('Risk accepted', 'success');
   if(state.currentPage === 'actions') filterActions();
   else navigate(state.currentPage);
+}
+
+// ── Risk Analysis by Reason ──
+let _riskAnalysis = null;
+
+async function renderRiskAnalysis(tabBar) {
+  const t = state.activeTenant.name;
+  const analysis = await api.get(`/api/tenants/${t}/risk-analysis`);
+  if(analysis.error) return toast(analysis.error, 'error');
+  _riskAnalysis = analysis;
+
+  document.getElementById('topbar-actions').innerHTML = `
+    ${_authUser && _authUser.role === 'admin' ? '<button class="btn btn-sm" onclick="showManageReasons()">Manage Reasons</button>' : ''}
+    <button class="btn btn-sm" onclick="riskAnalysisExportExcel()">Export Excel</button>`;
+
+  const groups = analysis.by_reason || [];
+  const unassigned = analysis.unassigned || {count: 0};
+  const top = groups[0];
+
+  const catCards = (analysis.by_category||[]).map(c => `
+    <div class="card stat-card">
+      <div class="value">${c.count}</div>
+      <div class="label">${esc(c.category)}</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">${c.critical_high} critical/high · ${c.score_potential.toFixed(1)} pts blocked</div>
+    </div>`).join('');
+
+  const prioCell = g => {
+    const parts = [];
+    if(g.by_priority['Critical']) parts.push(`<span class="badge badge-danger">${g.by_priority['Critical']} Critical</span>`);
+    if(g.by_priority['High']) parts.push(`<span class="badge badge-warning">${g.by_priority['High']} High</span>`);
+    const rest = g.count - (g.by_priority['Critical']||0) - (g.by_priority['High']||0);
+    if(rest > 0) parts.push(`<span class="badge badge-gray">${rest} other</span>`);
+    return parts.join(' ');
+  };
+
+  const reasonRow = (g, idx) => `
+    <tr onclick="document.getElementById('ra-detail-${idx}').classList.toggle('hidden')" style="cursor:pointer" title="Click to show the affected actions">
+      <td><strong>${esc(g.name)}</strong>${g.description?`<div style="font-size:11px;color:var(--text-light)">${esc(g.description.substring(0,90))}</div>`:''}</td>
+      <td><span class="badge badge-info">${esc(g.category)}</span></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${g.count}</td>
+      <td>${prioCell(g)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${g.score_potential.toFixed(1)}</strong> pts${g.score_potential_pct?` <span style="color:var(--text-light);font-size:11px">(${g.score_potential_pct.toFixed(1)}%)</span>`:''}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${g.roi_total.toFixed(0)}</td>
+      <td style="font-size:11px">${Object.entries(g.workloads).map(([w,n])=>`${esc(w)} (${n})`).join(', ')}</td>
+    </tr>
+    <tr id="ra-detail-${idx}" class="hidden"><td colspan="7" style="padding:0;background:var(--bg)">
+      <table style="margin:0"><thead><tr><th>Action</th><th>Priority</th><th>Workload</th><th>Source</th><th style="text-align:right">Potential</th><th style="text-align:right">ROI</th><th>Owner</th><th>Expiry</th></tr></thead>
+      <tbody>${g.actions.map(a => `<tr onclick="openActionQuickView('${a.id}');event.stopPropagation()" style="cursor:pointer">
+        <td>${esc((a.title||'').substring(0,80))}</td>
+        <td>${priorityBadge(a.priority||'')}</td>
+        <td style="font-size:12px">${esc(a.workload||'')}</td>
+        <td style="font-size:12px">${esc(a.source_tool||'')}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${(a.score_potential||0).toFixed(1)}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${(a.roi||0).toFixed(1)}</td>
+        <td style="font-size:12px">${esc(a.risk_owner||'—')}</td>
+        <td style="font-size:12px">${esc(a.risk_expiry_date||'—')}</td>
+      </tr>`).join('')}</tbody></table>
+    </td></tr>`;
+
+  document.getElementById('content').innerHTML = `${tabBar}
+    <div class="card mb-16" style="border-left:4px solid var(--primary)">
+      <div style="font-size:14px">
+        <strong>${analysis.total_accepted}</strong> accepted risk(s) are excluded from remediation,
+        parking <strong>${analysis.total_score_potential.toFixed(1)}</strong> score points.
+        ${top ? `Top blocker: <strong>${esc(top.name)}</strong> — ${top.count} risk(s)${(top.by_priority['Critical']||0)+(top.by_priority['High']||0) ? ` (${(top.by_priority['Critical']||0)+(top.by_priority['High']||0)} critical/high)` : ''}, worth ${top.score_potential.toFixed(1)} points${top.score_potential_pct?` (~${top.score_potential_pct.toFixed(1)}% of the total score)`:''} if resolved.` : ''}
+      </div>
+      ${unassigned.count ? `<div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:6px;padding:6px 10px;margin-top:10px">&#9888; ${unassigned.count} acceptance(s) have no structured reason and are missing from this breakdown.
+        <a href="#" onclick="_riskState.tab='register';_riskState.filters.view='no-reason';renderRisks();return false">Assign reasons now</a></div>` : ''}
+    </div>
+
+    ${catCards ? `<div class="grid grid-4 mb-16">${catCards}</div>` : ''}
+
+    <div class="card">
+      <div class="card-header">What would unblock the most? <span style="font-weight:400;font-size:12px;color:var(--text-light)">— reasons ordered by blocked score potential; click a row for the affected actions</span></div>
+      ${groups.length ? `
+      <div class="table-wrap"><table id="risk-analysis-table">
+        <thead><tr><th>Reason</th><th>Category</th><th style="text-align:right">Risks</th><th>Priorities</th><th style="text-align:right">Score potential</th><th style="text-align:right">ROI Σ</th><th>Workloads</th></tr></thead>
+        <tbody>
+          ${groups.map((g, i) => reasonRow(g, i)).join('')}
+          ${unassigned.count ? reasonRow(unassigned, 'unassigned') : ''}
+        </tbody>
+      </table></div>` : `
+      <div style="padding:24px;text-align:center;color:var(--text-light)">
+        ${analysis.total_accepted ? 'No accepted risk has a structured reason yet — assign reasons in the Risk Register to populate this report.' : 'No accepted risks. When risks are accepted with a structured reason (licence gaps, missing staff, …) this report shows management what is parked behind which constraint.'}
+      </div>`}
+    </div>`;
+}
+
+function riskAnalysisExportExcel() {
+  const a = _riskAnalysis;
+  if(!a) return;
+  const groups = (a.by_reason||[]).concat(a.unassigned?.count ? [a.unassigned] : []);
+  if(!groups.length) return toast('Nothing to export', 'error');
+  const rows = groups.map(g => [
+    g.name, g.category, g.count,
+    g.by_priority['Critical']||0, g.by_priority['High']||0,
+    g.by_priority['Medium']||0, g.by_priority['Low']||0,
+    g.score_potential, g.score_potential_pct, g.roi_total,
+    Object.entries(g.workloads).map(([w,n])=>`${w} (${n})`).join(', '),
+    g.actions.map(x=>x.title).join(' | '),
+  ]);
+  exportTableExcel(`risk-analysis-${state.activeTenant.name}-${new Date().toISOString().substring(0,10)}`, 'Risk Analysis',
+    ['Reason','Category','Risks','Critical','High','Medium','Low','Score Potential','% of Total','ROI Sum','Workloads','Actions'], rows);
+}
+
+// ── Manage Risk Reasons (admin) ──
+let _reasonEditId = null;
+
+async function showManageReasons() {
+  _reasonEditId = null;
+  openModal('Manage Risk Reasons', '<div id="reason-mgr">Loading…</div>',
+    '<button class="btn" onclick="closeModal();if(state.currentPage===\'risks\')renderRisks()">Close</button>');
+  await renderReasonManager();
+}
+
+async function renderReasonManager() {
+  const el = document.getElementById('reason-mgr');
+  if(!el) return;
+  const reasons = await api.get('/api/risk-reasons?include_inactive=1');
+  _riskState.reasons = (reasons||[]).filter(r => r.is_active);
+  const cats = state.enums.risk_reason_categories || ['Licensing','Budget','Resources','Skills','Technical','Business','Other'];
+  const catOpts = sel => cats.map(c=>`<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+
+  const rows = (reasons||[]).map(r => _reasonEditId === r.id ? `
+    <tr style="background:var(--bg)">
+      <td><input id="re-name" value="${esc(r.name)}" style="width:100%"></td>
+      <td><select id="re-cat">${catOpts(r.category)}</select></td>
+      <td colspan="2"><input id="re-desc" value="${esc(r.description||'')}" style="width:100%" placeholder="Description"></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-primary" onclick="saveReasonEdit('${r.id}')">Save</button>
+        <button class="btn btn-sm" onclick="_reasonEditId=null;renderReasonManager()">Cancel</button>
+      </td>
+    </tr>` : `
+    <tr ${r.is_active?'':'style="opacity:.55"'}>
+      <td><strong>${esc(r.name)}</strong>${r.is_active?'':' <span class="badge badge-gray">deactivated</span>'}${r.description?`<div style="font-size:11px;color:var(--text-light)">${esc(r.description.substring(0,70))}</div>`:''}</td>
+      <td><span class="badge badge-info">${esc(r.category)}</span></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${r.active_usage||0}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">${r.total_usage||0}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="_reasonEditId='${r.id}';renderReasonManager()">Edit</button>
+        ${r.is_active
+          ? `<button class="btn btn-sm btn-danger" onclick="deleteReason('${r.id}','${esc(r.name).replace(/'/g,"\\'")}')" title="Delete (deactivates instead when in use)">&#x2715;</button>`
+          : `<button class="btn btn-sm" onclick="reactivateReason('${r.id}')">Reactivate</button>`}
+      </td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+      The shared catalog of acceptance reasons. Keep it curated — clean reasons make the
+      "Analysis by Reason" report meaningful. Deleting a reason that is in use deactivates it
+      instead, so historical acceptances keep their label.</p>
+    <div class="table-wrap mb-12"><table>
+      <thead><tr><th>Reason</th><th>Category</th><th style="text-align:right" title="Currently accepted risks using this reason">In use</th><th style="text-align:right" title="All actions ever labelled with this reason">Ever</th><th></th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" style="color:var(--text-light);padding:16px;text-align:center">No reasons defined.</td></tr>'}</tbody>
+    </table></div>
+    <div class="card" style="background:var(--bg)">
+      <strong style="font-size:13px">Add a reason</strong>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group"><label>Name</label><input id="re-new-name" placeholder="e.g. Defender for Cloud Apps licence required"></div>
+        <div class="form-group"><label>Category</label><select id="re-new-cat">${catOpts('Licensing')}</select></div>
+      </div>
+      <div class="form-group"><label>Description (optional)</label><input id="re-new-desc"></div>
+      <button class="btn btn-sm btn-primary" onclick="createReason()">Add Reason</button>
+    </div>`;
+}
+
+async function createReason() {
+  const name = document.getElementById('re-new-name').value.trim();
+  if(!name) return toast('Name is required', 'error');
+  const r = await api.post('/api/risk-reasons', {
+    name, category: document.getElementById('re-new-cat').value,
+    description: document.getElementById('re-new-desc').value.trim(),
+  });
+  if(r.error) return toast(r.error, 'error');
+  toast('Reason added', 'success');
+  renderReasonManager();
+}
+
+async function saveReasonEdit(id) {
+  const r = await api.put(`/api/risk-reasons/${id}`, {
+    name: document.getElementById('re-name').value.trim(),
+    category: document.getElementById('re-cat').value,
+    description: document.getElementById('re-desc').value.trim(),
+  });
+  if(r.error) return toast(r.error, 'error');
+  _reasonEditId = null;
+  toast('Reason updated', 'success');
+  renderReasonManager();
+}
+
+async function deleteReason(id, name) {
+  if(!await showConfirm('Delete Reason', `Delete "${name}"? If it is used by any acceptance it will be deactivated instead of deleted.`)) return;
+  const r = await api.del(`/api/risk-reasons/${id}`);
+  if(r.error) return toast(r.error, 'error');
+  toast(r.deactivated ? 'Reason deactivated (still referenced by acceptances)' : 'Reason deleted', 'success');
+  renderReasonManager();
+}
+
+async function reactivateReason(id) {
+  const r = await api.put(`/api/risk-reasons/${id}`, {is_active: true});
+  if(r.error) return toast(r.error, 'error');
+  toast('Reason reactivated', 'success');
+  renderReasonManager();
 }
 
 // ── Dependencies ──
@@ -6760,6 +7871,8 @@ async function renderCpUsers() {
   const users = await api.get('/api/control-plane/users');
   const tenants = await api.get('/api/tenants');
   const roleColors = {admin:'danger', analyst:'info', viewer:'gray', tenant_admin:'purple'};
+  // User management is admin-only server-side — hide the buttons that would 403
+  const canManage = _authUser && _authUser.role === 'admin';
 
   const rows = users.map(u => {
     const accessList = (u.tenant_access||[]).map(ta => {
@@ -6773,19 +7886,19 @@ async function renderCpUsers() {
       <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
       <td>${accessList||`<span style="color:var(--text-light);font-size:12px">${u.role==='admin'?'Full access':'No tenant access'}</span>`}</td>
       <td>${u.last_login ? u.last_login.substring(0,16).replace('T',' ') : '—'}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap">${canManage ? `
         <button class="btn btn-sm" onclick="showEditUser('${u.id}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')">&#x2715;</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}','${u.username}')" aria-label="Delete user">&#x2715;</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 
-  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>`;
+  document.getElementById('topbar-actions').innerHTML = canManage ? `<button class="btn btn-primary" onclick="showCreateUser()">+ New User</button>` : '';
   document.getElementById('content').innerHTML = `
     <div class="card mb-16">
       <div class="flex justify-between items-center mb-8">
         <div class="card-header" style="margin:0">Application Users (${users.length})</div>
-        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>
+        ${canManage ? '<button class="btn btn-primary btn-sm" onclick="showCreateUser()">+ New User</button>' : '<span style="font-size:12px;color:var(--text-light)">Read-only — user management requires the admin role</span>'}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Tenant Access</th><th>Last Login</th><th></th></tr></thead>
@@ -7028,6 +8141,28 @@ async function showCpTenantDetail(tenantName) {
         <div class="form-group"><label>Client ID</label><input id="cpt-cid" value="${esc(tenant.client_id||'')}"></div>
         <div class="form-group"><label>Client Secret</label><input id="cpt-secret" type="password" value="${esc(tenant.client_secret||'')}" placeholder="Leave empty to keep existing"></div>
       </div>
+      <div class="form-group"><label>Cloud environment (login &amp; Graph endpoints)</label>
+        <select id="cpt-cloud" style="max-width:320px">
+          ${(state.enums.clouds||[{id:'global',label:'Global (Commercial / GCC)'}]).map(c =>
+            `<option value="${esc(c.id)}" ${c.id===(tenant.cloud||'global')?'selected':''}>${esc(c.label)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ga-detail-section">
+        <h4 style="margin-bottom:8px">Excluded Workloads</h4>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+          Checked workloads are <strong>hidden from all dashboards, reports, action lists, exports and scores</strong>
+          for this tenant — e.g. when Exchange is managed by another party. Imports keep updating the hidden
+          actions in the background, so unchecking a workload brings its current state straight back.
+        </p>
+        ${(() => {
+          let excl = [];
+          try { excl = JSON.parse(tenant.excluded_workloads||'[]')||[]; } catch(e) {}
+          return (state.enums.workloads||[]).map(w => `
+            <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 14px 3px 0;font-size:13px;cursor:pointer">
+              <input type="checkbox" class="cpt-excl-wl" value="${esc(w)}" ${excl.includes(w)?'checked':''}> ${esc(w)}
+            </label>`).join('');
+        })()}
+      </div>
       <div class="ga-detail-section" style="margin-top:4px">
         <h4 style="margin-bottom:8px">Certificate (app-only auth)</h4>
         ${tenant.certificate_path ? `
@@ -7053,9 +8188,39 @@ async function showCpTenantDetail(tenantName) {
         <div class="flex gap-8 items-center" style="margin-top:8px;flex-wrap:wrap">
           <input type="file" id="cpt-cert-file" accept=".pem,.crt,.key,.txt" style="max-width:260px;font-size:12px">
           <button class="btn btn-sm btn-primary" onclick="uploadTenantCert('${tenantName}')">${tenant.certificate_path?'Replace':'Upload'} Certificate</button>
-          <button class="btn btn-sm" onclick="testTenantGraph('${tenantName}')" title="Verify the app-only credentials work against Microsoft Graph">Test Connection</button>
         </div>
-        <div id="cpt-cert-result" style="margin-top:8px;font-size:13px"></div>
+      </div>
+      <div class="ga-detail-section">
+        <h4 style="margin-bottom:8px">Authentication Methods</h4>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+          Enable only the sign-in methods this tenant should allow. Disabled methods are hidden on the
+          Import page and rejected by the API. App-only methods (certificate, client secret) can be tested here;
+          device code and interactive are tested by signing in on the Import page.
+        </p>
+        ${(() => {
+          let am = {};
+          try { am = JSON.parse(tenant.auth_methods||'{}')||{}; } catch(e) {}
+          const on = m => am[m] !== false;
+          const rows = [
+            {key:'certificate', label:'Certificate (app-only)', testable:true,
+             hint: tenant.certificate_path ? '' : 'no certificate uploaded'},
+            {key:'client_secret', label:'Client Secret (app-only)', testable:true,
+             hint: tenant.client_secret ? '' : 'no secret configured'},
+            {key:'device_code', label:'Device Code (delegated)', testable:false, hint:''},
+            {key:'interactive', label:'Browser Sign-in (delegated, PKCE)', testable:false, hint:''},
+          ];
+          return rows.map(m => `
+            <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+              <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;flex:1">
+                <input type="checkbox" class="cpt-auth-method" data-method="${m.key}" ${on(m.key)?'checked':''}
+                       onchange="saveAuthMethods('${tenantName}')" style="width:16px;height:16px">
+                ${m.label}
+                ${m.hint?`<span style="font-size:11px;color:var(--text-light)">(${m.hint})</span>`:''}
+              </label>
+              ${m.testable?`<button class="btn btn-sm" onclick="testTenantGraph('${tenantName}','${m.key}')">Test</button>`:''}
+            </div>`).join('');
+        })()}
+        <div id="cpt-cert-result" style="margin-top:10px;font-size:13px"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="cpt-notes" rows="2">${esc(tenant.notes||'')}</textarea></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -7100,14 +8265,27 @@ async function showCpTenantDetail(tenantName) {
 async function saveTenantConfigCp(tenantName) {
   const payload = {
     display_name: document.getElementById('cpt-display').value,
-    tenant_id: document.getElementById('cpt-tid').value,
-    client_id: document.getElementById('cpt-cid').value,
     notes: document.getElementById('cpt-notes').value,
+    excluded_workloads: [...document.querySelectorAll('.cpt-excl-wl:checked')].map(cb => cb.value),
   };
-  const secret = document.getElementById('cpt-secret').value;
-  if(secret && secret !== '***') payload.client_secret = secret;
+  // Credential-bearing fields require the admin role server-side — only
+  // include them for admins so a non-admin can still save name/notes.
+  if(_authUser && _authUser.role === 'admin') {
+    payload.tenant_id = document.getElementById('cpt-tid').value;
+    payload.client_id = document.getElementById('cpt-cid').value;
+    const cloudSel = document.getElementById('cpt-cloud');
+    if(cloudSel) payload.cloud = cloudSel.value;
+    const secret = document.getElementById('cpt-secret').value;
+    if(secret && secret !== '***') payload.client_secret = secret;
+  }
   const r = await api.put(`/api/tenants/${tenantName}`, payload);
   if(r.error) return toast(r.error,'error');
+  // Keep the cached active tenant (and its exclusion banner) in sync
+  if(state.activeTenant && state.activeTenant.name === tenantName) {
+    const active = await api.get('/api/active-tenant');
+    if(active && active.name) state.activeTenant = active;
+  }
+  state.tenants = await api.get('/api/tenants');
   toast('Tenant updated','success');
 }
 
@@ -7136,15 +8314,28 @@ async function deleteTenantCert(tenantName) {
   showCpTenantDetail(tenantName);
 }
 
-async function testTenantGraph(tenantName) {
+async function testTenantGraph(tenantName, method) {
   const el = document.getElementById('cpt-cert-result');
-  if(el) el.innerHTML = '<span style="color:var(--text-light)">Testing app-only authentication against Microsoft Graph…</span>';
-  const r = await api.post(`/api/tenants/${tenantName}/graph/test`, {});
+  const label = method ? method.replace('_',' ') : 'app-only';
+  if(el) el.innerHTML = `<span style="color:var(--text-light)">Testing ${esc(label)} authentication against Microsoft Graph…</span>`;
+  const r = await api.post(`/api/tenants/${tenantName}/graph/test`, method ? {method} : {});
   if(!el) return;
   if(r.ok) {
-    el.innerHTML = `<span style="color:var(--success)">&#10003; Authentication succeeded using ${r.method === 'certificate' ? 'the certificate' : 'the client secret'}.</span>`;
+    const enabledNote = r.enabled === false ? ' <span style="color:var(--warning)">(note: this method is currently disabled for the tenant)</span>' : '';
+    el.innerHTML = `<span style="color:var(--success)">&#10003; Authentication succeeded using ${r.method === 'certificate' ? 'the certificate' : 'the client secret'}.</span>${enabledNote}`;
   } else {
     el.innerHTML = `<span style="color:var(--danger)">&#10007; ${esc(r.error||'Authentication failed')}</span>`;
+  }
+}
+
+async function saveAuthMethods(tenantName) {
+  const methods = {};
+  document.querySelectorAll('.cpt-auth-method').forEach(cb => { methods[cb.dataset.method] = cb.checked; });
+  const r = await api.put(`/api/tenants/${tenantName}`, {auth_methods: methods});
+  if(r.error) return toast(r.error, 'error');
+  toast('Authentication methods updated', 'success');
+  if(state.activeTenant?.name === tenantName) {
+    state.activeTenant = await api.get('/api/active-tenant');
   }
 }
 
