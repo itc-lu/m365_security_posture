@@ -51,11 +51,13 @@ The definitive **local-first, multi-tenant M365 posture cockpit**:
 | Multi-framework rollups | ✅ | NIST, CIS, ISO, Essential Eight, SCuBA |
 | Fully local | ✅ | Default bind is now 127.0.0.1 (`--host` to override) |
 | Automation without leaving the machine | ✅ | Built-in scheduler drives ScubaGear/ZT/Graph |
-| Management evidence | ✅ | PDF reports, Excel everywhere, trends, drift |
-| Notifications on regression | ❌ | Roadmap R2 (see GAP analysis) |
-| Maester as an additional source | ❌ | Roadmap R1/R3 (see GAP analysis) |
-| Headless CI mode | ❌ | Roadmap R4 |
-| National cloud endpoints | ❌ | Roadmap R6 |
+| Management evidence | ✅ | PDF reports, Excel + Markdown everywhere, trends, drift |
+| Notifications on regression | ✅ | Email/Teams/Slack: run failures, regressions, new findings, risk-expiry digests |
+| Maester as an additional source | ✅ | Import (JSON/ZIP incl. stored HTML report) + scheduled `Invoke-Maester` runs |
+| Headless CI mode | ✅ | `m365-posture run … --fail-on-regression` with CI exit codes |
+| National cloud endpoints | ✅ | Per-tenant cloud (Global / US Gov / US Gov DoD / China) |
+| Copilot/AI coverage | ✅ | "Copilot & AI" workload; Maester AI-tagged tests map to it |
 
 The full competitive analysis and roadmap live in
-[GAP_ANALYSIS_MAESTER.md](GAP_ANALYSIS_MAESTER.md).
+[GAP_ANALYSIS_MAESTER.md](GAP_ANALYSIS_MAESTER.md). All roadmap
+recommendations (R1–R7) are implemented as of 2026-08.

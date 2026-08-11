@@ -149,6 +149,14 @@ Legend: 🔴 = material gap (roadmap priority), 🟡 = partial gap, 🟢 = we le
 
 ## 4. What to adopt from Maester — prioritized recommendations
 
+> **Status (2026-08): all recommendations below are implemented.**
+> R1 → `maester` import source (JSON/ZIP, stored HTML report, wrong-tenant
+> guard). R2 → notifications module (SMTP + Teams/Slack webhooks; run
+> failures, regressions, new findings, risk-expiry digest). R3 → "Maester
+> Run + Import" automation task with scheduling. R4 → `m365-posture run`
+> with CI exit codes. R5 → Markdown export. R6 → per-tenant national
+> clouds. R7 → "Copilot & AI" workload with Maester AI-tag mapping.
+
 **R1 (High, low effort): Maester report parser.**
 Add a `maester` import source that parses Maester's JSON/CSV output (test id, title,
 result, severity, category, help URL). This immediately adds MT/EIDSCA/CIS/ORCA coverage
